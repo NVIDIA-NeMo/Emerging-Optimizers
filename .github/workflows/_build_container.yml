@@ -72,7 +72,7 @@ jobs:
     with:
       image-name: ${{ inputs.image-name }}
       dockerfile: ${{ inputs.dockerfile }}
-      image-label: nemo-core
+      image-label: ${{ inputs.image-name }}
       prune-filter-timerange: 24h
       use-inline-cache: false
       runner: ${{ inputs.runner }}
