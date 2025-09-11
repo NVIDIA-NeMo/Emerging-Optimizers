@@ -14,14 +14,13 @@
 # limitations under the License.
 import math
 
-from absl import logging
-from absl.testing import parameterized, absltest
-
 import torch
+from absl import logging
+from absl.testing import absltest, parameterized
 
-from llm_shower.orthogonalized_optimizers.muon_utils import newton_schulz, _COEFFICIENT_SETS
-from llm_shower.orthogonalized_optimizers.muon import Muon, get_muon_scale_factor
-from llm_shower import utils
+from emerging_optimizers import utils
+from emerging_optimizers.orthogonalized_optimizers.muon import Muon, get_muon_scale_factor
+from emerging_optimizers.orthogonalized_optimizers.muon_utils import _COEFFICIENT_SETS, newton_schulz
 
 
 def newton_schulz_ref(x: torch.Tensor, coefficient_sets: list[tuple[float, float, float]]) -> torch.Tensor:

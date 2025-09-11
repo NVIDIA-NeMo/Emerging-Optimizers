@@ -14,10 +14,9 @@
 # limitations under the License.
 from typing import Any, Callable, override
 
-from absl import logging
-
 import torch
 import torch.optim as optim
+from absl import logging
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import utils

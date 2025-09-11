@@ -12,14 +12,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Callable
 from functools import partial
+from typing import Callable
 
 import torch
 from torch.optim.optimizer import ParamsT
 
-from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schulz
+from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
 
 
 class Muon(OrthogonalizedOptimizer):

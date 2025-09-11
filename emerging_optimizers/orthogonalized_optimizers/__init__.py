@@ -12,5 +12,5 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import *
 from emerging_optimizers.orthogonalized_optimizers.muon import *
+from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import *

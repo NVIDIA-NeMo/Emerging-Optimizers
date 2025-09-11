@@ -17,6 +17,7 @@ from typing import Any, Literal
 import torch
 from absl import logging
 
+
 __all__ = ["newton_schulz", "newton_schulz_tp"]
 
 _COEFFICIENT_SETS = {
@@ -216,3 +217,33 @@ def newton_schulz_tp(
         raise ValueError(f"Invalid mode: {mode}")
 
     return output
+
+
+def newton_schulz_step(
+    X: torch.Tensor, a: float, b: float, c: float, tp_group: torch.distributed.ProcessGroup | None = None
+) -> torch.Tensor:
+    """Perform a single Newton-Schulz iteration step.
+
+    This function performs a single Newton-Schulz iteration step. It supports distributed input that's sharded
+    along the smaller (orthogonalize) dimension.
+
+    Warning:
+        If distributed, this function doesn't have the information to verify that X is sharded along the smaller
+        (orthogonalize) dimension. It is user's responsibility to ensure that X is sharded correctly.
+
+    Arguments:
+        X: The tensor to be orthogonalized.
+        a: The a coefficient.
+        b: The b coefficient.
+        c: The c coefficient.
+        tp_group: The process group to use for the all-reduce.
+
+    Returns:
+        The orthogonalization of X.
+    """
+    A = X @ X.mT
+    if tp_group is not None:
+        torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
+    B = torch.addmm(A, A, A, beta=b, alpha=c)
+    X = torch.addmm(X, B, X, beta=a, alpha=1.0)
+    return X

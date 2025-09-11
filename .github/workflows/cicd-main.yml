@@ -42,7 +42,7 @@ jobs:
     uses: ./.github/workflows/_build_container.yml
     needs: cicd-wait-in-queue
     with:
-      image-name: llm_shower
+      image-name: emerging_optimizers
       dockerfile: docker/Dockerfile.ci
       runner: self-hosted-nemo
     secrets:
@@ -72,7 +72,7 @@ jobs:
           script: ${{ matrix.script }}
           timeout: ${{ matrix.timeout || 10 }}
           is_unit_test: "true"
-          image: llm_shower
+          image: emerging_optimizers
           cpu-only: ${{ matrix.cpu-only || false }}
           has-azure-credentials: "true"
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -100,7 +100,7 @@ jobs:
           runner: ${{ runner.name }}
           script: ${{ matrix.script }}
           timeout: ${{ matrix.timeout || 10 }}
-          image: llm_shower
+          image: emerging_optimizers
           cpu-only: ${{ matrix.cpu-only || false }}
           has-azure-credentials: "true"
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}

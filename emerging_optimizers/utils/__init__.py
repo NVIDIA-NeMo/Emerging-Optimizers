@@ -12,15 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .eig import *
-
 from contextlib import contextmanager
 from typing import Generator
+
 import torch
 
-__all__ = [
-    "fp32_matmul_precision", "get_pg_size", "get_pg_rank"
-]
+
+__all__ = ["fp32_matmul_precision", "get_pg_size", "get_pg_rank"]
 
 
 @contextmanager

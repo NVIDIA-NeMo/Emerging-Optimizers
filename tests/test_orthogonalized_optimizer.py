@@ -16,12 +16,11 @@ import torch
 import torch.nn as nn
 from absl.testing import absltest, parameterized
 
-from llm_shower.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
-from llm_shower.orthogonalized_optimizers import muon
+from emerging_optimizers.orthogonalized_optimizers import muon
+from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
 
 class OrthogonalizedOptimizerTest(parameterized.TestCase):
-
     @parameterized.parameters(
         {"shape": (5, 7)},
         {"shape": (33, 65)},
