@@ -194,6 +194,9 @@ line-ending = "auto"
 [tool.coverage.run]
 concurrency = ["thread", "multiprocessing"]
 omit = ["/tmp/*"]
+relative_files = true
+source = ["emerging_optimizers"]
+
 
 [tool.coverage.paths]
-source = ["llm_shower/", "/workspace/llm_shower"]
+source = ["emerging_optimizers/", "/workspace/emerging_optimizers"]
