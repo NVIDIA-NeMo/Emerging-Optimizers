@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-name: "Release LLM-Shower"
+name: "Release Emerging-Optimizers"
 
 on:
   workflow_dispatch:
@@ -40,8 +40,8 @@ jobs:
     uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_release_library.yml@v0.57.0
     with:
       release-ref: ${{ inputs.release-ref }}
-      python-package: llm_shower
-      library-name: LLM-Shower
+      python-package: emerging_optimizers
+      library-name: Emerging-Optimizers
       dry-run: ${{ inputs.dry-run }}
       version-bump-branch: ${{ inputs.version-bump-branch }}
       create-gh-release: ${{ inputs.create-gh-release }}

@@ -32,6 +32,12 @@ repos:
       args: ["check", "--select", "I", "--fix"]
     - id: ruff-format
 
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.0
+    hooks:
+      - id: mypy
+        exclude: ^docs|^tests|^benchmarks|^docker
+
   - repo: local
     hooks:
       - id: no-underscore-md

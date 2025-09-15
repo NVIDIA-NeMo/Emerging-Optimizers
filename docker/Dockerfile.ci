@@ -25,8 +25,8 @@ ENV PATH="$UV_PROJECT_ENVIRONMENT/bin:$PATH"
 
 WORKDIR /workspace
 RUN --mount=type=bind,source=pyproject.toml,target=/workspace/pyproject.toml \
-    --mount=type=bind,source=llm_shower/__init__.py,target=/workspace/llm_shower/__init__.py \
-    --mount=type=bind,source=llm_shower/package_info.py,target=/workspace/llm_shower/package_info.py \
+    --mount=type=bind,source=emerging_optimizers/__init__.py,target=/workspace/emerging_optimizers/__init__.py \
+    --mount=type=bind,source=emerging_optimizers/package_info.py,target=/workspace/emerging_optimizers/package_info.py \
     --mount=type=bind,source=uv.lock,target=/workspace/uv.lock bash -exu <<"EOF"
 
     # Use the container's torch installation rather than reinstall it

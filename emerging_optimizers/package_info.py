@@ -24,12 +24,12 @@ VERSION = (MAJOR, MINOR, PATCH, PRE_RELEASE)
 __shortversion__ = ".".join(map(str, VERSION[:3]))
 __version__ = ".".join(map(str, VERSION[:3])) + "".join(VERSION[3:])
 
-__package_name__ = "llm_shower"
+__package_name__ = "emerging_optimizers"
 __contact_names__ = "NVIDIA"
 __contact_emails__ = "nemo-toolkit@nvidia.com"
-__homepage__ = "https://github.com/NVIDIA-NeMo/LLM-Shower"
-__repository_url__ = "https://github.com/NVIDIA-NeMo/LLM-Shower"
-__download_url__ = "https://github.com/NVIDIA-NeMo/LLM-Shower/releases"
-__description__ = "NeMo project description"
+__homepage__ = "https://github.com/NVIDIA-NeMo/Emerging-Optimizers"
+__repository_url__ = "https://github.com/NVIDIA-NeMo/Emerging-Optimizers"
+__download_url__ = "https://github.com/NVIDIA-NeMo/Emerging-Optimizers/releases"
+__description__ = "Emerging Optimizers"
 __license__ = "Apache2"
 __keywords__ = "deep learning, machine learning, gpu, NLP, pytorch, torch"
