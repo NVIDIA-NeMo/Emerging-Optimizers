@@ -30,7 +30,7 @@ jobs:
     if: ${{ vars.BUILD_TEST_PUBLISH_WHEEL == 'true' }}
     with:
       dry-run: true
-      python-package: llm_shower
+      python-package: emerging_optimizers
       python-version: "3.10"
       packaging: uv
     secrets:

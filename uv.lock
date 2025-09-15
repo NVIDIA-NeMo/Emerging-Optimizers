@@ -394,7 +394,7 @@ wheels = [
 ]
 
 [[package]]
-name = "llm-shower"
+name = "emerging-optimizers"
 source = { editable = "." }
 
 [package.dev-dependencies]

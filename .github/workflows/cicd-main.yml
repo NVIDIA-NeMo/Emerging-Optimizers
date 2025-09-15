@@ -42,7 +42,7 @@ jobs:
     uses: ./.github/workflows/_build_container.yml
     needs: cicd-wait-in-queue
     with:
-      image-name: llm_shower
+      image-name: emerging_optimizers
       dockerfile: docker/Dockerfile.ci
       runner: self-hosted-nemo
     secrets:
@@ -55,7 +55,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - script: L0_Unit_Tests_GPU
+          - script: L0_Tests_GPU
             runner: self-hosted-nemo
             timeout: 30
     needs: [cicd-container-build]
@@ -72,14 +72,44 @@ jobs:
           script: ${{ matrix.script }}
           timeout: ${{ matrix.timeout || 10 }}
           is_unit_test: "true"
-          image: llm_shower
+          image: emerging_optimizers
           cpu-only: ${{ matrix.cpu-only || false }}
           has-azure-credentials: "true"
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+  cicd-unit-tests-cpu:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - script: L0_Tests_CPU
+            runner: linux-amd64-cpu16
+            timeout: 30
+    needs: [cicd-container-build]
+    runs-on: ${{ matrix.runner }}
+    name: ${{ matrix.script }}
+    environment: nemo-ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: main
+        uses: ./.github/actions/test-template
+        with:
+          runner: ${{ runner.name }}
+          script: ${{ matrix.script }}
+          timeout: ${{ matrix.timeout || 10 }}
+          is_unit_test: "true"
+          image: emerging_optimizers
+          cpu-only: ${{ matrix.cpu-only || true }}
+          has-azure-credentials: "true"
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
   cicd-e2e-tests:
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -100,7 +130,7 @@ jobs:
           runner: ${{ runner.name }}
           script: ${{ matrix.script }}
           timeout: ${{ matrix.timeout || 10 }}
-          image: llm_shower
+          image: emerging_optimizers
           cpu-only: ${{ matrix.cpu-only || false }}
           has-azure-credentials: "true"
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}

@@ -1,4 +1,4 @@
-# Contributing To LLM-Shower
+# Contributing To Emerging-Optimizers
 
 ## Signing Your Work
 

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 [project]
-name = "llm-shower"
+name = "emerging-optimizers"
 dynamic = [
     "version",
     "readme",
@@ -84,15 +84,15 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["llm_shower"]
+packages = ["emerging_optimizers"]
 
 [tool.setuptools.dynamic]
-version = {attr = "llm_shower.__version__"}
+version = {attr = "emerging_optimizers.__version__"}
 readme = {file = "README.md", content-type = "text/markdown"}
 
 [project.urls]
-Download = "https://github.com/NVIDIA-NeMo/LLM-Shower/releases"
-Homepage = "https://github.com/NVIDIA-NeMo/LLM-Shower"
+Download = "https://github.com/NVIDIA-NeMo/Emerging-Optimizers/releases"
+Homepage = "https://github.com/NVIDIA-NeMo/Emerging-Optimizers"
 
 [tool.pytest.ini_options]
 # durations=0 will display all tests execution time, sorted in ascending order starting from from the slowest one.
@@ -101,7 +101,7 @@ addopts = "--verbose --pyargs --durations=0 --strict-markers"  # always add thes
 testpaths = ["tests"]
 # directories to ignore when discovering tests
 norecursedirs = [
-    "llm_shower",
+    "emerging_optimizers",
     "external",
     "examples",
     "docs",
@@ -172,7 +172,7 @@ ignore = [
     "E501",  # Line too long - handled by formatter
 ]
 [tool.ruff.lint.isort]
-known-first-party = ["llm_shower"]
+known-first-party = ["emerging_optimizers"]
 known-third-party = ["examples", "scripts"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 lines-after-imports = 2
@@ -194,6 +194,9 @@ line-ending = "auto"
 [tool.coverage.run]
 concurrency = ["thread", "multiprocessing"]
 omit = ["/tmp/*"]
+relative_files = true
+source = ["emerging_optimizers"]
+
 
 [tool.coverage.paths]
-source = ["llm_shower/", "/workspace/llm_shower"]
+source = ["emerging_optimizers/", "/workspace/emerging_optimizers"]
