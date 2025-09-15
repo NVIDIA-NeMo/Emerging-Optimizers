@@ -51,7 +51,7 @@ jobs:
         run: |
           LAST_PRS=$(gh api graphql -f query='
             query {
-              repository(owner: "NVIDIA-NeMo", name: "LLM-Shower") {
+              repository(owner: "NVIDIA-NeMo", name: "Emerging-Optimizers") {
                 pullRequests(states: MERGED, first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
                   nodes {
                     number
