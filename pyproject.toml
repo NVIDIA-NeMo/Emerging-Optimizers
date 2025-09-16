@@ -54,7 +54,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
     "Topic :: Utilities",
 ]
-dependencies = []
+dependencies = [
+    "torch>=2.8.0",
+]
 
 [build-system]
 requires = ["setuptools>=61"]
