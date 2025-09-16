@@ -54,7 +54,11 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
     "Topic :: Utilities",
 ]
-dependencies = []
+dependencies = [
+    "torch",
+    "absl-py",
+    "megatron-core>=0.14.0a0,<0.16.0",
+]
 
 [build-system]
 requires = ["setuptools>=61"]
@@ -81,6 +85,26 @@ dev = [
     "pre-commit>=3.6.0",
     "ruff>=0.9.9",
     "mypy>=1.8.0",
+]
+
+[tool.uv]
+override-dependencies = [
+    "absl-py ; sys_platform == 'never'",
+    "torch ; sys_platform == 'never'",
+    "torchvision ; sys_platform == 'never'",
+    "triton ; sys_platform == 'never'",
+    "nvidia-cublas-cu12 ; sys_platform == 'never'",
+    "nvidia-cuda-cupti-cu12 ; sys_platform == 'never'",
+    "nvidia-cuda-nvrtc-cu12 ; sys_platform == 'never'",
+    "nvidia-cuda-runtime-cu12 ; sys_platform == 'never'",
+    "nvidia-cudnn-cu12 ; sys_platform == 'never'",
+    "nvidia-cufft-cu12 ; sys_platform == 'never'",
+    "nvidia-cufile-cu12 ; sys_platform == 'never'",
+    "nvidia-curand-cu12 ; sys_platform == 'never'",
+    "nvidia-cusolver-cu12 ; sys_platform == 'never'",
+    "nvidia-cusparse-cu12 ; sys_platform == 'never'",
+    "nvidia-cusparselt-cu12 ; sys_platform == 'never'",
+    "nvidia-nccl-cu12 ; sys_platform == 'never'"
 ]
 
 [tool.setuptools]

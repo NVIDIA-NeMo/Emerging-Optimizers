@@ -31,5 +31,5 @@ RUN --mount=type=bind,source=pyproject.toml,target=/workspace/pyproject.toml \
 
     # Use the container's torch installation rather than reinstall it
     uv venv --system-site-packages ${UV_PROJECT_ENVIRONMENT}
-    uv sync --link-mode symlink --locked --only-group test --only-group dev
+    uv sync --link-mode symlink --locked --all-groups
 EOF
