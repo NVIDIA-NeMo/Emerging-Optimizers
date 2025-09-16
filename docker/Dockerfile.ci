@@ -34,7 +34,6 @@ RUN --mount=type=bind,source=pyproject.toml,target=/workspace/pyproject.toml \
     uv sync --link-mode symlink --locked --all-groups \
         --no-install-package absl-py \
         --no-install-package torch \
-        --no-install-package torchvision \
         --no-install-package triton \
         --no-install-package nvidia-cublas-cu12 \
         --no-install-package nvidia-cuda-cupti-cu12 \
