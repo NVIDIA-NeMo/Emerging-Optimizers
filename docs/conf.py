@@ -39,10 +39,35 @@ extensions = [
     "sphinx.ext.doctest",  # Allows testing in docstrings
     "sphinx.ext.napoleon",  # For google style docstrings
     "sphinx_copybutton",  # For copy button in code blocks
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.todo",
+    "sphinx.ext.coverage",
+    "sphinxcontrib.katex",
+    "sphinx.ext.autosectionlabel",
+    "sphinx_panels",
+    "sphinx.ext.linkcode",
 ]
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+
+autosummary_generate = True
+numpydoc_show_class_members = False
+panels_add_bootstrap_css = False
+autosectionlabel_prefix_document = True
+katex_prerender = True
+napoleon_use_ivar = True
+html_domain_indices = False
+source_suffix = ".rst"
+master_doc = "index"
+autodoc_docstring_signature = True
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+    "numpy": ("https://numpy.org/doc/stable", None),
+    "torch": ("https://pytorch.org/docs/2.5", None),
+}
 
 # -- Options for MyST Parser (Markdown) --------------------------------------
 # MyST Parser settings
