@@ -72,6 +72,7 @@ docs = [
     "sphinx-autobuild>=2024.10.3",
     "sphinx-autodoc2>=0.5.0",
     "sphinx-copybutton>=0.5.2",
+    "sphinxcontrib-katex>=0.9.11",
 ]
 test = [
     "coverage>=7.8.1",
