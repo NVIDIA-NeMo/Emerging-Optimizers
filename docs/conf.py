@@ -69,6 +69,12 @@ intersphinx_mapping = {
     "torch": ("https://pytorch.org/docs/2.5", None),
 }
 
+
+def linkcode_resolve(domain, info):
+    """Resolve the linkcode for the given domain and info."""
+    return None
+
+
 # -- Options for MyST Parser (Markdown) --------------------------------------
 # MyST Parser settings
 myst_enable_extensions = [
