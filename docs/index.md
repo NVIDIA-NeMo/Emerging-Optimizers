@@ -6,5 +6,6 @@
 :caption: Development
 :hidden:
 
+documentation.md
 apidocs/index.rst
 ```
