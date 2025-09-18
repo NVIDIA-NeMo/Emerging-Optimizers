@@ -1,5 +1,29 @@
 # Contributing To Emerging-Optimizers
 
+## Dependency
+
+Use [abseil-py](https://github.com/abseil/abseil-py/tree/main)'s **logging**, **testing** and **flags** instead of Python's own **logging**, **unittest** and **argparse**.
+
+## Coding Style
+
+We generally follow [Google's style guides](https://google.github.io/styleguide/) , with some exceptions:
+
+* Line length extended to 120 for Python and 100 for C++ code.
+* Common use in PyTorch, which are prohibited by Google style, are allowed, including but not limited to:
+  * Import function, class, not just module
+  * Some special variable name, `x`, `dX`, etc.
+* Allow common capitalized naming in Triton code.
+
+Although common, **mixed case is not allowed** in any code.
+
+Run pre-commit at local before submitting merge request. You can also read [.pre-commit-config.yaml]( .pre-commit-config.yaml) to understand what are being forced. The **flake8** and **mypy** settings are inherited from PyTorch. 
+
+## Test
+
+All tests should be placed under [tests](tests). We aim for 100% test coverage for this tiny project.
+
+We use [abseil-py](https://github.com/abseil/abseil-py/tree/main) **testing** because it is easier to launch multi process than alternatives.
+
 ## Signing Your Work
 
 * We require that all contributors "sign-off" on their commits. This certifies that the contribution is your original work, or you have rights to submit it under the same license, or a compatible license.
@@ -20,9 +44,9 @@
   ```
   Developer Certificate of Origin
   Version 1.1
-
+  
   Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
-
+  
   Everyone is permitted to copy and distribute verbatim copies of this
   license document, but changing it is not allowed.
 
