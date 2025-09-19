@@ -4,6 +4,37 @@
 
 Use [abseil-py](https://github.com/abseil/abseil-py/tree/main)'s **logging**, **testing** and **flags** instead of Python's own **logging**, **unittest** and **argparse**.
 
+We use [uv](https://docs.astral.sh/uv/) for managing dependencies. For reproducible builds, our project tracks the generated `uv.lock` file in the repository.
+On a weekly basis, the CI attemps an update of the lock file to test against upstream dependencies.
+
+New required dependencies can be added by `uv add $DEPENDENCY`.
+
+New optional dependencies can be added by `uv add --optional --extra $EXTRA $DEPENDENCY`.
+
+`EXTRA` refers to the subgroup of extra-dependencies to which you're adding the new dependency.
+Example: For adding a TRT-LLM specific dependency, run `uv add --optional --extra trtllm $DEPENDENCY`.
+
+New dependencies to a dependency group can be added with `uv add --group $GROUP $DEPENDENCY`. Dependency groups are specific to uv and are also optional dependencies but not intended to be used with the package such as docs dependencies.
+
+Alternatively, the `pyproject.toml` file can also be modified directly.
+
+Adding a new dependency will update UV's lock-file. Please check this into your branch:
+
+```bash
+git add uv.lock pyproject.toml
+git commit -m "build: Adding dependencies"
+git push
+```
+
+### 🧹 Linting and Formatting
+
+We use [ruff](https://docs.astral.sh/ruff/) for linting and formatting. CI does not auto-fix linting and formatting issues, but most issues can be fixed by running the following command:
+
+```bash
+uv run ruff check --fix .
+uv run ruff format .
+```
+
 ## Coding Style
 
 We generally follow [Google's style guides](https://google.github.io/styleguide/) , with some exceptions:
@@ -16,7 +47,7 @@ We generally follow [Google's style guides](https://google.github.io/styleguide/
 
 Although common, **mixed case is not allowed** in any code.
 
-Run pre-commit at local before submitting merge request. You can also read [.pre-commit-config.yaml]( .pre-commit-config.yaml) to understand what are being forced. The **flake8** and **mypy** settings are inherited from PyTorch. 
+Run pre-commit at local before submitting merge request. You can also read [.pre-commit-config.yaml]( .pre-commit-config.yaml) to understand what are being forced. The **flake8** and **mypy** settings are inherited from PyTorch.
 
 ## Test
 
@@ -44,9 +75,9 @@ We use [abseil-py](https://github.com/abseil/abseil-py/tree/main) **testing** be
   ```
   Developer Certificate of Origin
   Version 1.1
-  
+
   Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
-  
+
   Everyone is permitted to copy and distribute verbatim copies of this
   license document, but changing it is not allowed.
 
