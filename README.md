@@ -8,7 +8,7 @@ Emerging Optimizers is a research project focused on understanding and optimizin
 
 ### Prerequisites
 
-- Python 3.10 or higher
+- Python 3.12 or higher
 - PyTorch 2.0 or higher
 
 ### Install from Source
