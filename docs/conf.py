@@ -21,6 +21,9 @@ import os
 import sys
 
 
+# Add the project root directory to the Python path
+sys.path.insert(0, os.path.abspath(".."))
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
@@ -33,17 +36,45 @@ release = "0.1.0"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    "myst_parser",  # For our markdown docs
-    "autodoc2",  # Generates API docs
     "sphinx.ext.viewcode",  # For adding a link to view source code in docs
     "sphinx.ext.doctest",  # Allows testing in docstrings
     "sphinx.ext.napoleon",  # For google style docstrings
     "sphinx_copybutton",  # For copy button in code blocks
     "sphinxcontrib.katex",  # For KaTeX math rendering
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.todo",
+    "sphinx.ext.coverage",
+    "sphinx.ext.autosectionlabel",
+    "sphinx_panels",
+    "sphinx.ext.linkcode",
 ]
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+
+autosummary_generate = True
+numpydoc_show_class_members = False
+panels_add_bootstrap_css = False
+autosectionlabel_prefix_document = True
+katex_prerender = False
+napoleon_use_ivar = True
+html_domain_indices = False
+source_suffix = ".rst"
+master_doc = "index"
+autodoc_docstring_signature = True
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+    "numpy": ("https://numpy.org/doc/stable", None),
+    "torch": ("https://pytorch.org/docs/2.5", None),
+}
+
+
+def linkcode_resolve(domain, info):
+    """Resolve the linkcode for the given domain and info."""
+    return None
+
 
 # -- Options for MyST Parser (Markdown) --------------------------------------
 # MyST Parser settings
@@ -56,21 +87,6 @@ myst_enable_extensions = [
     "tasklist",  # Adds support for GitHub-style task lists with [ ] and [x]
 ]
 myst_heading_anchors = 5  # Generates anchor links for headings up to level 5
-
-# -- Options for Autodoc2 ---------------------------------------------------
-sys.path.insert(0, os.path.abspath(".."))
-
-autodoc2_packages = [
-    "../emerging_optimizers",  # Path to your package relative to conf.py
-]
-autodoc2_render_plugin = "myst"  # Use MyST for rendering docstrings
-autodoc2_output_dir = "apidocs"  # Output directory for autodoc2 (relative to docs/)
-# This is a workaround that uses the parser located in autodoc2_docstrings_parser.py to allow autodoc2 to
-# render google style docstrings.
-# Related Issue: https://github.com/sphinx-extensions2/sphinx-autodoc2/issues/33
-autodoc2_docstring_parser_regexes = [
-    (r".*", "docs.autodoc2_docstrings_parser"),
-]
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
