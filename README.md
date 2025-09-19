@@ -16,7 +16,7 @@ Emerging Optimizers is a research project focused on understanding and optimizin
 ```bash
 git clone https://github.com/NVIDIA-NeMo/Emerging-Optimizers.git
 cd Emerging-Optimizers
-pip install -e .
+pip install .
 ```
 
 ## User guide
