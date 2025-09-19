@@ -4,7 +4,7 @@
 
 Emerging Optimizers is a research project focused on understanding and optimizing the algorithmic behavior of Shampoo class optimizers (Shampoo, SOAP, Muon, etc.) and their implications to performance of GPU systems in LLM training.
 
-> ⚠️ Note: Emerging-Optimizers is under active development. All APIs are experimental and subjected to change. New features, improvements, and documentation updates are released regularly. Your feedback and contributions are welcome, and we encourage you to follow along as new updates roll out.
+> ⚠️ Note: Emerging-Optimizers is under active development. All APIs are experimental and subject to change. New features, improvements, and documentation updates are released regularly. Your feedback and contributions are welcome, and we encourage you to follow along as new updates roll out.
 
 
 ## Installation
