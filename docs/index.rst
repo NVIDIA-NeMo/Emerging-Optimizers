@@ -1,16 +1,9 @@
-Welcome to Emerging Optimizers's documentation!
+NeMo Emerging Optimizers Documentation
 ===============================================
 
 .. toctree::
    :maxdepth: 1
-   :caption: API documentation
+   :caption: API Documentation
 
    utils
-   orthogonalized_optimizers
-
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`search`
+   orthogonalized-optimizers

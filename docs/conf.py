@@ -93,6 +93,13 @@ myst_heading_anchors = 5  # Generates anchor links for headings up to level 5
 
 html_theme = "nvidia_sphinx_theme"
 html_theme_options = {
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/NVIDIA-NeMo/Emerging-Optimizers/",
+            "icon": "fa-brands fa-github",
+        }
+    ],
     "switcher": {
         "json_url": "../versions1.json",
         "version_match": release,
@@ -109,7 +116,6 @@ html_theme_options = {
     },
 }
 html_extra_path = ["project.json", "versions1.json"]
-
 # Github links are now getting rate limited from the Github Actions
 linkcheck_ignore = [
     ".*github\\.com.*",
