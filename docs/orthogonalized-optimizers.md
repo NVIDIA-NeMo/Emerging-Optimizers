@@ -1,3 +1,4 @@
+```{eval-rst}  
 .. role:: hidden
     :class: hidden-section
 
@@ -28,3 +29,4 @@ emerging_optimizers.orthogonalized_optimizers
 .. autofunction:: newton_schulz
 .. autofunction:: newton_schulz_step
 .. autofunction:: newton_schulz_tp
+```

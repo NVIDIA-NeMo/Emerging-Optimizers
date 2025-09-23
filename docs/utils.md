@@ -1,3 +1,5 @@
+
+```{eval-rst}  
 .. role:: hidden
     :class: hidden-section
 
@@ -21,3 +23,4 @@ emerging_optimizers.utils
 ~~~~~~~~~~~~~~~~~~~~~
 
 .. autofunction:: get_pg_rank
+```

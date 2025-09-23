@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.abspath(".."))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "Emerging Optimizers"
+project = "NeMo-Emerging-Optimizers"
 copyright = "2025, NVIDIA Corporation"
 author = "NVIDIA Corporation"
 release = "0.1.0"
@@ -36,6 +36,7 @@ release = "0.1.0"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    "myst_parser",  # For our markdown docs
     "sphinx.ext.viewcode",  # For adding a link to view source code in docs
     "sphinx.ext.doctest",  # Allows testing in docstrings
     "sphinx.ext.napoleon",  # For google style docstrings
@@ -61,7 +62,10 @@ autosectionlabel_prefix_document = True
 katex_prerender = False
 napoleon_use_ivar = True
 html_domain_indices = False
-source_suffix = ".rst"
+source_suffix = {
+    '.md': 'markdown',
+    '.rst': 'restructuredtext',
+}
 master_doc = "index"
 autodoc_docstring_signature = True
 intersphinx_mapping = {
