@@ -48,7 +48,6 @@ extensions = [
     "sphinx.ext.todo",
     "sphinx.ext.coverage",
     "sphinx.ext.autosectionlabel",
-    "sphinx_panels",
     "sphinx.ext.linkcode",
 ]
 
