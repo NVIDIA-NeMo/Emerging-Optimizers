@@ -14,6 +14,7 @@
 # limitations under the License.
 import torch
 
+
 __all__ = [
     "calculate_signum_update",
 ]
@@ -34,7 +35,7 @@ def calculate_signum_update(
 
     This function performs the computation of 1 step of sign-SGD or Signum.
     Based on https://arxiv.org/abs/1802.04434.
-    When using signSGD with shape scaling, general recommendation is to 
+    When using signSGD with shape scaling, general recommendation is to
     scale :math:`lr = \\text{adam lr} \\cdot \\text{network width} \\cdot \\frac{2}{\\text{rows} + \\text{cols}}`.
     This is for learning rate transfer with width scaling (https://arxiv.org/abs/2506.07254v1).
 

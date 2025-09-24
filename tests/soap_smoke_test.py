@@ -12,10 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import torch
-from emerging_optimizers.soap.soap import SOAP
-import numpy as np
 import random
+
+import numpy as np
+import torch
+
+from emerging_optimizers.soap.soap import SOAP
+
 
 config = {
     "lr": 0.001,

@@ -12,17 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from absl.testing import absltest, parameterized
 import torch
-
-from emerging_optimizers.soap.soap_utils import (
-    get_eigenbasis_qr,
-    get_eigenbasis_eigh,
-    _adaptive_criteria_met,
-    _orthogonal_iteration,
-)
+from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
+from emerging_optimizers.soap.soap_utils import (
+    _adaptive_criteria_met,
+    _orthogonal_iteration,
+    get_eigenbasis_eigh,
+    get_eigenbasis_qr,
+)
 
 
 # Base class for tests requiring seeding for determinism
@@ -37,7 +36,6 @@ class BaseTestCase(parameterized.TestCase):
 
 
 class SoapUtilsTest(BaseTestCase):
-
     def test_adaptive_criteria_met(self) -> None:
         """Tests the adaptive_criteria_met function for determining when to update eigenbasis."""
         # Create a diagonal matrix (should not trigger update with small tolerance)

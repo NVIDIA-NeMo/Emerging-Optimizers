@@ -12,13 +12,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from absl import logging
 from typing import Optional
 
 import torch
+from absl import logging
 from torch import Tensor
 
 from emerging_optimizers import utils
+
 
 __all__ = ["eigh_with_fallback", "eig_orthogonal_iteration", "adaptive_early_exit_criteria"]
 

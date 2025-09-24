@@ -12,26 +12,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any
 import math
-from absl.testing import absltest, parameterized
+from typing import Any
+
 import torch
+from absl.testing import absltest, parameterized
 
 from emerging_optimizers.soap.soap import (
+    SOAP,
+    _clip_update_rms_in_place,
+    _get_precondition_frequency,
+    _is_eigenbasis_update_step,
     init_kronecker_factors,
     precondition,
     update_kronecker_factors,
-    SOAP,
-    _get_precondition_frequency,
-    _is_eigenbasis_update_step,
-    _clip_update_rms_in_place,
 )
-
 from emerging_optimizers.utils.precondition_schedules import LinearSchedule
 
 
 class SoapFunctionsTest(parameterized.TestCase):
-
     def test_init_preconditioner_multidim_tensor_shapes(self) -> None:
         """Tests init_preconditioner with a multi-dimensional tensor."""
         grad = torch.randn(3, 4, 5)
@@ -146,10 +145,10 @@ class SoapFunctionsTest(parameterized.TestCase):
     def test_tensordot_vs_matmul(self, m, n):
         # Create tensors with random eigenvectors for rotation matrices QL and QR
         grad = torch.randn(m, n)
-        l = torch.randn(m, m)
-        Q_L = torch.linalg.qr(l + l.T).Q
-        r = torch.randn(n, n)
-        Q_R = torch.linalg.qr(r + r.T).Q
+        left_matrix = torch.randn(m, m)
+        Q_L = torch.linalg.qr(left_matrix + left_matrix.T).Q
+        right_matrix = torch.randn(n, n)
+        Q_R = torch.linalg.qr(right_matrix + right_matrix.T).Q
 
         # Test that project operation to eigenbasis is correct
         # Calculate using sequential tensordot as used by the code

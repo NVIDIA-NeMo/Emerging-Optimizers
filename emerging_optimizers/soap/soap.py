@@ -13,20 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from itertools import chain
-from typing import Iterable, Callable, Tuple, List, Optional, Union, override
+from typing import Callable, Iterable, List, Optional, Tuple, Union, override
 
 import torch
 import torch.optim as optim
-
 from absl import logging
 
+from emerging_optimizers import utils
+from emerging_optimizers.scalar_optimizers import calculate_adam_update
 from emerging_optimizers.soap.soap_utils import (
     get_eigenbasis_eigh,
     get_eigenbasis_qr,
 )
 
-from emerging_optimizers import utils
-from emerging_optimizers.scalar_optimizers import calculate_adam_update
 
 __all__ = [
     "SOAP",
@@ -104,11 +103,10 @@ class SOAP(optim.Optimizer):
         power_iter_steps: int = 1,
         max_update_rms: float = 0.0,
     ) -> None:
-
         # Check for betas.
         if betas is None:
             betas = (0.95, 0.95)
-            logging.debug("betas not provided. Setting betas equal to " f"betas = {betas} by default.")
+            logging.debug(f"betas not provided. Setting betas equal to betas = {betas} by default.")
 
         # Check for update criteria
         if use_adaptive_criteria:

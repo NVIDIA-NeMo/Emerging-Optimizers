@@ -12,15 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import random
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import datasets, transforms
-from emerging_optimizers.soap.soap import SOAP
-import random
-import numpy as np
-
 from absl import logging
+from torchvision import datasets, transforms
+
+from emerging_optimizers.soap.soap import SOAP
 
 
 class SimpleNN(nn.Module):
@@ -160,9 +161,9 @@ def main() -> None:
         logging.info(f"{i + 1}\t{soap_loss:.4f}\t{adamw_loss:.4f}")
 
     # Assert that SOAP's final loss is lower than AdamW's
-    assert (
-        soap_losses[-1] < adamw_losses[-1]
-    ), f"SOAP's final loss ({soap_losses[-1]:.4f}) should be lower than AdamW's loss ({adamw_losses[-1]:.4f})"
+    assert soap_losses[-1] < adamw_losses[-1], (
+        f"SOAP's final loss ({soap_losses[-1]:.4f}) should be lower than AdamW's loss ({adamw_losses[-1]:.4f})"
+    )
 
     print("SOAP's final loss:", soap_losses[-1])
     print("AdamW's final loss:", adamw_losses[-1])

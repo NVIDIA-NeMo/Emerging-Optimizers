@@ -17,8 +17,8 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers.scalar_optimizers import (
     calculate_adam_update,
-    calculate_laprop_update,
     calculate_ademamix_update,
+    calculate_laprop_update,
     calculate_sim_ademamix_update,
 )
 

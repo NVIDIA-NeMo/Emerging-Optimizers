@@ -12,8 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import torch
 from typing import Optional
+
+import torch
+
 
 __all__ = [
     "calculate_lion_update",

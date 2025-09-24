@@ -16,6 +16,7 @@ import math
 from abc import ABC, abstractmethod
 from typing import Dict
 
+
 __all__ = [
     "LinearSchedule",
     "CosineSchedule",
