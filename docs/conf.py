@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.abspath(".."))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "Emerging Optimizers"
+project = "Emerging-Optimizers"
 copyright = "2025, NVIDIA Corporation"
 author = "NVIDIA Corporation"
 release = "0.1.0"
@@ -36,6 +36,7 @@ release = "0.1.0"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    "myst_parser",  # For our markdown docs
     "sphinx.ext.viewcode",  # For adding a link to view source code in docs
     "sphinx.ext.doctest",  # Allows testing in docstrings
     "sphinx.ext.napoleon",  # For google style docstrings
@@ -47,7 +48,6 @@ extensions = [
     "sphinx.ext.todo",
     "sphinx.ext.coverage",
     "sphinx.ext.autosectionlabel",
-    "sphinx_panels",
     "sphinx.ext.linkcode",
 ]
 
@@ -61,7 +61,10 @@ autosectionlabel_prefix_document = True
 katex_prerender = False
 napoleon_use_ivar = True
 html_domain_indices = False
-source_suffix = ".rst"
+source_suffix = {
+    ".md": "markdown",
+    ".rst": "restructuredtext",
+}
 master_doc = "index"
 autodoc_docstring_signature = True
 intersphinx_mapping = {
@@ -93,6 +96,13 @@ myst_heading_anchors = 5  # Generates anchor links for headings up to level 5
 
 html_theme = "nvidia_sphinx_theme"
 html_theme_options = {
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/NVIDIA-NeMo/Emerging-Optimizers/",
+            "icon": "fa-brands fa-github",
+        }
+    ],
     "switcher": {
         "json_url": "../versions1.json",
         "version_match": release,
@@ -109,7 +119,6 @@ html_theme_options = {
     },
 }
 html_extra_path = ["project.json", "versions1.json"]
-
 # Github links are now getting rate limited from the Github Actions
 linkcheck_ignore = [
     ".*github\\.com.*",
