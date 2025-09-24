@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.abspath(".."))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "NeMo-Emerging-Optimizers"
+project = "Emerging-Optimizers"
 copyright = "2025, NVIDIA Corporation"
 author = "NVIDIA Corporation"
 release = "0.1.0"

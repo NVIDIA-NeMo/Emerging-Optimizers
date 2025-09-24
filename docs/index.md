@@ -1,4 +1,4 @@
-# NeMo Emerging Optimizers Documentation
+# Emerging Optimizers Documentation
 
 ## Overview
 
