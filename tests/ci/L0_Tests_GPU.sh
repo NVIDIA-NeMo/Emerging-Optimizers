@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+set -e
+set -o pipefail
 CUDA_VISIBLE_DEVICES="0" coverage run -p --source=emerging_optimizers tests/test_muon_utils.py
 CUDA_VISIBLE_DEVICES="0" coverage run -p --source=emerging_optimizers tests/test_orthogonalized_optimizer.py
 CUDA_VISIBLE_DEVICES="0" coverage run -p --source=emerging_optimizers tests/test_soap_functions.py
