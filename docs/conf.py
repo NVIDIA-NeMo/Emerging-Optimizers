@@ -62,8 +62,8 @@ katex_prerender = False
 napoleon_use_ivar = True
 html_domain_indices = False
 source_suffix = {
-    '.md': 'markdown',
-    '.rst': 'restructuredtext',
+    ".md": "markdown",
+    ".rst": "restructuredtext",
 }
 master_doc = "index"
 autodoc_docstring_signature = True
