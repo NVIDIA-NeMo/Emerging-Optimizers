@@ -45,6 +45,8 @@ class OrthogonalizedOptimizer(optim.Optimizer):
 
     - Carlson, D., Cevher, V., and Carin, L. *Stochastic spectral descent for Restricted Boltzmann Machines.*
       In International Conference on Artificial Intelligence and Statistics (2015a).
+    - Carlson, D., Hsieh, Y.-P., Collins, E., Carin, L., and Cevher, V. *Stochastic Spectral Descent for Discrete Graphical Models.*
+      In IEEE Journal of Selected Topics in Signal Processing, vol. 10, no. 2, pp. 296-311 (2016).
     - Carlson, D., Collins, E., Hsieh, Y.-P., Carin, L., and Cevher, V. *Preconditioned spectral descent for deep learning.*
       In Neural Information Processing Systems (2015b).
     - Flynn, T. *The duality structure gradient descent algorithm: analysis and applications to neural networks.*
