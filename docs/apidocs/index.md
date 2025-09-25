@@ -8,4 +8,6 @@ NeMo Emerging Optimizers API reference provides comprehensive technical document
 
 utils.md
 orthogonalized-optimizers.md
+soap.md
+scalar_optimizers.md
 ```

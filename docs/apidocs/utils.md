@@ -7,20 +7,11 @@ emerging_optimizers.utils
 ==========================
 
 .. automodule:: emerging_optimizers.utils
-.. currentmodule:: emerging_optimizers.utils
+    :members:
 
-:hidden:`fp32_matmul_precision`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: fp32_matmul_precision
-
-:hidden:`get_pg_size`
-~~~~~~~~~~~~~~~~~~~~~
-
-.. autofunction:: get_pg_size
-
-:hidden:`get_pg_rank`
-~~~~~~~~~~~~~~~~~~~~~
-
-.. autofunction:: get_pg_rank
+emerging_optimizers.utils.eig
+=============================
+.. automodule:: emerging_optimizers.utils.eig
+    :members:
 ```
