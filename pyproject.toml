@@ -18,9 +18,9 @@ dynamic = [
     "version",
     "readme",
 ]
-description = "NeMo project description"
+description = "A research project for emerging optimizers other than AdamW"
 license = {file = "LICENSE"}
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 authors = [{ name = "NVIDIA", email = "nemo-toolkit@nvidia.com" }]
 maintainers = [{ name = "NVIDIA", email = "nemo-toolkit@nvidia.com" }]
 keywords = [
@@ -36,7 +36,7 @@ keywords = [
     "torch",
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
@@ -45,7 +45,7 @@ classifiers = [
     "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Image Recognition",
     "Topic :: Scientific/Engineering :: Mathematics",
@@ -79,9 +79,6 @@ test = [
     "coverage>=7.8.1",
     "flake8>=7.2.0",
     "pylint>=3.3.7",
-    "pytest>=8.3.5",
-    "pytest-mock>=3.14.0",
-    "pytest-runner>=6.0.1",
 ]
 dev = [
     "pre-commit>=3.6.0",
@@ -92,8 +89,8 @@ dev = [
 [tool.uv]
 managed = true
 
-[tool.setuptools]
-packages = ["emerging_optimizers"]
+[tool.setuptools.packages.find]
+include = ["emerging_optimizers", "emerging_optimizers.*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "emerging_optimizers.__version__"}
@@ -103,42 +100,8 @@ readme = {file = "README.md", content-type = "text/markdown"}
 Download = "https://github.com/NVIDIA-NeMo/Emerging-Optimizers/releases"
 Homepage = "https://github.com/NVIDIA-NeMo/Emerging-Optimizers"
 
-[tool.pytest.ini_options]
-# durations=0 will display all tests execution time, sorted in ascending order starting from from the slowest one.
-# -vv will also display tests with durration = 0.00s
-addopts = "--verbose --pyargs --durations=0 --strict-markers"  # always add these arguments to pytest
-testpaths = ["tests"]
-# directories to ignore when discovering tests
-norecursedirs = [
-    "emerging_optimizers",
-    "external",
-    "examples",
-    "docs",
-    "scripts",
-    "tools",
-    "tutorials",
-    "*.egg",
-    ".*",
-    "_darcs",
-    "build",
-    "CVS",
-    "dist",
-    "venv",
-    "{arch}"
-]
-# markers to select tests, use `pytest --markers` to see all available markers, `pytest -m "<marker>"` to select tests
-markers = [
-    "unit: marks unit test, i.e. testing a single, well isolated functionality (deselect with '-m \"not unit\"')",
-    "integration: marks test checking the elements when integrated into subsystems (deselect with '-m \"not integration\"')",
-    "system: marks test working at the highest integration level (deselect with '-m \"not system\"')",
-    "acceptance: marks test checking whether the developed product/model passes the user defined acceptance criteria (deselect with '-m \"not acceptance\"')",
-    "docs: mark tests related to documentation (deselect with '-m \"not docs\"')",
-    "skipduringci: marks tests that are skipped ci as they are addressed by Jenkins jobs but should be run to test user setups",
-    "pleasefixme: marks tests that are broken and need fixing",
-]
 
 [tool.ruff]
-
 # Match black's line length
 line-length = 119
 target-version = "py310"
