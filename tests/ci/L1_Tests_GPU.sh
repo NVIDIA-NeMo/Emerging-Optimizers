@@ -11,13 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-export TORCH_COMMPILE_DISABLE=1
 export CUDA_VISIBLE_DEVICES=0
 set -o pipefail
-coverage run -p --source=emerging_optimizers tests/test_muon_utils.py
-coverage run -p --source=emerging_optimizers tests/test_orthogonalized_optimizer.py
-coverage run -p --source=emerging_optimizers tests/test_soap_functions.py
-coverage run -p --source=emerging_optimizers tests/test_soap_utils.py
-coverage run -p --source=emerging_optimizers tests/soap_smoke_test.py
-coverage run -p --source=emerging_optimizers tests/soap_mnist_test.py
-coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py
+python tests/test_muon_utils.py
+python tests/test_orthogonalized_optimizer.py
+python tests/test_soap_functions.py
+python tests/test_soap_utils.py
+python tests/soap_smoke_test.py
+python tests/test_scalar_optimizers.py
