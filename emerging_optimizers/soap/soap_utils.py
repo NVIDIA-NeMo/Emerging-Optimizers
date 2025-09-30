@@ -85,13 +85,9 @@ def get_eigenbasis_eigh(
                 # We use an empty tensor so that the `precondition` function will skip this factor.
                 updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
                 continue
-            # Construct approximated eigenvalues using QL^T@L@QL or QR^T@R@QR.
-            # The approximated eigenvalues should be close to diagonal if the eigenbasis is close to the true eigenbasis of the kronecker factor
-            # (i.e. the approximated eigenvectors diagonalize the kronecker factor)
-            approx_eigenvalue_matrix = eigenbasis.T @ kronecker_factor @ eigenbasis
             # Update eigenbasis when necessary. Update is skipped only when adaptive update criteria is met.
             if _adaptive_criteria_met(
-                approx_eigenvalue_matrix=approx_eigenvalue_matrix,
+                approx_eigenvalue_matrix=kronecker_factor,
                 tolerance=adaptive_update_tolerance,
             ):
                 _, Q = utils.eig.eigh_with_fallback(
@@ -206,21 +202,21 @@ def get_eigenbasis_qr(
         if kronecker_factor.numel() == 0:
             updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
             continue
-        # construct approximated eigenvalues using QL^T@L@QL or QR^T@R@QR, which should be close to diagonal
-        # if the eigenbasis is close to the true eigenbasis of the kronecker factor (i.e. diagonalizes it)
-        approx_eigenvalue_matrix = eigenbasis.T @ kronecker_factor @ eigenbasis
 
         # Update eigenbasis when necessary. Update is skipped only when use_adaptive_criteria is True
         # but criteria is not met.
         if_update = True
         if use_adaptive_criteria and not _adaptive_criteria_met(
-            approx_eigenvalue_matrix=approx_eigenvalue_matrix,
+            approx_eigenvalue_matrix=kronecker_factor,
             tolerance=adaptive_update_tolerance,
         ):
             if_update = False
         if if_update:
+            # construct approximated eigenvalues using QL^T@L@QL or QR^T@R@QR, which should be close to diagonal
+            # if the eigenbasis is close to the true eigenbasis of the kronecker factor (i.e. diagonalizes it)
+            approx_eigvals = _conjugate(kronecker_factor, eigenbasis, diag=True)
             Q, exp_avg_sq = _orthogonal_iteration(
-                approx_eigenvalue_matrix=approx_eigenvalue_matrix,
+                approx_eigvals=approx_eigvals,
                 kronecker_factor=kronecker_factor,
                 eigenbasis=eigenbasis,
                 ind=ind,
@@ -237,7 +233,7 @@ def get_eigenbasis_qr(
 
 
 def _orthogonal_iteration(
-    approx_eigenvalue_matrix: torch.Tensor,
+    approx_eigvals: torch.Tensor,
     kronecker_factor: torch.Tensor,
     eigenbasis: torch.Tensor,
     ind: int,
@@ -267,8 +263,6 @@ def _orthogonal_iteration(
             - Q: The updated eigenbasis
             - exp_avg_sq: The updated (sorted) inner Adam second moment
     """
-    # extract approximated eigenvalues from the diagonal of the projection of kronecker factor onto eigenbases
-    approx_eigvals = torch.diag(approx_eigenvalue_matrix)
     # Sort the approximated eigenvalues according to their magnitudes
     sort_idx = torch.argsort(approx_eigvals, descending=True)
     # re-order the inner adam second moment
@@ -316,3 +310,28 @@ def _adaptive_criteria_met(
 
     # check if normalized diagonal component is not smaller than tolerance
     return not utils.eig.adaptive_early_exit_criteria(approx_eigenvalue_matrix, tolerance)
+
+
+def _conjugate(a: torch.Tensor, p: torch.Tensor, diag: bool = False) -> torch.Tensor:
+    """Calculate similarity transformation
+
+    This function calculates :math:`B = P^T A P`. It assumes P is orthogonal so that :math:`P^{-1} = P^T` and
+    the similarity transformation exists.
+
+    Args:
+        a: matrix to be transformed
+        p: An orthogonal matrix.
+        diag: If True, only return the diagonal of the similarity transformation
+
+    Returns:
+        b
+    """
+    if a.dim() != 2 or p.dim() != 2:
+        raise TypeError("a and p must be 2D matrices")
+    pta = p.T @ a
+    if not diag:
+        b = pta @ p
+    else:
+        # return the diagonal of the similarity transformation
+        b = (pta * p.T).sum(dim=1)
+    return b
