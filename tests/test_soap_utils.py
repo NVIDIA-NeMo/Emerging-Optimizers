@@ -38,9 +38,9 @@ class SoapUtilsTest(BaseTestCase):
         diagonal_matrix = torch.eye(n)
 
         # Test with small tolerance - should not update since matrix is diagonal
-        self.assertFalse(
-            soap_utils._adaptive_criteria_met(
-                approx_eigenvalue_matrix=diagonal_matrix,
+        self.assertTrue(
+            soap_utils.utils.eig.met_approx_eigvals_criteria(
+                diagonal_matrix,
                 tolerance=0.1,
             ),
             msg="Should not update for diagonal matrix with small tolerance",
@@ -57,18 +57,18 @@ class SoapUtilsTest(BaseTestCase):
         )
 
         # Test with small tolerance - should update since matrix has significant off-diagonal elements
-        self.assertTrue(
-            soap_utils._adaptive_criteria_met(
-                approx_eigenvalue_matrix=off_diagonal_matrix,
+        self.assertFalse(
+            utils.eig.met_approx_eigvals_criteria(
+                off_diagonal_matrix,
                 tolerance=0.1,
             ),
             msg="Should update for matrix with significant off-diagonal elements and small tolerance",
         )
 
         # Test with large tolerance - should not update even with off-diagonal elements
-        self.assertFalse(
-            soap_utils._adaptive_criteria_met(
-                approx_eigenvalue_matrix=off_diagonal_matrix,
+        self.assertTrue(
+            utils.eig.met_approx_eigvals_criteria(
+                off_diagonal_matrix,
                 tolerance=10.0,
             ),
             msg="Should not update for any matrix with large tolerance",

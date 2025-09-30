@@ -86,10 +86,7 @@ def get_eigenbasis_eigh(
                 updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
                 continue
             # Update eigenbasis when necessary. Update is skipped only when adaptive update criteria is met.
-            if _adaptive_criteria_met(
-                approx_eigenvalue_matrix=kronecker_factor,
-                tolerance=adaptive_update_tolerance,
-            ):
+            if utils.eig.met_approx_eigvals_criteria(kronecker_factor, adaptive_update_tolerance):
                 _, Q = utils.eig.eigh_with_fallback(
                     kronecker_factor,
                     force_double=False,
@@ -206,9 +203,8 @@ def get_eigenbasis_qr(
         # Update eigenbasis when necessary. Update is skipped only when use_adaptive_criteria is True
         # but criteria is not met.
         if_update = True
-        if use_adaptive_criteria and not _adaptive_criteria_met(
-            approx_eigenvalue_matrix=kronecker_factor,
-            tolerance=adaptive_update_tolerance,
+        if use_adaptive_criteria and utils.eig.met_approx_eigvals_criteria(
+            kronecker_factor, adaptive_update_tolerance
         ):
             if_update = False
         if if_update:
@@ -238,8 +234,8 @@ def _orthogonal_iteration(
     eigenbasis: torch.Tensor,
     ind: int,
     exp_avg_sq: torch.Tensor,
-    convert_to_float: bool = True,
-    power_iter_steps: int = 1,
+    convert_to_float: bool,
+    power_iter_steps: int,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Computes the eigenbases of the preconditioner using power iteration and QR decomposition.
 
@@ -284,32 +280,6 @@ def _orthogonal_iteration(
         Q = Q.to(kronecker_factor.dtype)
 
     return Q, exp_avg_sq
-
-
-@torch.compile  # type: ignore[misc]
-def _adaptive_criteria_met(
-    approx_eigenvalue_matrix: torch.Tensor,
-    tolerance: Optional[float] = None,
-) -> bool:
-    """Determines whether the eigenbasis for a factor matrix should be updated in the next step of the orthogonal iteration.
-
-    Determines whether the eigenbasis for a factor matrix should be updated based on computing
-    the approximated eigenvalues Q^T GG Q, where Q is the approximated eigenvectors and
-    GG is the Kronecker factor. The approximated eigenvalues update criteria is then defined as
-    ||diag(Q^T GG Q)||_F >= (1 - tolerance) * (Q^T GG Q)_F.
-
-    Args:
-        approx_eigenvalue_matrix: Projection of kronecker factor onto the eigenbasis, should be close to diagonal
-        tolerance: Tolerance threshold for the normalized diagonal component of approximated eigenvalue matrix.
-
-    Returns:
-        perform_update: Whether to update eigenbasis this iteration
-    """
-    if tolerance is None:
-        return True
-
-    # check if normalized diagonal component is not smaller than tolerance
-    return not utils.eig.adaptive_early_exit_criteria(approx_eigenvalue_matrix, tolerance)
 
 
 def _conjugate(a: torch.Tensor, p: torch.Tensor, diag: bool = False) -> torch.Tensor:
