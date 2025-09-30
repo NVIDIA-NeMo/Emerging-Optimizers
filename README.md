@@ -22,14 +22,6 @@ Shampoo optimizers have demonstrated significant practical impact in large-scale
 - Improve final model quality through better conditioning of the optimization landscape
 - Enable more efficient hyperparameter tuning due to reduced sensitivity to learning rates
 
-### Performance Challenges
-
-Despite their algorithmic advantages, Shampoo class optimizers present unique challenges for GPU systems:
-
-- **Memory overhead**: Storing and updating preconditioner matrices requires significantly more memory than first-order methods
-- **Computational complexity**: Computing matrix roots and inverses for preconditioning introduces computational bottlenecks
-- **Communication costs**: In distributed training, synchronizing larger optimizer states can impact scalability
-
 ### Optimizers Included
 
 This project focuses on the following Shampoo class optimizers:
