@@ -85,8 +85,12 @@ def get_eigenbasis_eigh(
                 # We use an empty tensor so that the `precondition` function will skip this factor.
                 updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
                 continue
+            # Construct approximated eigenvalues using QL^T@L@QL or QR^T@R@QR.
+            # The approximated eigenvalues should be close to diagonal if the eigenbasis is close to the true
+            # eigenbasis of the kronecker factor (i.e. the approximated eigenvectors diagonalize the kronecker factor)
+            approx_eigenvalue_matrix = eigenbasis.T @ kronecker_factor @ eigenbasis
             # Update eigenbasis when necessary. Update is skipped only when adaptive update criteria is met.
-            if utils.eig.met_approx_eigvals_criteria(kronecker_factor, adaptive_update_tolerance):
+            if utils.eig.met_approx_eigvals_criteria(approx_eigenvalue_matrix, adaptive_update_tolerance):
                 _, Q = utils.eig.eigh_with_fallback(
                     kronecker_factor,
                     force_double=False,
@@ -203,14 +207,17 @@ def get_eigenbasis_qr(
         # Update eigenbasis when necessary. Update is skipped only when use_adaptive_criteria is True
         # but criteria is not met.
         if_update = True
-        if use_adaptive_criteria and utils.eig.met_approx_eigvals_criteria(
-            kronecker_factor, adaptive_update_tolerance
-        ):
-            if_update = False
-        if if_update:
-            # construct approximated eigenvalues using QL^T@L@QL or QR^T@R@QR, which should be close to diagonal
-            # if the eigenbasis is close to the true eigenbasis of the kronecker factor (i.e. diagonalizes it)
+        # construct approximated eigenvalues using QL^T@L@QL or QR^T@R@QR, which should be close to diagonal
+        # if the eigenbasis is close to the true eigenbasis of the kronecker factor (i.e. diagonalizes it)
+        if use_adaptive_criteria:
+            approx_eigenvalue_matrix = _conjugate(kronecker_factor, eigenbasis)
+            if_update = not utils.eig.met_approx_eigvals_criteria(approx_eigenvalue_matrix, adaptive_update_tolerance)
+            if if_update:
+                approx_eigvals = torch.diag(approx_eigenvalue_matrix)
+        else:
             approx_eigvals = _conjugate(kronecker_factor, eigenbasis, diag=True)
+
+        if if_update:
             Q, exp_avg_sq = _orthogonal_iteration(
                 approx_eigvals=approx_eigvals,
                 kronecker_factor=kronecker_factor,
