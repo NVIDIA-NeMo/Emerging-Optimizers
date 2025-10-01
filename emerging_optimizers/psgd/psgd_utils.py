@@ -12,6 +12,60 @@ __all__ = [
 
 
 @torch.compile  # type: ignore[misc]
+def _subspace_iteration_bound(
+    A: torch.Tensor,
+    k: int = 32,
+    half_iters: int = 2,
+) -> torch.Tensor:
+    """Helper function for subspace iteration to estimate spectral norm bounds.
+
+    Uses numerically stable subspace iteration with a random initialization that aligns with the
+    largest row of A to approximate the dominant eigenspace. This is more robust than simple
+    power iteration, especially for large matrices with very low rank. From Xi-Lin Li.
+
+    The algorithm:
+    1. Normalize :math:`A` by its largest absolute entry to avoid overflow.
+    2. Find the row :math:`j` of :math:`A_{\\text{scaled}}` with the largest 2-norm.
+    3. Initialize a :math:`k \\times n` subspace matrix :math:`V` with random vectors aligned to :math:`A[j]`.
+    4. Perform subspace iteration for `half_iters` steps: :math:`V \\leftarrow V \\cdot A_{\\text{scaled}}`.
+    5. Estimate the norm as the maximum 2-norm among the k vectors, then rescale.
+
+    Args:
+        A: Input matrix, already normalized by caller.
+        k: Dimension of the subspace (number of random vectors).
+        half_iters: Number of half-iterations (each applies A twice).
+
+    Returns:
+        Maximum vector norm from the final subspace iteration (unnormalized).
+    """
+    smallest_normal = torch.finfo(A.dtype).smallest_normal
+
+    # Initialize random subspace matrix V of shape (k, n)
+    V = torch.randn(k, A.shape[1], dtype=A.dtype, device=A.device)
+
+    # Find the row index with the largest 2-norm to initialize our subspace
+    # This helps the algorithm converge faster to the dominant eigenspace
+    dominant_row_idx = torch.argmax(torch.linalg.vector_norm(A, dim=1))
+    # Rotate the random vectors to align with the dominant row A[dominant_row_idx]
+    # This initialization trick makes the subspace iteration more robust for low-rank matrices
+    dominant_row = A[dominant_row_idx]
+    alignment = torch.sign(torch.sum(dominant_row * V, dim=1, keepdim=True))
+
+    V = dominant_row + alignment * V
+
+    # Perform subspace iteration
+    for _ in range(half_iters):
+        V = V @ A
+        # Normalize each row of V to prevent exponential growth/decay
+        V /= torch.linalg.vector_norm(V, dim=1, keepdim=True) + smallest_normal
+        # Apply A again (V approximates the dominant eigenspace of A^2)
+        V = V @ A
+
+    # Return the maximum 2-norm among the k vectors
+    return torch.amax(torch.linalg.vector_norm(V, dim=1))
+
+
+@torch.compile  # type: ignore[misc]
 def balance_q_in_place(Q_list: List[torch.Tensor]) -> None:
     """Balance the dynamic ranges of kronecker factors in place to prevent numerical underflow or overflow.
 
@@ -82,8 +136,6 @@ def solve_triangular_right(X: torch.Tensor, A: torch.Tensor) -> torch.Tensor:
 def norm_lower_bound_spd(A: torch.Tensor, k: int = 4, half_iters: int = 2) -> torch.Tensor:
     r"""Returns a cheap lower bound for the spectral norm of a symmetric positive definite matrix.
 
-    Uses numerically stable subspace iteration with a random initialization that aligns with the
-    largest row of A to approximate the dominant eigenspace of A. From Xi-Lin Li.
 
     Args:
         A: Tensor of shape :math:`(n, n)`, symmetric positive definite.
@@ -92,116 +144,38 @@ def norm_lower_bound_spd(A: torch.Tensor, k: int = 4, half_iters: int = 2) -> to
     Returns:
         A scalar giving a lower bound on :math:`\\|A\\|_2`.
     """
-    # Smallest representable normal number for numerical stability
-    smallest_normal = torch.finfo(A.dtype).smallest_normal
 
-    # Compute normalizing factor from the largest diagonal entry to prevent overflow/underflow
-    normalization = A.diagonal().amax() + smallest_normal
+    # Compute normalizing factor from the largest diagonal entry to prevent overflow/underflow and use smallest representable normal number for numerical stability
+    normalization = A.diagonal().amax() + torch.finfo(A.dtype).smallest_normal
     A = A / normalization
 
-    # Find the row index with the largest 2-norm to initialize our subspace
-    # This helps the algorithm converge faster to the dominant eigenspace
-    j = torch.argmax(torch.linalg.vector_norm(A, dim=1))
+    bound_unnormalized = _subspace_iteration_bound(A, k=k, half_iters=half_iters)
 
-    # Initialize random subspace matrix V of shape (k, n)
-    # k vectors of dimension n will span our subspace approximation
-    V = torch.randn(k, A.shape[1], dtype=A.dtype, device=A.device)
-
-    # Rotate the random vectors to align with the dominant row A[j]
-    # This initialization trick makes the subspace iteration more robust for low-rank matrices
-    # The sign function ensures proper alignment of each random vector with A[j]
-    V = A[j] + torch.sign(torch.sum(A[j] * V, dim=1, keepdim=True)) * V
-
-    # Perform subspace iteration
-    for _ in range(half_iters):
-        V = V @ A
-        # Normalize each row of V to prevent exponential growth/decay in the subspace iteration
-        V /= torch.linalg.vector_norm(V, dim=1, keepdim=True) + smallest_normal
-        # V approximates the dominant eigenspace of A^2
-        V = V @ A
-
-    # Compute the final estimate: find the largest 2-norm among the k vectors
-    # and scale back by the normalization factor to get the actual bound
-    return normalization * torch.amax(torch.linalg.vector_norm(V, dim=1))
+    return normalization * bound_unnormalized
 
 
 @torch.compile  # type: ignore[misc]
-def norm_lower_bound_skew(A: torch.Tensor, iters: int = 3, eps: float = 1e-9) -> torch.Tensor:
+def norm_lower_bound_skew(A: torch.Tensor, k: int = 32, half_iters: int = 2) -> torch.Tensor:
     """Compute a cheap lower bound on the spectral norm (largest eigenvalue) of skew-symmetric matrix.
 
-    This uses a power iteration method:
-
-    1. Normalize :math:`A` by its largest absolute entry to avoid overflow.
-    2. Find the row :math:`j` of :math:`A_{\\text{scaled}}` with the largest 2-norm.
-    3. Initialize vector :math:`v` from :math:`A_{\\text{scaled}}[j]`.
-    4. Perform power iteration for `iters` steps: :math:`v \\leftarrow v \\cdot A_{\\text{scaled}}`.
-    5. Estimate the norm by :math:`\\|v \\cdot A_{\\text{scaled}}\\|_2`, then rescale.
 
     Note: For skew-symmetric matrices, all diagonal entries are zero and :math:`A^T = -A`.
     From Xi-Lin Li.
 
     Args:
         A: Tensor of shape :math:`(n, n)`, skew-symmetric.
-        iters: Number of power iteration steps to perform.
-        eps: Small value to add to the diagonal of A to avoid division by zero.
+        k: Dimension of the subspace. Suggested values: 128 for bfloat16, 32 for float32, 4 for float64.
+        half_iters: Half of the number of subspace iterations.
 
     Returns:
         A scalar Tensor giving a lower bound on :math:`\\|A\\|_2`.
 
     """
-    # Normalize to avoid extreme values, by extracting the max absolute value
-    max_abs = torch.max(torch.abs(A))
 
-    if max_abs <= torch.finfo(A.dtype).smallest_normal:
-        return max_abs
+    # Normalize to avoid extreme values, by extracting the max absolute value and use smallest representable normal number for numerical stability
+    normalizing_factor = A.abs().amax() + torch.finfo(A.dtype).smallest_normal
+    A = A / normalizing_factor
 
-    A_scaled = A / max_abs
+    bound_unnormalized = _subspace_iteration_bound(A, k=k, half_iters=half_iters)
 
-    # Pick row with largest 2-norm (skew-symmetric matrices have zero diagonal)
-    row_norms = torch.linalg.norm(A_scaled, dim=1)
-    j = torch.argmax(row_norms)
-
-    # Initialize with the dominant row
-    v = A_scaled[j].clone()
-
-    # Power iteration steps
-    for _ in range(iters):
-        # Normalize to prevent overflow
-        v_norm = torch.linalg.norm(v) + eps
-        v = v / v_norm
-
-        # Apply matrix
-        v = v @ A_scaled
-
-    # Final normalization and bound computation
-    v_norm = torch.linalg.norm(v) + eps
-    v = v / v_norm
-
-    # Compute bound and rescale
-    bound = torch.linalg.norm(v @ A_scaled)
-    return max_abs * bound
-
-
-def norm_lower_bound_skh(A, k=32, half_iters=2):
-    """
-    Returns a cheap lower bound for the spectral norm of a skew-Hermitian matrix A,
-        k: the dim of subspace, suggesting 128 for bfloat16, 32 for float32 and 4 for float64 (tested on my laptop 4070 GPU);
-        half_iters: half of the number of subspace iterations, suggesting 2.
-    A rough norm estimation is good, and we don't orthonormaliz the subspace vectors.
-
-    The initial noise space V is rotated such that its centroid aligns with the largest row of A.
-    Hence, each row of V and the largest row of A has an angle about acos(1/sqrt(k)) when k << dim(A).
-    This feature makes the subspace iteration more robust for large matrices with very low rank.
-    A simplified branchless approximate implementation is provided here.
-    """
-    smallest_normal = torch.finfo(A.dtype).smallest_normal
-    normalizing_factor = A.abs().amax() + smallest_normal
-    A = A / normalizing_factor  # (complex tensor) / (subnormal number) could produce inf or nan unexpectedly
-    j = torch.argmax(torch.linalg.vector_norm(A, dim=1))
-    V = torch.randn(k, A.shape[1], dtype=A.dtype, device=A.device)
-    V = A[j] + torch.sgn(torch.sum(A[j] * V.conj(), dim=1, keepdim=True)) * V  # torch.sign for real
-    for _ in range(half_iters):
-        V = V @ A
-        V /= torch.linalg.vector_norm(V, dim=1, keepdim=True) + smallest_normal
-        V = V @ A
-    return normalizing_factor * torch.amax(torch.linalg.vector_norm(V, dim=1))
+    return normalizing_factor * bound_unnormalized
