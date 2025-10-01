@@ -4,6 +4,11 @@ from emerging_optimizers.psgd.psgd_utils import norm_lower_bound_skew
 from emerging_optimizers.utils import fp32_matmul_precision
 
 
+__all__ = [
+    "procrustes_step",
+]
+
+
 def procrustes_step(Q, max_step_size=1 / 8):
     r"""One step of an in-place online solver for the orthogonal Procrustes problem.
 
@@ -13,7 +18,7 @@ def procrustes_step(Q, max_step_size=1 / 8):
     `max_step_size` should be less than 1/4 as we only expand exp(a R) to its 2nd order term.
 
     This method is a second order Taylor expansion of a Lie algebra parametrized rotation that
-    uses a simple line search to find the optimal step size, from Xi-Lin Li.
+    uses a simple approximate line search to find the optimal step size, from Xi-Lin Li.
 
     Args:
         Q: Tensor of shape (n, n), general square matrix to orthogonalize.
@@ -29,5 +34,5 @@ def procrustes_step(Q, max_step_size=1 / 8):
         step_size = torch.clamp(-tr_RQ / tr_RRQ, min=0, max=max_step_size)
         a = torch.where(tr_RRQ < 0, step_size, max_step_size)
         # rotate Q as exp(a R) Q ~ (I + a R + a^2 R^2/2) Q with an optimal step size by line search
-        # for 2nd order Taylor expansion, we only expand exp(a R) to its 2nd term.
+        # for 2nd order Taylor expansion, only expand exp(a R) to its 2nd term.
         Q.add_(a * (RQ + 0.5 * a * RRQ))
