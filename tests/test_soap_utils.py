@@ -16,12 +16,7 @@ import torch
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
-from emerging_optimizers.soap.soap_utils import (
-    _adaptive_criteria_met,
-    _orthogonal_iteration,
-    get_eigenbasis_eigh,
-    get_eigenbasis_qr,
-)
+from emerging_optimizers.soap import soap_utils
 
 
 # Base class for tests requiring seeding for determinism
@@ -43,9 +38,9 @@ class SoapUtilsTest(BaseTestCase):
         diagonal_matrix = torch.eye(n)
 
         # Test with small tolerance - should not update since matrix is diagonal
-        self.assertFalse(
-            _adaptive_criteria_met(
-                approx_eigenvalue_matrix=diagonal_matrix,
+        self.assertTrue(
+            soap_utils.utils.eig.met_approx_eigvals_criteria(
+                diagonal_matrix,
                 tolerance=0.1,
             ),
             msg="Should not update for diagonal matrix with small tolerance",
@@ -62,18 +57,18 @@ class SoapUtilsTest(BaseTestCase):
         )
 
         # Test with small tolerance - should update since matrix has significant off-diagonal elements
-        self.assertTrue(
-            _adaptive_criteria_met(
-                approx_eigenvalue_matrix=off_diagonal_matrix,
+        self.assertFalse(
+            utils.eig.met_approx_eigvals_criteria(
+                off_diagonal_matrix,
                 tolerance=0.1,
             ),
             msg="Should update for matrix with significant off-diagonal elements and small tolerance",
         )
 
         # Test with large tolerance - should not update even with off-diagonal elements
-        self.assertFalse(
-            _adaptive_criteria_met(
-                approx_eigenvalue_matrix=off_diagonal_matrix,
+        self.assertTrue(
+            utils.eig.met_approx_eigvals_criteria(
+                off_diagonal_matrix,
                 tolerance=10.0,
             ),
             msg="Should not update for any matrix with large tolerance",
@@ -102,7 +97,7 @@ class SoapUtilsTest(BaseTestCase):
         }
 
         # We'll call get_eigenbasis_qr
-        Q_new_list, exp_avg_sq_new = get_eigenbasis_qr(
+        Q_new_list, exp_avg_sq_new = soap_utils.get_eigenbasis_qr(
             kronecker_factor_list=state["GG"],
             eigenbasis_list=state["Q"],
             exp_avg_sq=state["exp_avg_sq"],
@@ -171,11 +166,11 @@ class SoapUtilsTest(BaseTestCase):
         # Create estimated eigenvalue matrix by projecting kronecker_factor onto eigenbasis's basis
         approx_eigenvalue_matrix = eigenbasis.T.mm(kronecker_factor).mm(eigenbasis)
         # Extract eigenvalues from the diagonal of the estimated eigenvalue matrix
-        est_eigvals = torch.diag(approx_eigenvalue_matrix)
+        approx_eigvals = torch.diag(approx_eigenvalue_matrix)
 
         # Call the QR function to update the eigenbases and re-order the inner adam second moment
-        Q_new, exp_avg_sq_new = _orthogonal_iteration(
-            approx_eigenvalue_matrix=approx_eigenvalue_matrix,
+        Q_new, exp_avg_sq_new = soap_utils._orthogonal_iteration(
+            approx_eigvals=approx_eigvals,
             kronecker_factor=kronecker_factor,
             eigenbasis=eigenbasis,
             ind=0,  # Test with first dimension
@@ -200,7 +195,7 @@ class SoapUtilsTest(BaseTestCase):
 
         # Test 3: Check that exp_avg_sq is properly sorted based on eigenvalues
         # The sorting should be based on the diagonal elements of estimated_eigenvalue_matrix
-        sort_idx = torch.argsort(est_eigvals, descending=True)
+        sort_idx = torch.argsort(approx_eigvals, descending=True)
         expected_exp_avg_sq = exp_avg_sq.index_select(0, sort_idx)
         torch.testing.assert_close(
             exp_avg_sq_new,
@@ -230,7 +225,7 @@ class SoapUtilsTest(BaseTestCase):
             k_factor = k_factor @ k_factor.T + torch.eye(dim, device="cuda") * 1e-5
             kronecker_factor_list.append(k_factor)
 
-        Q_list = get_eigenbasis_eigh(kronecker_factor_list, convert_to_float=True)
+        Q_list = soap_utils.get_eigenbasis_eigh(kronecker_factor_list, convert_to_float=True)
 
         self.assertEqual(len(Q_list), len(kronecker_factor_list))
 
@@ -264,6 +259,20 @@ class SoapUtilsTest(BaseTestCase):
                 scaled_off_diagonal_norm < 1e-4,
                 msg=f"Matrix {i} was not properly diagonalized. Off-diagonal norm: {off_diagonal_norm}",
             )
+
+    def test_conjugate_assert_2d_input(self) -> None:
+        """Tests the conjugate function."""
+        a = torch.randn(2, 3, 4, device="cuda")
+        with self.assertRaises(TypeError):
+            soap_utils._conjugate(a, a)
+
+    def test_conjugate_match_reference(self) -> None:
+        x = torch.randn(15, 17, device="cuda")
+        a = x @ x.T
+        _, p = torch.linalg.eigh(a)
+
+        ref = p.T @ a @ p
+        torch.testing.assert_close(soap_utils._conjugate(a, p), ref, atol=0, rtol=0)
 
 
 if __name__ == "__main__":
