@@ -37,13 +37,15 @@ def eigh_with_fallback(
     Default 2nd argument of eigh UPLO is 'L'.
 
     Args:
-        x: Tensor of shape (*, n, n) where "*" is zero or more batch dimensions consisting of symmetric or Hermitian matrices.
+        x: Tensor of shape (*, n, n) where "*" is zero or more batch dimensions consisting of symmetric or
+            Hermitian matrices.
         force_double: Force double precision computation. Default False.
-        eps: Small offset for numerical stability. If None, uses dtype-appropriate values (1e-7 for float32, 1e-15 for float64). Default None.
+        eps: Small offset for numerical stability. If None, uses dtype-appropriate values (1e-7 for float32,
+            1e-15 for float64). Default None.
         output_dtype: Desired output dtype. If None, uses input dtype. Default None.
 
     Returns:
-        tuple[Tensor, Tensor]: Eigenvalues and eigenvectors tuple (eigenvalues in descending order).
+        Eigenvalues and eigenvectors tuple (eigenvalues in descending order).
     """
     input_dtype = x.dtype
     if output_dtype is None:
@@ -100,25 +102,26 @@ def eig_orthogonal_iteration(
     max_iterations: int = 1,
     tolerance: float = 0.01,
 ) -> tuple[Tensor, Tensor]:
-    """Approximately compute the eigendecomposition of a symmetric matrix by performing the orthogonal iteration algorithm.
+    """Approximately compute the eigen decomposition
 
 
-    Orthogonal or subspace iteration uses iterative power iteration and QR decomposition to update the approximated eigenvectors.
-    When the initial estimate is the zero matrix, the eigendecomposition is computed using `eigh_with_fallback`.
+    Orthogonal or subspace iteration uses iterative power iteration and QR decomposition to update the approximated
+    eigenvectors. When the initial estimate is the zero matrix, the eigendecomposition is computed
+    using `eigh_with_fallback`.
 
-    Based on Purifying Shampoo (https://www.arxiv.org/abs/2506.03595), we use an early exit criteria to stop the QR iterations.
-    This generalizes SOAP's algorithm of 1 step of power iteration for updating the eigenbasis.
+    Based on Purifying Shampoo (https://www.arxiv.org/abs/2506.03595), we use an early exit criteria to stop the
+    QR iterations. This generalizes SOAP's algorithm of 1 step of power iteration for updating the eigenbasis.
 
     Args:
         x: tensor of shape (n, n) where x is a symmetric or Hermitian matrix.
         approx_eigenvectors: The current estimate of the eigenvectors of x. If None or a zero matrix,
             falls back to using `eigh_with_fallback`.
-        max_iterations: The maximum number of iterations to perform. (Default: 1)
-        tolerance: The tolerance for determining convergence in terms of the norm of the off-diagonal elements of the approximated eigenvalues.
-            (Default: 0.01)
+        max_iterations: The maximum number of iterations to perform.
+        tolerance: The tolerance for determining convergence in terms of the norm of the off-diagonal elements
+            of the approximated eigenvalues.
 
     Returns:
-        tuple[Tensor, Tensor]: A tuple containing the approximated eigenvalues and eigenvectors matrix of the input matrix A.
+        A tuple containing the approximated eigenvalues and eigenvectors matrix of the input matrix A.
     """
 
     # Check if x is already a diagonal matrix
@@ -151,12 +154,14 @@ def eig_orthogonal_iteration(
 def met_approx_eigvals_criteria(approx_eigenvalues_matrix: Tensor, tolerance: float) -> bool:
     """Evaluates if a criteria using approximated eigenvalues is below or equal to the tolerance.
 
-    `approx_eigenvalues_matrix` is a matrix created from the approximated eigenvectors and the symmetric matrix that is being eigendecomposed.
-    We check if the ratio of the diagonal norm to the matrix norm is greater than or equal to (1 - tolerance).
+    `approx_eigenvalues_matrix` is a matrix created from the approximated eigenvectors and the symmetric matrix
+    that is being eigendecomposed. We check if the ratio of the diagonal norm to the matrix norm is greater
+    than or equal to (1 - tolerance).
 
     Args:
         approx_eigenvalues_matrix: The symmetric matrix whose eigenvalues is being eigendecomposed.
-        tolerance: The tolerance for the early exit criteria, the min relative error between diagonal norm and matrix norm of the approximated eigenvalues and the diagonal.
+        tolerance: The tolerance for the early exit criteria, the min relative error between diagonal norm
+            and matrix norm of the approximated eigenvalues and the diagonal.
 
     Returns:
         bool: True if the criteria is below or equal to the tolerance, False otherwise.
@@ -189,7 +194,7 @@ def _try_handle_diagonal_matrix(x: Tensor) -> Optional[tuple[Tensor, Tensor]]:
         x: Tensor of shape (n, n) where x is a symmetric or Hermitian matrix.
 
     Returns:
-        Optional[tuple[Tensor, Tensor]]: Sorted eigenvalues and eigenvectors if A is diagonal, None otherwise.
+        Sorted eigenvalues and eigenvectors if A is diagonal, None otherwise.
     """
     input_dtype = x.dtype
     if _is_diagonal(x):

@@ -37,9 +37,12 @@ class Muon(OrthogonalizedOptimizer):
     optimization via Frank-Wolfe.
 
     References:
-        - Jordan, K. *Muon Optimizer Implementation.* [`GitHub <https://github.com/KellerJordan/Muon/blob/master/muon.py>`_]
-        - *Modular Duality in Deep Learning.* arXiv:2410.21265 (2024). [`arXiv:2410.21265 <https://arxiv.org/abs/2410.21265>`_]
-        - *Training Deep Learning Models with Norm-Constrained LMOs.* arXiv:2502.07529 (2025). [`arXiv:2502.07529 <https://arxiv.org/abs/2502.07529>`_]
+        - Jordan, K. *Muon Optimizer Implementation.*
+          [`GitHub <https://github.com/KellerJordan/Muon/blob/master/muon.py>`_]
+        - *Modular Duality in Deep Learning.* arXiv:2410.21265 (2024).
+          [`arXiv:2410.21265 <https://arxiv.org/abs/2410.21265>`_]
+        - *Training Deep Learning Models with Norm-Constrained LMOs.* arXiv:2502.07529 (2025).
+          [`arXiv:2502.07529 <https://arxiv.org/abs/2502.07529>`_]
 
     Warning:
         - This optimizer requires that all parameters passed in are 2D.
@@ -122,7 +125,8 @@ def get_muon_scale_factor(
         # Suggested by K. Jordan and Kimi (https://arxiv.org/abs/2502.16982)
         return extra_scale_factor * max(size_out, size_in) ** 0.5
     elif mode == "unit_rms_norm":
-        # Suggested by Scion (https://arxiv.org/abs/2502.07529) and Bernstein et al. (https://jeremybernste.in/writing/deriving-muon)
+        # Suggested by Scion (https://arxiv.org/abs/2502.07529) and Bernstein et al.
+        # (https://jeremybernste.in/writing/deriving-muon)
         return extra_scale_factor * (size_out / size_in) ** 0.5
     else:
         raise ValueError(f"Invalid mode for Muon update scale factor: {mode}")
