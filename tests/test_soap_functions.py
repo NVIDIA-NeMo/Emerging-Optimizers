@@ -149,7 +149,7 @@ class SoapFunctionsTest(parameterized.TestCase):
         {"N": 32, "M": 8},
     )
     def test_project_and_project_back(self, N: int, M: int) -> None:
-        """Tests that projecting a tensor to eigenbasis of QL and QR and then projecting it back results in the original tensor.
+        """Tests that projecting a tensor to eigenbasis of QL and QR and back
 
         The projected tensor should approximately recover the original tensor.
         """

@@ -125,7 +125,8 @@ class SOAP(optim.Optimizer):
             original_adam_warmup_steps = adam_warmup_steps
             adam_warmup_steps = max(1, precondition_warmup_steps - 1)
             logging.info(
-                f"adam_warmup_steps ({original_adam_warmup_steps}) should be less than precondition_warmup_steps ({precondition_warmup_steps}). "
+                f"adam_warmup_steps ({original_adam_warmup_steps}) should be less "
+                f"than precondition_warmup_steps ({precondition_warmup_steps}). "
                 f"Setting adam_warmup_steps to {adam_warmup_steps} by default."
             )
 
@@ -193,7 +194,8 @@ class SOAP(optim.Optimizer):
                         precondition_1d=group["precondition_1d"],
                     )
 
-                    # Update preconditioner matrices with gradient statistics, do not use shampoo_beta for EMA at first step
+                    # Update preconditioner matrices with gradient statistics,
+                    # do not use shampoo_beta for EMA at first step
                     with utils.fp32_matmul_precision(group["fp32_matmul_prec"]):
                         update_kronecker_factors(
                             kronecker_factor_list=state["GG"],
@@ -282,7 +284,8 @@ class SOAP(optim.Optimizer):
                     )
                 torch.cuda.nvtx.range_pop()
 
-                # If current step is the last step to skip preconditioning, initialize eigenbases and end first order warmup
+                # If current step is the last step to skip preconditioning, initialize eigenbases and
+                # end first order warmup
                 if state["step"] == group["adam_warmup_steps"]:
                     # Obtain kronecker factor eigenbases from kronecker factor matrices using eigendecomposition
                     state["Q"] = get_eigenbasis_eigh(state["GG"])
@@ -425,7 +428,8 @@ def update_kronecker_factors(
         else:
             # For 1D tensors, skip preconditioning
             logging.error(
-                "1D tensor is passed to update_kronecker_factors, but precondition_1d is not set to True, skipping preconditioning."
+                "1D tensor is passed to update_kronecker_factors, "
+                "but precondition_1d is not set to True, skipping preconditioning."
             )
             return
     else:
@@ -586,7 +590,8 @@ def precondition(
             )
         else:
             # Permute gradient dimensions to process the next dimension in the following iteration
-            # when preconditioning for the current dimension is skipped (Q is empty), in the case of one-sided preconditioning.
+            # when preconditioning for the current dimension is skipped (Q is empty), in the case of
+            # one-sided preconditioning.
             permute_order = list(range(1, grad.dim())) + [0]
             grad = grad.permute(permute_order)
 

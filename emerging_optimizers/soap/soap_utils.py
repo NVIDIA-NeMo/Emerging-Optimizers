@@ -85,7 +85,7 @@ def get_eigenbasis_eigh(
                 # We use an empty tensor so that the `precondition` function will skip this factor.
                 updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
                 continue
-            # Construct approximated eigenvalues using QL^T@L@QL or QR^T@R@QR.
+            # Construct approximated eigenvalues using :math:`Q_L^T L Q_L` or :math:`Q_R^T R Q_R`.
             # The approximated eigenvalues should be close to diagonal if the eigenbasis is close to the true
             # eigenbasis of the kronecker factor (i.e. the approximated eigenvectors diagonalize the kronecker factor)
             approx_eigenvalue_matrix = eigenbasis.T @ kronecker_factor @ eigenbasis
@@ -128,8 +128,8 @@ def get_eigenbasis_qr(
     Computes using multiple rounds of power iteration followed by QR decomposition (orthogonal iteration).
 
     Args:
-        kronecker_factor_list: List containing preconditioner (GGT and GTG)
-        eigenbasis_list: List containing eigenbases (QL and QR)
+        kronecker_factor_list: List containing preconditioner (:math:`GG^T` and :math:`G^TG`)
+        eigenbasis_list: List containing eigenbases (:math:`Q_L` and :math:`Q_R`)
         exp_avg_sq: inner adam second moment (exp_avg_sq). This tensor is modified in-place.
         convert_to_float: If True, preconditioner matrices and their corresponding
             orthonormal matrices will be cast to float. Otherwise, they are left in
@@ -207,7 +207,7 @@ def get_eigenbasis_qr(
         # Update eigenbasis when necessary. Update is skipped only when use_adaptive_criteria is True
         # but criteria is not met.
         if_update = True
-        # construct approximated eigenvalues using QL^T@L@QL or QR^T@R@QR, which should be close to diagonal
+        # construct approximated eigenvalues using :math:`Q_L^T L Q_L` or :math:`Q_R^T R Q_R`, which should be close to diagonal
         # if the eigenbasis is close to the true eigenbasis of the kronecker factor (i.e. diagonalizes it)
         if use_adaptive_criteria:
             approx_eigenvalue_matrix = _conjugate(kronecker_factor, eigenbasis)
