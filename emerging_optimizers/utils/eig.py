@@ -21,7 +21,6 @@ from torch import Tensor
 
 __all__ = [
     "eigh_with_fallback",
-    "eig_orthogonal_iteration",
     "met_approx_eigvals_criteria",
     "conjugate",
     "orthogonal_iteration",
