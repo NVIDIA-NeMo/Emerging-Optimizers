@@ -129,7 +129,7 @@ def get_eigenbasis_qr(
 
     Args:
         kronecker_factor_list: List containing preconditioner (:math:`GG^T` and :math:`G^TG`)
-        eigenbasis_list: List containing eigenbases (:math:`QL` and :math:`QR`)
+        eigenbasis_list: List containing eigenbases (:math:`Q_L` and :math:`Q_R`)
         exp_avg_sq: inner adam second moment (exp_avg_sq). This tensor is modified in-place.
         convert_to_float: If True, preconditioner matrices and their corresponding
             orthonormal matrices will be cast to float. Otherwise, they are left in
