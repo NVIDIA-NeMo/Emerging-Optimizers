@@ -259,9 +259,6 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         # Bound should be <= actual norm
         self.assertLessEqual(bound.item(), actual_norm.item() + 1e-5)
 
-        # Verify matrix is indeed skew-symmetric
-        torch.testing.assert_close(A, -A.T, atol=1e-6)
-
     @parameterized.product(
         dtype=[torch.float32, torch.float64],
         size=[32, 128, 256],
@@ -282,30 +279,19 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         # Bound should be non-negative
         self.assertGreaterEqual(bound.item(), 0.0)
 
-        # Verify the matrix is actually skew-symmetric
-        torch.testing.assert_close(A, -A.T, atol=1e-6)
-
-    def test_different_iteration_counts(self):
-        """Test norm_lower_bound_skew with different iteration counts."""
+    @parameterized.parameters([4, 16, 32])
+    def test_different_subspace_dimensions(self, rank):
+        """Test norm_lower_bound_skew with different subspace dimensions."""
         # Create a skew-symmetric matrix
         B = torch.randn(64, 64, device=self.device)
         A = B - B.T
 
-        # Test with different iteration counts
-        bound_1 = norm_lower_bound_skew(A, iters=1)
-        bound_3 = norm_lower_bound_skew(A, iters=3)
-        bound_5 = norm_lower_bound_skew(A, iters=5)
+        bound = norm_lower_bound_skew(A, k=rank, half_iters=2)
 
-        # All bounds should be valid (non-negative)
-        self.assertGreaterEqual(bound_1.item(), 0.0)
-        self.assertGreaterEqual(bound_3.item(), 0.0)
-        self.assertGreaterEqual(bound_5.item(), 0.0)
+        self.assertGreaterEqual(bound.item(), 0.0)
 
-        # More iterations should generally give better (higher) bounds
         actual_norm = torch.linalg.matrix_norm(A, ord=2)
-        self.assertLessEqual(bound_1.item(), actual_norm.item() + 1e-4)
-        self.assertLessEqual(bound_3.item(), actual_norm.item() + 1e-4)
-        self.assertLessEqual(bound_5.item(), actual_norm.item() + 1e-4)
+        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-4)
 
 
 if __name__ == "__main__":
