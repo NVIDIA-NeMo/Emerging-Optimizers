@@ -72,6 +72,7 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable", None),
     "torch": ("https://pytorch.org/docs/2.5", None),
 }
+autodoc_typehints = "description"
 
 
 def linkcode_resolve(domain, info):
