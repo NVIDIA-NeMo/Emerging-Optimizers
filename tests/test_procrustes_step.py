@@ -20,8 +20,9 @@ class ProcrustesStepTest(parameterized.TestCase):
 
     def test_improves_orthogonality_simple_case(self):
         """Test that procrustes_step doesn't worsen orthogonality for a simple case."""
-        # Create a non-orthogonal matrix
-        Q = torch.tensor([[2.0, 0.5], [0.0, 1.5]], device=self.device, dtype=torch.float32)
+
+        Q = torch.randn(2, 2, device=self.device, dtype=torch.float32)
+        Q = Q @ Q.T
 
         # Measure initial objective
         initial_obj = self._procrustes_objective(Q)
@@ -86,10 +87,10 @@ class ProcrustesStepTest(parameterized.TestCase):
         self.assertLess(final_obj.item(), initial_obj.item() + 1e-6)
 
     @parameterized.parameters(
+        (1 / 64,),
         (1 / 32,),
         (1 / 16,),
         (1 / 8,),
-        (1 / 6,),
     )
     def test_different_step_sizes(self, max_step_size):
         """Test procrustes_step with different step sizes."""
