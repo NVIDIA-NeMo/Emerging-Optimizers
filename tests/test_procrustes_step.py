@@ -132,13 +132,14 @@ class ProcrustesStepTest(parameterized.TestCase):
         (4,),
         (8,),
     )
-    def test_multiple_iterations_converge(self, num_iter):
+    def test_multiple_iterations_converge(self, num_iters):
         """Test that multiple procrustes steps eventually improve orthogonality."""
         Q = torch.tensor([[3.0, 0.5], [0.2, 2.0]], device=self.device)
 
         initial_obj = self._procrustes_objective(Q).item()
 
-        procrustes_step(Q, max_step_size=1 / 16, num_iter=num_iter)
+        for _ in range(num_iters):
+            procrustes_step(Q, max_step_size=1 / 32)
 
         final_obj = self._procrustes_objective(Q).item()
 
@@ -147,13 +148,7 @@ class ProcrustesStepTest(parameterized.TestCase):
         # Should achieve reasonable orthogonality
         self.assertLess(final_obj, initial_obj * 0.5)
 
-    @parameterized.parameters(
-        (1,),
-        (2,),
-        (4,),
-        (8,),
-    )
-    def test_functional_behavior_with_good_case(self, num_iter):
+    def test_functional_behavior_with_good_case(self):
         """Test procrustes_step with a case that's likely to show improvement."""
         # Create a matrix that's close to orthogonal but not quite
         eps = 1e-2
@@ -163,7 +158,7 @@ class ProcrustesStepTest(parameterized.TestCase):
         initial_obj = self._procrustes_objective(Q)
 
         # Apply several steps to ensure we see improvement
-        procrustes_step(Q, max_step_size=1 / 16, num_iter=num_iter)
+        procrustes_step(Q, max_step_size=1 / 16)
 
         final_obj = self._procrustes_objective(Q)
 
@@ -181,8 +176,8 @@ class ProcrustesStepTest(parameterized.TestCase):
         initial_det_pos = torch.det(Q_pos)
         initial_det_neg = torch.det(Q_neg)
 
-        procrustes_step(Q_pos, max_step_size=1 / 16, num_iter=1)
-        procrustes_step(Q_neg, max_step_size=1 / 16, num_iter=1)
+        procrustes_step(Q_pos, max_step_size=1 / 16)
+        procrustes_step(Q_neg, max_step_size=1 / 16)
 
         final_det_pos = torch.det(Q_pos)
         final_det_neg = torch.det(Q_neg)
