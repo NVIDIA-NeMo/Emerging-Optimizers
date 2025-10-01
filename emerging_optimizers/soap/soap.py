@@ -61,7 +61,6 @@ class SOAP(optim.Optimizer):
         precondition_warmup_steps: How many steps to warm up the preconditioner (i.e. update every step)
         adam_warmup_steps: How many steps to skip preconditioning in the beginning (i.e. use standard AdamW updates)
         precondition_1d: Whether to precondition 1D gradients (like biases).
-        max_precond_dim: Maximum dimension of the preconditioner matrices. Skips preconditioning if any tensor dimension exceeds.
         trace_normalization: Whether to normalize update by the trace of the kronecker factor matrix
         normalize_preconditioned_grads: Whether to normalize preconditioned gradients per layer
         correct_bias: Whether to use bias correction in Inner Adam and Kronecker factor matrices EMA
@@ -91,7 +90,6 @@ class SOAP(optim.Optimizer):
         precondition_warmup_steps: int = 0,
         adam_warmup_steps: int = 1,
         precondition_1d: bool = False,
-        max_precond_dim: int = 8192,
         trace_normalization: bool = False,
         normalize_preconditioned_grads: bool = False,
         correct_bias: bool = True,
@@ -141,7 +139,6 @@ class SOAP(optim.Optimizer):
             "precondition_warmup_steps": precondition_warmup_steps,
             "adam_warmup_steps": adam_warmup_steps,
             "precondition_1d": precondition_1d,
-            "max_precond_dim": max_precond_dim,
             "trace_normalization": trace_normalization,
             "normalize_preconditioned_grads": normalize_preconditioned_grads,
             "use_nesterov": use_nesterov,
@@ -194,7 +191,6 @@ class SOAP(optim.Optimizer):
                     state["GG"] = init_kronecker_factors(
                         grad,
                         precondition_1d=group["precondition_1d"],
-                        max_precond_dim=group["max_precond_dim"],
                     )
 
                     # Update preconditioner matrices with gradient statistics, do not use shampoo_beta for EMA at first step
@@ -204,7 +200,6 @@ class SOAP(optim.Optimizer):
                             grad=grad,
                             shampoo_beta=0.0,
                             precondition_1d=group["precondition_1d"],
-                            max_precond_dim=group["max_precond_dim"],
                         )
 
                 # Increment step counter
@@ -284,7 +279,6 @@ class SOAP(optim.Optimizer):
                         grad=grad,
                         shampoo_beta=shampoo_beta,
                         precondition_1d=group["precondition_1d"],
-                        max_precond_dim=group["max_precond_dim"],
                     )
                 torch.cuda.nvtx.range_pop()
 
@@ -330,7 +324,6 @@ class SOAP(optim.Optimizer):
 def init_kronecker_factors(
     grad: torch.Tensor,
     precondition_1d: bool = False,
-    max_precond_dim: int = 8192,
 ) -> List[torch.Tensor]:
     """Initializes the kronecker factor matrices for the SOAP optimizer.
 
@@ -354,8 +347,6 @@ def init_kronecker_factors(
             The shape of this tensor determines the size of the kronecker factor matrices.
         precondition_1d: Whether to create kronecker factor matrices for 1D tensors
             (like biases). If False, 1D tensors will skip preconditioning.
-        max_precond_dim: Maximum dimension of the preconditioner matrices.
-            Skips preconditioning if any tensor dimension exceeds.
 
     Returns:
         List[torch.Tensor]: List of kronecker factor matrices (L and R in paper).
@@ -387,21 +378,11 @@ def init_kronecker_factors(
         else:
             # Create a square preconditioner matrix for 1D tensors
             size = grad.shape[0]
-            if size > max_precond_dim:
-                # if tensor dimension is larger than max_precond_dim, skip preconditioning this dimension
-                # append empty tensor to kronecker_factor_list so that subsequent check that use numel() to check if preconditioner is initialized will not fail
-                kronecker_factor_list.append(torch.empty(0, device=grad.device))
-            else:
-                kronecker_factor_list.append(torch.zeros(size, size, device=grad.device))
+            kronecker_factor_list.append(torch.zeros(size, size, device=grad.device))
     else:
         # Create a square kronecker factor matrix for each dimension
         for size in grad.shape:
-            if size > max_precond_dim:
-                # append empty tensor to kronecker_factor_list so that subsequent check that use numel() to check if preconditioner is initialized will not fail
-                # skip preconditioning this dimension
-                kronecker_factor_list.append(torch.empty(0, device=grad.device))
-            else:
-                kronecker_factor_list.append(torch.zeros(size, size, device=grad.device))
+            kronecker_factor_list.append(torch.zeros(size, size, device=grad.device))
 
     return kronecker_factor_list
 
@@ -412,7 +393,6 @@ def update_kronecker_factors(
     grad: torch.Tensor,
     shampoo_beta: float,
     precondition_1d: bool = False,
-    max_precond_dim: int = 8192,
 ) -> None:
     """Updates the preconditioner matrices using gradient outer products.
 
@@ -429,8 +409,6 @@ def update_kronecker_factors(
             Controls how much weight to give to new vs old gradient statistics.
         precondition_1d: Whether to apply preconditioning to 1D tensors (like biases).
             If False, 1D tensors will skip preconditioning.
-        max_precond_dim: Maximum dimension of the preconditioner matrices.
-            Skips preconditioning if any tensor dimension exceeds.
 
     Example:
         >>> grad = torch.randn(10, 20)
@@ -446,20 +424,22 @@ def update_kronecker_factors(
             kronecker_factor_list[0].lerp_(outer_product, 1 - shampoo_beta)
         else:
             # For 1D tensors, skip preconditioning
+            logging.error(
+                "1D tensor is passed to update_kronecker_factors, but precondition_1d is not set to True, skipping preconditioning."
+            )
             return
     else:
         # For higher dimensional tensors, compute outer products for each dimension
         for idx, dim_size in enumerate(grad.shape):
-            if dim_size <= max_precond_dim:
-                # Compute outer product by contracting all dimensions except idx
-                contract_dims = [*chain(range(idx), range(idx + 1, grad.dim()))]
-                outer_product = torch.tensordot(
-                    grad,
-                    grad,
-                    dims=[contract_dims] * 2,
-                )
-                # Update the corresponding Kronecker factor
-                kronecker_factor_list[idx].lerp_(outer_product, 1 - shampoo_beta)
+            # Compute outer product by contracting all dimensions except idx
+            contract_dims = [*chain(range(idx), range(idx + 1, grad.dim()))]
+            outer_product = torch.tensordot(
+                grad,
+                grad,
+                dims=[contract_dims] * 2,
+            )
+            # Update the corresponding Kronecker factor
+            kronecker_factor_list[idx].lerp_(outer_product, 1 - shampoo_beta)
 
 
 @torch.no_grad()  # type: ignore[misc]

@@ -35,27 +35,11 @@ class SoapFunctionsTest(parameterized.TestCase):
         """Tests init_preconditioner with a multi-dimensional tensor."""
         grad = torch.randn(3, 4, 5)
         state: dict[str, Any] = {}
-        # No merge_dims: each dimension gets its own preconditioner unless dimension > max_precond_dim.
-        state["GG"] = init_kronecker_factors(grad, precondition_1d=False, max_precond_dim=8192)
+        state["GG"] = init_kronecker_factors(grad, precondition_1d=False)
         self.assertEqual(len(state["GG"]), grad.dim())
         self.assertEqual(state["GG"][0].shape, (3, 3))
         self.assertEqual(state["GG"][1].shape, (4, 4))
         self.assertEqual(state["GG"][2].shape, (5, 5))
-
-    def test_init_kronecker_factors_max_precond_dim(self) -> None:
-        """Tests init_kronecker_factors respects max_precond_dim."""
-        max_dim = 8
-        grad = torch.randn(3, max_dim + 2, 5)  # Second dimension exceeds max_dim
-        kronecker_factors = init_kronecker_factors(grad, precondition_1d=False, max_precond_dim=max_dim)
-
-        self.assertEqual(len(kronecker_factors), grad.dim())
-        # Dimension 0 (size 3) <= max_dim
-        self.assertEqual(kronecker_factors[0].shape, (3, 3))
-        # Dimension 1 (size max_dim + 2) > max_dim -> Should be empty
-        self.assertEqual(kronecker_factors[1].shape, (0,))
-        self.assertEqual(kronecker_factors[1].numel(), 0)
-        # Dimension 2 (size 5) <= max_dim
-        self.assertEqual(kronecker_factors[2].shape, (5, 5))
 
     @parameterized.parameters(
         (1,),
@@ -97,14 +81,13 @@ class SoapFunctionsTest(parameterized.TestCase):
             self.assertEqual(state["Q"][1].shape, (3, 3))
 
     def test_update_kronecker_factors(self) -> None:
-        """Tests update_kronecker_factors, including max_precond_dim handling."""
         max_dim = 8
         shampoo_beta = 0.9
         dim0, dim1, dim2 = 3, max_dim + 2, 5
         grad = torch.randn(dim0, dim1, dim2)
 
         # Initialize factors
-        initial_factors = init_kronecker_factors(grad, precondition_1d=False, max_precond_dim=max_dim)
+        initial_factors = init_kronecker_factors(grad, precondition_1d=False)
 
         kronecker_factors = [f.clone() for f in initial_factors]
 
@@ -113,25 +96,15 @@ class SoapFunctionsTest(parameterized.TestCase):
             grad=grad,
             shampoo_beta=shampoo_beta,
             precondition_1d=False,
-            max_precond_dim=max_dim,
         )
 
         self.assertEqual(len(kronecker_factors), grad.dim())
 
-        # Dimension 0 (size 3) <= max_dim: Should be updated
         contract_dims_0 = [1, 2]
         outer_product_0 = torch.tensordot(grad, grad, dims=[contract_dims_0] * 2)
         expected_factor_0 = initial_factors[0] * shampoo_beta + outer_product_0 * (1 - shampoo_beta)
         torch.testing.assert_close(kronecker_factors[0], expected_factor_0, atol=1e-6, rtol=1e-6)
 
-        # Dimension 1 (size 10) > max_dim: Should NOT be updated (still empty)
-        self.assertEqual(kronecker_factors[1].shape, (0,))
-        self.assertEqual(kronecker_factors[1].numel(), 0)
-
-        # Check it's the same object or has same properties as initial empty tensor
-        self.assertTrue(torch.equal(kronecker_factors[1], initial_factors[1]))
-
-        # Dimension 2 (size 5) <= max_dim: Should be updated
         contract_dims_2 = [0, 1]
         outer_product_2 = torch.tensordot(grad, grad, dims=[contract_dims_2] * 2)
         expected_factor_2 = initial_factors[2] * shampoo_beta + outer_product_2 * (1 - shampoo_beta)

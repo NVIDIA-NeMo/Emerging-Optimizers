@@ -86,14 +86,11 @@ def get_eigenbasis_eigh(
                 updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
                 continue
             # Construct approximated eigenvalues using QL^T@L@QL or QR^T@R@QR.
-            # The approximated eigenvalues should be close to diagonal if the eigenbasis is close to the true eigenbasis of the kronecker factor
-            # (i.e. the approximated eigenvectors diagonalize the kronecker factor)
+            # The approximated eigenvalues should be close to diagonal if the eigenbasis is close to the true
+            # eigenbasis of the kronecker factor (i.e. the approximated eigenvectors diagonalize the kronecker factor)
             approx_eigenvalue_matrix = eigenbasis.T @ kronecker_factor @ eigenbasis
             # Update eigenbasis when necessary. Update is skipped only when adaptive update criteria is met.
-            if _adaptive_criteria_met(
-                approx_eigenvalue_matrix=approx_eigenvalue_matrix,
-                tolerance=adaptive_update_tolerance,
-            ):
+            if utils.eig.met_approx_eigvals_criteria(approx_eigenvalue_matrix, adaptive_update_tolerance):
                 _, Q = utils.eig.eigh_with_fallback(
                     kronecker_factor,
                     force_double=False,
@@ -206,21 +203,23 @@ def get_eigenbasis_qr(
         if kronecker_factor.numel() == 0:
             updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
             continue
-        # construct approximated eigenvalues using QL^T@L@QL or QR^T@R@QR, which should be close to diagonal
-        # if the eigenbasis is close to the true eigenbasis of the kronecker factor (i.e. diagonalizes it)
-        approx_eigenvalue_matrix = eigenbasis.T @ kronecker_factor @ eigenbasis
 
         # Update eigenbasis when necessary. Update is skipped only when use_adaptive_criteria is True
         # but criteria is not met.
         if_update = True
-        if use_adaptive_criteria and not _adaptive_criteria_met(
-            approx_eigenvalue_matrix=approx_eigenvalue_matrix,
-            tolerance=adaptive_update_tolerance,
-        ):
-            if_update = False
+        # construct approximated eigenvalues using QL^T@L@QL or QR^T@R@QR, which should be close to diagonal
+        # if the eigenbasis is close to the true eigenbasis of the kronecker factor (i.e. diagonalizes it)
+        if use_adaptive_criteria:
+            approx_eigenvalue_matrix = _conjugate(kronecker_factor, eigenbasis)
+            if_update = not utils.eig.met_approx_eigvals_criteria(approx_eigenvalue_matrix, adaptive_update_tolerance)
+            if if_update:
+                approx_eigvals = torch.diag(approx_eigenvalue_matrix)
+        else:
+            approx_eigvals = _conjugate(kronecker_factor, eigenbasis, diag=True)
+
         if if_update:
             Q, exp_avg_sq = _orthogonal_iteration(
-                approx_eigenvalue_matrix=approx_eigenvalue_matrix,
+                approx_eigvals=approx_eigvals,
                 kronecker_factor=kronecker_factor,
                 eigenbasis=eigenbasis,
                 ind=ind,
@@ -237,13 +236,13 @@ def get_eigenbasis_qr(
 
 
 def _orthogonal_iteration(
-    approx_eigenvalue_matrix: torch.Tensor,
+    approx_eigvals: torch.Tensor,
     kronecker_factor: torch.Tensor,
     eigenbasis: torch.Tensor,
     ind: int,
     exp_avg_sq: torch.Tensor,
-    convert_to_float: bool = True,
-    power_iter_steps: int = 1,
+    convert_to_float: bool,
+    power_iter_steps: int,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Computes the eigenbases of the preconditioner using power iteration and QR decomposition.
 
@@ -267,8 +266,6 @@ def _orthogonal_iteration(
             - Q: The updated eigenbasis
             - exp_avg_sq: The updated (sorted) inner Adam second moment
     """
-    # extract approximated eigenvalues from the diagonal of the projection of kronecker factor onto eigenbases
-    approx_eigvals = torch.diag(approx_eigenvalue_matrix)
     # Sort the approximated eigenvalues according to their magnitudes
     sort_idx = torch.argsort(approx_eigvals, descending=True)
     # re-order the inner adam second moment
@@ -292,27 +289,26 @@ def _orthogonal_iteration(
     return Q, exp_avg_sq
 
 
-@torch.compile  # type: ignore[misc]
-def _adaptive_criteria_met(
-    approx_eigenvalue_matrix: torch.Tensor,
-    tolerance: Optional[float] = None,
-) -> bool:
-    """Determines whether the eigenbasis for a factor matrix should be updated in the next step of the orthogonal iteration.
+def _conjugate(a: torch.Tensor, p: torch.Tensor, diag: bool = False) -> torch.Tensor:
+    """Calculate similarity transformation
 
-    Determines whether the eigenbasis for a factor matrix should be updated based on computing
-    the approximated eigenvalues Q^T GG Q, where Q is the approximated eigenvectors and
-    GG is the Kronecker factor. The approximated eigenvalues update criteria is then defined as
-    ||diag(Q^T GG Q)||_F >= (1 - tolerance) * (Q^T GG Q)_F.
+    This function calculates :math:`B = P^T A P`. It assumes P is orthogonal so that :math:`P^{-1} = P^T` and
+    the similarity transformation exists.
 
     Args:
-        approx_eigenvalue_matrix: Projection of kronecker factor onto the eigenbasis, should be close to diagonal
-        tolerance: Tolerance threshold for the normalized diagonal component of approximated eigenvalue matrix.
+        a: matrix to be transformed
+        p: An orthogonal matrix.
+        diag: If True, only return the diagonal of the similarity transformation
 
     Returns:
-        perform_update: Whether to update eigenbasis this iteration
+        b
     """
-    if tolerance is None:
-        return True
-
-    # check if normalized diagonal component is not smaller than tolerance
-    return not utils.eig.adaptive_early_exit_criteria(approx_eigenvalue_matrix, tolerance)
+    if a.dim() != 2 or p.dim() != 2:
+        raise TypeError("a and p must be 2D matrices")
+    pta = p.T @ a
+    if not diag:
+        b = pta @ p
+    else:
+        # return the diagonal of the similarity transformation
+        b = (pta * p.T).sum(dim=1)
+    return b

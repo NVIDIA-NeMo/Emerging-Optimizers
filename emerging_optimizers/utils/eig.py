@@ -21,7 +21,7 @@ from torch import Tensor
 from emerging_optimizers import utils
 
 
-__all__ = ["eigh_with_fallback", "eig_orthogonal_iteration", "adaptive_early_exit_criteria"]
+__all__ = ["eigh_with_fallback", "eig_orthogonal_iteration", "met_approx_eigvals_criteria"]
 
 
 def eigh_with_fallback(
@@ -135,7 +135,7 @@ def eig_orthogonal_iteration(
         approx_eigenvalues_matrix = Q.T @ x @ Q
         approx_eigenvalues = torch.diag(approx_eigenvalues_matrix)
         iteration = 0
-        while iteration < max_iterations and not adaptive_early_exit_criteria(approx_eigenvalues_matrix, tolerance):
+        while iteration < max_iterations and not met_approx_eigvals_criteria(approx_eigenvalues_matrix, tolerance):
             power_iteration = x @ Q
             Q = torch.linalg.qr(power_iteration).Q
             approx_eigenvalues_matrix = Q.T @ x @ Q
@@ -148,7 +148,7 @@ def eig_orthogonal_iteration(
     return approx_eigenvalues, Q
 
 
-def adaptive_early_exit_criteria(approx_eigenvalues_matrix: Tensor, tolerance: float) -> bool:
+def met_approx_eigvals_criteria(approx_eigenvalues_matrix: Tensor, tolerance: float) -> bool:
     """Evaluates if a criteria using approximated eigenvalues is below or equal to the tolerance.
 
     `approx_eigenvalues_matrix` is a matrix created from the approximated eigenvectors and the symmetric matrix that is being eigendecomposed.
