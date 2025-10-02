@@ -64,6 +64,7 @@ class ObliqueSGD(Optimizer):
         )
         super().__init__(params, defaults)
 
+    @torch.no_grad()
     def step(self, closure=None):
         """Performs a single optimization step.
         Args:
@@ -89,7 +90,7 @@ class ObliqueSGD(Optimizer):
                 # Initialize momentum buffer if needed
                 state = self.state[param]
                 if "momentum_buffer" not in state:
-                    state["momentum_buffer"] = torch.zeros_like(param.data)
+                    state["momentum_buffer"] = torch.zeros_like(param)
 
                 buf = state["momentum_buffer"]
 
@@ -97,19 +98,19 @@ class ObliqueSGD(Optimizer):
                 buf.mul_(mom).add_(grad)
 
                 # Apply Riemannian gradient update
-                param.data = _compute_riemannian_grad_and_update(param, buf, mode, lr)
+                _compute_riemannian_grad_and_update(param, buf, mode, lr)
 
                 # Add decoupled weight decay
                 if wd != 0:
-                    param.data = param.data * (1 - lr * wd)
+                    param.mul_(1 - lr * wd)
 
                 # Retraction back to the manifold
                 if mode == "col":
-                    norm = param.data.norm(dim=0, keepdim=True).clamp(min=eps)
+                    norm = param.norm(dim=0, keepdim=True).clamp(min=eps)
                 elif mode == "row":
-                    norm = param.data.norm(dim=1, keepdim=True).clamp(min=eps)
+                    norm = param.norm(dim=1, keepdim=True).clamp(min=eps)
 
-                param.data = param.data / norm
+                param.div_(norm)
 
         return loss
 
@@ -163,6 +164,7 @@ class ObliqueAdam(Optimizer):
         )
         super().__init__(params, defaults)
 
+    @torch.no_grad()
     def step(self, closure=None):
         """Performs a single optimization step.
         Args:
@@ -183,7 +185,7 @@ class ObliqueAdam(Optimizer):
                 if param.grad is None:
                     continue
                 if param.ndim != 2:
-                    raise ValueError("ObliqueSGD only supports 2D parameters")
+                    raise ValueError("ObliqueAdam only supports 2D parameters")
 
                 state = self.state[param]
                 if "step" not in state:
@@ -193,9 +195,9 @@ class ObliqueAdam(Optimizer):
 
                 # Initialize momentum buffer if needed
                 if "exp_avg" not in state:
-                    state["exp_avg"] = torch.zeros_like(param.data)
+                    state["exp_avg"] = torch.zeros_like(param)
                 if "exp_avg_sq" not in state:
-                    state["exp_avg_sq"] = torch.zeros_like(param.data)
+                    state["exp_avg_sq"] = torch.zeros_like(param)
 
                 exp_avg = state["exp_avg"]
                 exp_avg_sq = state["exp_avg_sq"]
@@ -219,34 +221,31 @@ class ObliqueAdam(Optimizer):
                 norm_grad = (exp_avg / bias_correction1) / (exp_avg_sq.sqrt() / bias_correction2 + eps)
 
                 # Apply Riemannian gradient update
-                param.data = _compute_riemannian_grad_and_update(param, norm_grad, mode, lr)
+                _compute_riemannian_grad_and_update(param, norm_grad, mode, lr)
 
                 # Add decoupled weight decay
                 if wd != 0:
-                    param.data = param.data * (1 - lr * wd)
+                    param.mul_(1 - lr * wd)
 
                 # Retraction back to the manifold (compute norm after weight decay)
                 if mode == "col":
-                    norm = param.data.norm(dim=0, keepdim=True).clamp(min=eps)
+                    norm = param.norm(dim=0, keepdim=True).clamp(min=eps)
                 else:  # mode == "row"
-                    norm = param.data.norm(dim=1, keepdim=True).clamp(min=eps)
+                    norm = param.norm(dim=1, keepdim=True).clamp(min=eps)
 
-                param.data = param.data / norm
+                param.div_(norm)
 
         return loss
 
 
 def _compute_riemannian_grad_and_update(param, grad_like, mode, lr):
-    """Compute Riemannian gradient for oblique manifold and update parameter.
+    """Compute Riemannian gradient for oblique manifold and update parameter in-place.
 
     Args:
         param: Parameter tensor (2D)
         grad_like: Gradient-like tensor (momentum buffer or normalized gradient)
         mode: 'col' for column-oblique, 'row' for row-oblique
         lr: Learning rate
-
-    Returns:
-        Updated parameter data
     """
     if mode == "col":
         # Column oblique: inner products over rows (dim=0), shape (1, p)
@@ -260,4 +259,5 @@ def _compute_riemannian_grad_and_update(param, grad_like, mode, lr):
     inner = (param * grad_like).sum(dim=dim, keepdim=True)
     riem_grad = grad_like - param * inner
 
-    return param.data - lr * riem_grad
+    # Apply update in-place
+    param.add_(riem_grad, alpha=-lr)
