@@ -56,7 +56,7 @@ For a simple usage example, see [`tests/test_orthogonalized_optimizer.py::MuonTe
 
 ### Integration with Megatron Core
 
-For large-scale training with Megatron Core, see the [integration example](https://github.com/NVIDIA/Megatron-LM/pull/1813) that demonstrates usage with Dense and MoE models.
+Integration with Megatron Core is in progress. See the [integration PR](https://github.com/NVIDIA/Megatron-LM/pull/1813) that demonstrates usage with Dense and MoE models.
 
 ## Benchmarks
 
