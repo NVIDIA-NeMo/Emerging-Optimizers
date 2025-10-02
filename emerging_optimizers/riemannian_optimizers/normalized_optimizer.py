@@ -1,3 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 import torch
 from torch.optim.optimizer import Optimizer
 
@@ -186,7 +200,6 @@ class ObliqueAdam(Optimizer):
                 state = self.state[param]
                 if "step" not in state:
                     state["step"] = 0
-                step = state["step"]
 
                 grad = param.grad.data
 
@@ -199,13 +212,18 @@ class ObliqueAdam(Optimizer):
                 exp_avg = state["exp_avg"]
                 exp_avg_sq = state["exp_avg_sq"]
 
-                # theory style momentum
-                exp_avg.lerp_(grad, betas[0])
-                exp_avg_sq.lerp_(grad.square(), betas[1])
+                # Increment step counter
+                state["step"] += 1
+                step = state["step"]
+
+                # Update biased first and second moment estimates
+                exp_avg.mul_(betas[0]).add_(grad, alpha=1 - betas[0])
+                exp_avg_sq.mul_(betas[1]).addcmul_(grad, grad, value=1 - betas[1])
+
                 if correct_bias:
                     # step size correction for ADAM moments EMA
-                    bias_correction1 = 1.0 - betas[0] ** (step)
-                    bias_correction2 = 1.0 - betas[1] ** (step)
+                    bias_correction1 = 1.0 - betas[0] ** step
+                    bias_correction2 = 1.0 - betas[1] ** step
                 else:
                     bias_correction1 = 1.0
                     bias_correction2 = 1.0
@@ -217,28 +235,26 @@ class ObliqueAdam(Optimizer):
                     inner = (param * norm_grad).sum(dim=0, keepdim=True)
                     riem_grad = norm_grad - param * inner
                     param.data = param.data - lr * riem_grad
-                    # Retraction: normalize columns
-                    norm = param.data.norm(dim=0, keepdim=True).clamp(min=eps)
 
                 elif mode == "row":
                     # Row oblique: inner products over columns (dim=1), shape (n, 1)
                     inner = (param * norm_grad).sum(dim=1, keepdim=True)
                     riem_grad = norm_grad - param * inner
                     param.data = param.data - lr * riem_grad
-                    # Retraction: normalize rows
-                    norm = param.data.norm(dim=1, keepdim=True).clamp(min=eps)
 
                 else:
                     raise ValueError(f"Invalid mode '{mode}'; expected 'col' or 'row'")
-
-                # Increment step counter
-                state["step"] += 1
 
                 # Add decoupled weight decay
                 if wd != 0:
                     param.data = param.data * (1 - lr * wd)
 
-                # Retraction back to the manifold
+                # Retraction back to the manifold (compute norm after weight decay)
+                if mode == "col":
+                    norm = param.data.norm(dim=0, keepdim=True).clamp(min=eps)
+                else:  # mode == "row"
+                    norm = param.data.norm(dim=1, keepdim=True).clamp(min=eps)
+
                 param.data = param.data / norm
 
         return loss
