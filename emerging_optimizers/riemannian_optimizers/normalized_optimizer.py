@@ -96,30 +96,19 @@ class ObliqueSGD(Optimizer):
                 # theory style momentum
                 buf.mul_(mom).add_(grad)
 
-                if mode == "col":
-                    # Column oblique: inner products over rows (dim=0), shape (1, p)
-                    inner = (param * buf).sum(dim=0, keepdim=True)
-                    riem_grad = buf - param * inner
-                    param.data = param.data - lr * riem_grad
-                    # Retraction: normalize columns
-                    norm = param.data.norm(dim=0, keepdim=True).clamp(min=eps)
-
-                elif mode == "row":
-                    # Row oblique: inner products over columns (dim=1), shape (n, 1)
-                    inner = (param * buf).sum(dim=1, keepdim=True)
-                    riem_grad = buf - param * inner
-                    param.data = param.data - lr * riem_grad
-                    # Retraction: normalize rows
-                    norm = param.data.norm(dim=1, keepdim=True).clamp(min=eps)
-
-                else:
-                    raise ValueError(f"Invalid mode '{mode}'; expected 'col' or 'row'")
+                # Apply Riemannian gradient update
+                param.data = _compute_riemannian_grad_and_update(param, buf, mode, lr)
 
                 # Add decoupled weight decay
                 if wd != 0:
                     param.data = param.data * (1 - lr * wd)
 
                 # Retraction back to the manifold
+                if mode == "col":
+                    norm = param.data.norm(dim=0, keepdim=True).clamp(min=eps)
+                elif mode == "row":
+                    norm = param.data.norm(dim=1, keepdim=True).clamp(min=eps)
+
                 param.data = param.data / norm
 
         return loss
@@ -230,20 +219,8 @@ class ObliqueAdam(Optimizer):
 
                 norm_grad = (exp_avg / bias_correction1) / (exp_avg_sq.sqrt() / bias_correction2 + eps)
 
-                if mode == "col":
-                    # Column oblique: inner products over rows (dim=0), shape (1, p)
-                    inner = (param * norm_grad).sum(dim=0, keepdim=True)
-                    riem_grad = norm_grad - param * inner
-                    param.data = param.data - lr * riem_grad
-
-                elif mode == "row":
-                    # Row oblique: inner products over columns (dim=1), shape (n, 1)
-                    inner = (param * norm_grad).sum(dim=1, keepdim=True)
-                    riem_grad = norm_grad - param * inner
-                    param.data = param.data - lr * riem_grad
-
-                else:
-                    raise ValueError(f"Invalid mode '{mode}'; expected 'col' or 'row'")
+                # Apply Riemannian gradient update
+                param.data = _compute_riemannian_grad_and_update(param, norm_grad, mode, lr)
 
                 # Add decoupled weight decay
                 if wd != 0:
@@ -258,3 +235,29 @@ class ObliqueAdam(Optimizer):
                 param.data = param.data / norm
 
         return loss
+
+
+def _compute_riemannian_grad_and_update(param, grad_like, mode, lr):
+    """Compute Riemannian gradient for oblique manifold and update parameter.
+
+    Args:
+        param: Parameter tensor (2D)
+        grad_like: Gradient-like tensor (momentum buffer or normalized gradient)
+        mode: 'col' for column-oblique, 'row' for row-oblique
+        lr: Learning rate
+
+    Returns:
+        Updated parameter data
+    """
+    if mode == "col":
+        # Column oblique: inner products over rows (dim=0), shape (1, p)
+        inner = (param * grad_like).sum(dim=0, keepdim=True)
+        riem_grad = grad_like - param * inner
+    elif mode == "row":
+        # Row oblique: inner products over columns (dim=1), shape (n, 1)
+        inner = (param * grad_like).sum(dim=1, keepdim=True)
+        riem_grad = grad_like - param * inner
+    else:
+        raise ValueError(f"Invalid mode '{mode}'; expected 'col' or 'row'")
+
+    return param.data - lr * riem_grad
