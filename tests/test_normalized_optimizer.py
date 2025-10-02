@@ -431,10 +431,10 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
         self._verify_norms_preserved(model)
 
     @parameterized.named_parameters(
-        ("sgd_col", ObliqueSGD, {"lr": 0.01, "momentum": 0.9, "mode": "col"}),
-        ("sgd_row", ObliqueSGD, {"lr": 0.01, "momentum": 0.9, "mode": "row"}),
-        ("adam_col", ObliqueAdam, {"lr": 0.001, "betas": (0.9, 0.999), "mode": "col"}),
-        ("adam_row", ObliqueAdam, {"lr": 0.001, "betas": (0.9, 0.999), "mode": "row"}),
+        ("sgd_col", ObliqueSGD, {"lr": 0.02, "momentum": 0.9, "mode": "col"}),
+        ("sgd_row", ObliqueSGD, {"lr": 0.02, "momentum": 0.9, "mode": "row"}),
+        ("adam_col", ObliqueAdam, {"lr": 0.01, "betas": (0.9, 0.999), "mode": "col"}),
+        ("adam_row", ObliqueAdam, {"lr": 0.01, "betas": (0.9, 0.999), "mode": "row"}),
     )
     def test_optimizer_modes_convergence(self, optimizer_class, optimizer_kwargs):
         """Test that both row and column modes work for both optimizers."""
@@ -453,8 +453,8 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
         )
 
         # Basic convergence check
-        self.assertLess(final_loss, initial_loss * 1.1, "Loss should decrease or stay stable")
-        self.assertGreater(final_accuracy, 8.0, "Should achieve reasonable accuracy")
+        self.assertLess(final_loss, initial_loss * 1.01, "Loss should decrease or stay stable")
+        self.assertGreater(final_accuracy, 50.0, "Should achieve reasonable accuracy")
 
         # Verify norm preservation based on mode
         for param in model.get_oblique_parameters():
