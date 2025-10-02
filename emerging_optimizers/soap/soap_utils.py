@@ -16,7 +16,7 @@ from typing import List, Optional, Tuple
 
 import torch
 
-from emerging_optimizers import utils
+from emerging_optimizers.utils import eig as eig_utils
 
 
 __all__ = [
@@ -85,13 +85,10 @@ def get_eigenbasis_eigh(
                 # We use an empty tensor so that the `precondition` function will skip this factor.
                 updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
                 continue
-            # Construct approximated eigenvalues using :math:`Q_L^T L Q_L` or :math:`Q_R^T R Q_R`.
-            # The approximated eigenvalues should be close to diagonal if the eigenbasis is close to the true
-            # eigenbasis of the kronecker factor (i.e. the approximated eigenvectors diagonalize the kronecker factor)
-            approx_eigenvalue_matrix = eigenbasis.T @ kronecker_factor @ eigenbasis
-            # Update eigenbasis when necessary. Update is skipped only when adaptive update criteria is met.
-            if utils.eig.met_approx_eigvals_criteria(approx_eigenvalue_matrix, adaptive_update_tolerance):
-                _, Q = utils.eig.eigh_with_fallback(
+
+            approx_eigvals = eig_utils.conjugate(kronecker_factor, eigenbasis, diag=True)
+            if not eig_utils.met_approx_eigvals_criteria(kronecker_factor, approx_eigvals, adaptive_update_tolerance):
+                _, Q = eig_utils.eigh_with_fallback(
                     kronecker_factor,
                     force_double=False,
                     eps=eps,
@@ -106,7 +103,7 @@ def get_eigenbasis_eigh(
             if kronecker_factor.numel() == 0:
                 updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
                 continue
-            _, Q = utils.eig.eigh_with_fallback(
+            _, Q = eig_utils.eigh_with_fallback(
                 kronecker_factor, force_double=False, eps=eps, output_dtype=torch.float if convert_to_float else None
             )
             updated_eigenbasis_list.append(Q)
@@ -204,21 +201,19 @@ def get_eigenbasis_qr(
             updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
             continue
 
-        # Update eigenbasis when necessary. Update is skipped only when use_adaptive_criteria is True
-        # but criteria is not met.
+        # Update eigenbasis when necessary. Update is skipped only when use_adaptive_criteria is True while
+        # criteria is not met.
         if_update = True
-        # construct approximated eigenvalues using :math:`Q_L^T L Q_L` or :math:`Q_R^T R Q_R`, which should be close to diagonal
-        # if the eigenbasis is close to the true eigenbasis of the kronecker factor (i.e. diagonalizes it)
+        # construct approximated eigenvalues using Q_L^T L Q_L or Q_R^T R Q_R, which should be close to
+        # diagonal if the eigenbasis is close to the true eigenbasis of the kronecker factor (i.e. diagonalizes it)
+        approx_eigvals = eig_utils.conjugate(kronecker_factor, eigenbasis, diag=True)
         if use_adaptive_criteria:
-            approx_eigenvalue_matrix = _conjugate(kronecker_factor, eigenbasis)
-            if_update = not utils.eig.met_approx_eigvals_criteria(approx_eigenvalue_matrix, adaptive_update_tolerance)
-            if if_update:
-                approx_eigvals = torch.diag(approx_eigenvalue_matrix)
-        else:
-            approx_eigvals = _conjugate(kronecker_factor, eigenbasis, diag=True)
+            if_update = not eig_utils.met_approx_eigvals_criteria(
+                kronecker_factor, approx_eigvals, adaptive_update_tolerance
+            )
 
         if if_update:
-            Q, exp_avg_sq = _orthogonal_iteration(
+            Q, exp_avg_sq = eig_utils.orthogonal_iteration(
                 approx_eigvals=approx_eigvals,
                 kronecker_factor=kronecker_factor,
                 eigenbasis=eigenbasis,
@@ -233,82 +228,3 @@ def get_eigenbasis_qr(
             updated_eigenbasis_list.append(eigenbasis)
 
     return updated_eigenbasis_list, exp_avg_sq
-
-
-def _orthogonal_iteration(
-    approx_eigvals: torch.Tensor,
-    kronecker_factor: torch.Tensor,
-    eigenbasis: torch.Tensor,
-    ind: int,
-    exp_avg_sq: torch.Tensor,
-    convert_to_float: bool,
-    power_iter_steps: int,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Computes the eigenbases of the preconditioner using power iteration and QR decomposition.
-
-    This function performs multiple rounds of power iteration followed by QR decomposition
-    to recompute the eigenbases of the preconditioner kronecker factor. Generalizes Vyas et al.'s (SOAP) algorithm of 1 step of power iteration for updating the eigenbasis.
-
-    Args:
-        approx_eigenvalue_matrix : Projection of kronecker factor onto the eigenbasis, should be close to diagonal
-        kronecker_factor : Kronecker factor matrix.
-        eigenbasis : Kronecker factor eigenbasis matrix.
-        ind : Index for selecting dimension in the exp_avg_sq matrix to apply the sorting order over.
-        exp_avg_sq : inner Adam second moment (exp_avg_sq).
-        convert_to_float : If True, preconditioner matrices and their corresponding
-            orthonormal matrices will be cast to float. Otherwise, they are left in
-            their original type. Defaults to False.
-        power_iter_steps: Number of power iteration steps to perform before QR decomposition.
-            More steps can lead to better convergence but increased computation time.
-
-    Returns:
-        tuple[torch.Tensor, torch.Tensor]: A tuple containing:
-            - Q: The updated eigenbasis
-            - exp_avg_sq: The updated (sorted) inner Adam second moment
-    """
-    # Sort the approximated eigenvalues according to their magnitudes
-    sort_idx = torch.argsort(approx_eigvals, descending=True)
-    # re-order the inner adam second moment
-    exp_avg_sq = exp_avg_sq.index_select(ind, sort_idx)
-
-    # Initialize power iteration after sorting the columns of the eigenbasis matrix according to the descending eigenvalues
-    Q = eigenbasis[:, sort_idx]
-
-    #  By default, perform QR decomposition with power iteration with FP32 precision
-    # Perform multiple steps of power iteration
-    for _ in range(power_iter_steps):
-        # Project current eigenbases on kronecker factor
-        Q = kronecker_factor @ Q
-        # Perform QR to maintain orthogonality between iterations
-        Q = torch.linalg.qr(Q).Q
-
-    # When not converting to float, ensure that Q is in the original dtype
-    if not convert_to_float:
-        Q = Q.to(kronecker_factor.dtype)
-
-    return Q, exp_avg_sq
-
-
-def _conjugate(a: torch.Tensor, p: torch.Tensor, diag: bool = False) -> torch.Tensor:
-    """Calculate similarity transformation
-
-    This function calculates :math:`B = P^T A P`. It assumes P is orthogonal so that :math:`P^{-1} = P^T` and
-    the similarity transformation exists.
-
-    Args:
-        a: matrix to be transformed
-        p: An orthogonal matrix.
-        diag: If True, only return the diagonal of the similarity transformation
-
-    Returns:
-        b
-    """
-    if a.dim() != 2 or p.dim() != 2:
-        raise TypeError("a and p must be 2D matrices")
-    pta = p.T @ a
-    if not diag:
-        b = pta @ p
-    else:
-        # return the diagonal of the similarity transformation
-        b = (pta * p.T).sum(dim=1)
-    return b

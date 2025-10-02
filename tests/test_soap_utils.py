@@ -17,6 +17,7 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
 from emerging_optimizers.soap import soap_utils
+from emerging_optimizers.utils import eig as eig_utils
 
 
 # Base class for tests requiring seeding for determinism
@@ -39,8 +40,9 @@ class SoapUtilsTest(BaseTestCase):
 
         # Test with small tolerance - should not update since matrix is diagonal
         self.assertTrue(
-            soap_utils.utils.eig.met_approx_eigvals_criteria(
+            eig_utils.met_approx_eigvals_criteria(
                 diagonal_matrix,
+                diagonal_matrix.diag(),
                 tolerance=0.1,
             ),
             msg="Should not update for diagonal matrix with small tolerance",
@@ -58,8 +60,9 @@ class SoapUtilsTest(BaseTestCase):
 
         # Test with small tolerance - should update since matrix has significant off-diagonal elements
         self.assertFalse(
-            utils.eig.met_approx_eigvals_criteria(
+            eig_utils.met_approx_eigvals_criteria(
                 off_diagonal_matrix,
+                off_diagonal_matrix.diag(),
                 tolerance=0.1,
             ),
             msg="Should update for matrix with significant off-diagonal elements and small tolerance",
@@ -67,8 +70,9 @@ class SoapUtilsTest(BaseTestCase):
 
         # Test with large tolerance - should not update even with off-diagonal elements
         self.assertTrue(
-            utils.eig.met_approx_eigvals_criteria(
+            eig_utils.met_approx_eigvals_criteria(
                 off_diagonal_matrix,
+                off_diagonal_matrix.diag(),
                 tolerance=10.0,
             ),
             msg="Should not update for any matrix with large tolerance",
@@ -169,7 +173,7 @@ class SoapUtilsTest(BaseTestCase):
         approx_eigvals = torch.diag(approx_eigenvalue_matrix)
 
         # Call the QR function to update the eigenbases and re-order the inner adam second moment
-        Q_new, exp_avg_sq_new = soap_utils._orthogonal_iteration(
+        Q_new, exp_avg_sq_new = eig_utils.orthogonal_iteration(
             approx_eigvals=approx_eigvals,
             kronecker_factor=kronecker_factor,
             eigenbasis=eigenbasis,
@@ -264,7 +268,7 @@ class SoapUtilsTest(BaseTestCase):
         """Tests the conjugate function."""
         a = torch.randn(2, 3, 4, device="cuda")
         with self.assertRaises(TypeError):
-            soap_utils._conjugate(a, a)
+            eig_utils.conjugate(a, a)
 
     def test_conjugate_match_reference(self) -> None:
         x = torch.randn(15, 17, device="cuda")
@@ -272,7 +276,7 @@ class SoapUtilsTest(BaseTestCase):
         _, p = torch.linalg.eigh(a)
 
         ref = p.T @ a @ p
-        torch.testing.assert_close(soap_utils._conjugate(a, p), ref, atol=0, rtol=0)
+        torch.testing.assert_close(eig_utils.conjugate(a, p), ref, atol=0, rtol=0)
 
 
 if __name__ == "__main__":
