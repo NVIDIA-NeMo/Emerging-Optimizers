@@ -50,42 +50,9 @@ pip install .
 
 ### Muon Optimizer
 
-Muon (MomentUm Orthogonalized by Newton-schulz) uses orthogonalization for 2D parameters:
+Muon (MomentUm Orthogonalized by Newton-schulz) uses orthogonalization for 2D parameters.
 
-```python
-import torch
-from emerging_optimizers.orthogonalized_optimizers import Muon
-
-# Create model
-model = YourModel()
-
-# Separate parameters: use Muon for 2D weights, Adam for others
-muon_params = [p for p in model.parameters() if p.ndim == 2]
-adam_params = [p for p in model.parameters() if p.ndim != 2]
-
-# Initialize optimizers
-optimizer_muon = Muon(
-    muon_params,
-    lr=3e-4,
-    momentum_beta=0.95,
-    weight_decay=0.01,
-)
-
-optimizer_adam = torch.optim.AdamW(
-    adam_params,
-    lr=3e-4,
-    weight_decay=0.01,
-)
-
-# Training loop
-for batch in dataloader:
-    for opt in [optimizer_muon, optimizer_adam]:
-        opt.zero_grad()
-    loss = model(batch)
-    loss.backward()
-    for opt in [optimizer_muon, optimizer_adam]:
-        opt.step()
-```
+For a simple usage example, see [`tests/test_orthogonalized_optimizer.py::MuonTest`](tests/test_orthogonalized_optimizer.py).
 
 ### Integration with Megatron Core
 
