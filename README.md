@@ -2,21 +2,21 @@
 
 ## Overview
 
-Emerging Optimizers is a research project focused on understanding and optimizing the algorithmic behavior of Shampoo class optimizers (Shampoo, SOAP, Muon, etc.) and their implications to performance of GPU systems in LLM training.
+Emerging Optimizers is a research project focused on understanding and optimizing the algorithmic behavior of matrix-based preconditioning optimizers (including Shampoo, SOAP, Muon, etc.) and their implications to performance of GPU systems in LLM training.
 
 > ⚠️ Note: Emerging-Optimizers is under active development. All APIs are experimental and subject to change. New features, improvements, and documentation updates are released regularly. Your feedback and contributions are welcome, and we encourage you to follow along as new updates roll out.
 
 ## Background
 
-### What are Shampoo Optimizers?
+### What are Matrix-Based Preconditioning Optimizers?
 
-Shampoo class optimizers are a family of second-order optimization algorithms that use preconditioned gradient descent to achieve faster convergence compared to traditional first-order methods like Adam or SGD. Unlike these conventional optimizers that treat each parameter independently, Shampoo optimizers leverage the full or block-wise structure of the gradient's second moment statistics through matrix preconditioning.
+Matrix-based preconditioning optimizers use non-diagonal preconditioning of gradients to achieve faster convergence compared to traditional methods like Adam or SGD. Unlike conventional optimizers that treat each parameter independently (diagonal preconditioning), these optimizers leverage the full or blockwise structure of the gradient's second moment statistics through matrix preconditioning.
 
 **Reference:** [Shampoo: Preconditioned Stochastic Tensor Optimization](https://arxiv.org/abs/1802.09568)
 
 ### Why They Matter
 
-Shampoo optimizers have demonstrated significant practical impact in large-scale language model training. Most notably, they were used to train the **Kimi K2 model** ([arXiv:2507.20534](https://arxiv.org/abs/2507.20534)), showcasing their effectiveness at scale. These optimizers can:
+Matrix-based preconditioning optimizers have demonstrated significant practical impact in large-scale language model training. Most notably, they were used to train the **Kimi K2 model** ([arXiv:2507.20534](https://arxiv.org/abs/2507.20534)), showcasing their effectiveness at scale. These optimizers can:
 
 - Achieve faster convergence, reducing the number of training steps required
 - Improve final model quality through better conditioning of the optimization landscape
@@ -24,11 +24,11 @@ Shampoo optimizers have demonstrated significant practical impact in large-scale
 
 ### Optimizers Included
 
-This project focuses on the following Shampoo class optimizers:
+This project focuses on the following matrix-based preconditioning optimizers:
 
-- **Shampoo**: The foundational second-order optimizer using Kronecker-factored preconditioning ([arXiv:1802.09568](https://arxiv.org/abs/1802.09568))
+- **Shampoo**: The foundational optimizer using Kronecker-factored preconditioning ([arXiv:1802.09568](https://arxiv.org/abs/1802.09568))
 - **SOAP (Shampoo with Adam in the Preconditioner)**: A variant that combines Shampoo's preconditioning with Adam-style momentum ([arXiv:2409.11321](https://arxiv.org/abs/2409.11321))
-- **Muon**: A momentum-based variant designed for improved stability and convergence in large-scale training ([arXiv:2502.16982](https://arxiv.org/abs/2502.16982))
+- **Muon**: A momentum-based optimizer using Newton-Schulz orthogonalization for improved stability and convergence in large-scale training ([arXiv:2502.16982](https://arxiv.org/abs/2502.16982))
 
 
 ## Installation
