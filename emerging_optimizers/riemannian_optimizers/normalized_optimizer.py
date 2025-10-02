@@ -20,8 +20,8 @@ class ObliqueSGD(Optimizer):
     """SGD optimizer for row- or column-normalized 2D parameters on oblique manifolds.
 
     This optimizer performs SGD on oblique manifolds, where parameters are constrained
-    to have unit-norm rows or columns. It implements Riemannian SGD with proper
-    manifold-aware gradient updates and retraction operations.
+    to have unit-norm rows or columns. It implements Riemannian SGD with manifold-aware
+    gradient updates and retraction operations.
 
     References:
         - Jianlin Su: https://kexue.fm/archives/11196
@@ -119,8 +119,7 @@ class ObliqueAdam(Optimizer):
 
     This optimizer adapts an Adam-like algorithm to work on oblique manifolds, where
     parameters are constrained to have unit-norm rows or columns. It combines
-    adaptive momentum estimation with proper Riemannian gradient computation
-    and manifold retraction.
+    adaptive momentum estimation with Riemannian gradient computation and manifold retraction.
     """
 
     def __init__(
@@ -251,13 +250,14 @@ def _compute_riemannian_grad_and_update(param, grad_like, mode, lr):
     """
     if mode == "col":
         # Column oblique: inner products over rows (dim=0), shape (1, p)
-        inner = (param * grad_like).sum(dim=0, keepdim=True)
-        riem_grad = grad_like - param * inner
+        dim = 0
     elif mode == "row":
         # Row oblique: inner products over columns (dim=1), shape (n, 1)
-        inner = (param * grad_like).sum(dim=1, keepdim=True)
-        riem_grad = grad_like - param * inner
+        dim = 1
     else:
         raise ValueError(f"Invalid mode '{mode}'; expected 'col' or 'row'")
+
+    inner = (param * grad_like).sum(dim=dim, keepdim=True)
+    riem_grad = grad_like - param * inner
 
     return param.data - lr * riem_grad
