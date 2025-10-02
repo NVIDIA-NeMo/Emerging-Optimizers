@@ -24,6 +24,7 @@ class ObliqueSGD(Optimizer):
     gradient updates and retraction operations.
 
     References:
+        - An Introduction to Optimization on Smooth Manifolds (Nicolas Boumal)
         - Jianlin Su: https://kexue.fm/archives/11196
         - Raman et al.: https://arxiv.org/abs/1909.06463
         - Franz Cesista: https://leloykun.github.io/ponder/steepest-descent-stiefel/#6-bonus-a-muon-like-optimizer-for-the-embedding-and-unembedding-layers
@@ -85,7 +86,7 @@ class ObliqueSGD(Optimizer):
                     continue
                 if param.ndim != 2:
                     raise ValueError("ObliqueSGD only supports 2D parameters")
-                grad = param.grad.data
+                grad = param.grad
 
                 # Initialize momentum buffer if needed
                 state = self.state[param]
@@ -98,11 +99,7 @@ class ObliqueSGD(Optimizer):
                 buf.mul_(mom).add_(grad)
 
                 # Apply Riemannian gradient update
-                _compute_riemannian_grad_and_update(param, buf, mode, lr)
-
-                # Add decoupled weight decay
-                if wd != 0:
-                    param.mul_(1 - lr * wd)
+                _compute_riemannian_grad_and_update(param, buf, mode, lr, wd)
 
                 # Retraction back to the manifold
                 if mode == "col":
@@ -191,7 +188,7 @@ class ObliqueAdam(Optimizer):
                 if "step" not in state:
                     state["step"] = 0
 
-                grad = param.grad.data
+                grad = param.grad
 
                 # Initialize momentum buffer if needed
                 if "exp_avg" not in state:
@@ -221,11 +218,7 @@ class ObliqueAdam(Optimizer):
                 norm_grad = (exp_avg / bias_correction1) / (exp_avg_sq.sqrt() / bias_correction2 + eps)
 
                 # Apply Riemannian gradient update
-                _compute_riemannian_grad_and_update(param, norm_grad, mode, lr)
-
-                # Add decoupled weight decay
-                if wd != 0:
-                    param.mul_(1 - lr * wd)
+                _compute_riemannian_grad_and_update(param, norm_grad, mode, lr, wd)
 
                 # Retraction back to the manifold (compute norm after weight decay)
                 if mode == "col":
@@ -238,7 +231,7 @@ class ObliqueAdam(Optimizer):
         return loss
 
 
-def _compute_riemannian_grad_and_update(param, grad_like, mode, lr):
+def _compute_riemannian_grad_and_update(param, grad_like, mode, lr, wd):
     """Compute Riemannian gradient for oblique manifold and update parameter in-place.
 
     Args:
@@ -246,6 +239,7 @@ def _compute_riemannian_grad_and_update(param, grad_like, mode, lr):
         grad_like: Gradient-like tensor (momentum buffer or normalized gradient)
         mode: 'col' for column-oblique, 'row' for row-oblique
         lr: Learning rate
+        wd: Weight decay coefficient
     """
     if mode == "col":
         # Column oblique: inner products over rows (dim=0), shape (1, p)
@@ -258,6 +252,9 @@ def _compute_riemannian_grad_and_update(param, grad_like, mode, lr):
 
     inner = (param * grad_like).sum(dim=dim, keepdim=True)
     riem_grad = grad_like - param * inner
+
+    # Add decoupled weight decay
+    param.mul_(1 - lr * wd)
 
     # Apply update in-place
     param.add_(riem_grad, alpha=-lr)
