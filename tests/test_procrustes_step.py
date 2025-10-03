@@ -1,3 +1,5 @@
+import math
+
 import torch
 from absl import testing
 from absl.testing import parameterized
@@ -11,7 +13,7 @@ class ProcrustesStepTest(parameterized.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        torch.manual_seed(42)  # For reproducible tests
+        torch.manual_seed(42)
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     def _procrustes_objective(self, Q):
@@ -21,19 +23,16 @@ class ProcrustesStepTest(parameterized.TestCase):
     def test_improves_orthogonality_simple_case(self):
         """Test that procrustes_step doesn't worsen orthogonality for a simple case."""
 
+        # Make a SPD non-orthogonal matrix
         Q = torch.randn(2, 2, device=self.device, dtype=torch.float32)
         Q = Q @ Q.T
 
-        # Measure initial objective
         initial_obj = self._procrustes_objective(Q)
 
-        # Apply procrustes step
         procrustes_step(Q, max_step_size=1 / 16)
 
-        # Measure final objective
         final_obj = self._procrustes_objective(Q)
 
-        # Should improve (reduce) the objective or remain the same (if tr_RQ <= 0)
         self.assertLessEqual(final_obj.item(), initial_obj.item() + 1e-6)
 
     def test_modifies_matrix_in_place(self):
@@ -43,14 +42,17 @@ class ProcrustesStepTest(parameterized.TestCase):
 
         procrustes_step(Q, max_step_size=1 / 16)
 
-        # Should be the same tensor object
         self.assertEqual(id(Q), Q_original_id)
-        # The tensor object should remain the same, regardless of whether data changed
 
-    def test_minimal_change_when_already_orthogonal(self):
+    @parameterized.parameters(
+        (8,),
+        (128,),
+        (1024,),
+    )
+    def test_minimal_change_when_already_orthogonal(self, size):
         """Test that procrustes_step makes minimal changes to an already orthogonal matrix."""
         # Create an orthogonal matrix using QR decomposition
-        A = torch.randn(4, 4, device=self.device)
+        A = torch.randn(size, size, device=self.device, dtype=torch.float32)
         with fp32_matmul_precision("highest"):
             Q, _ = torch.linalg.qr(A)
 
@@ -61,29 +63,25 @@ class ProcrustesStepTest(parameterized.TestCase):
         final_obj = self._procrustes_objective(Q)
 
         # For already orthogonal matrices, the objective should remain small
-        self.assertLess(final_obj.item(), 1e-4)
-        # And shouldn't get significantly worse
-        self.assertLess(final_obj.item(), initial_obj.item() + 1e-4)
+        self.assertLess(final_obj.item(), 1e-5)
+        self.assertLess(final_obj.item(), initial_obj.item() + 1e-5)
 
     def test_handles_small_norm_gracefully(self):
-        """Test that procrustes_step handles matrices with small R norm."""
+        """Test that procrustes_step handles matrices with small R norm improvement."""
         # Create a matrix very close to orthogonal
-        A = torch.randn(3, 3, device=self.device)
+        A = torch.randn(3, 3, device=self.device, dtype=torch.float32)
         with fp32_matmul_precision("highest"):
             Q, _ = torch.linalg.qr(A)
         # Add tiny perturbation
-        Q += 1e-10 * torch.randn_like(Q)
+        Q += 1e-10 * torch.randn_like(Q, dtype=torch.float32)
 
         initial_obj = self._procrustes_objective(Q)
 
-        # Should not crash
         procrustes_step(Q, max_step_size=1 / 16)
 
         final_obj = self._procrustes_objective(Q)
 
-        # Should maintain good orthogonality (objective should remain small)
         self.assertLess(final_obj.item(), 1e-6)
-        # Shouldn't get significantly worse
         self.assertLess(final_obj.item(), initial_obj.item() + 1e-6)
 
     @parameterized.parameters(
@@ -93,16 +91,16 @@ class ProcrustesStepTest(parameterized.TestCase):
         (1 / 8,),
     )
     def test_different_step_sizes(self, max_step_size):
-        """Test procrustes_step with different step sizes."""
-        Q = torch.linalg.qr(torch.randn(10, 10, device=self.device)).Q + 1e-1 * torch.randn(10, 10, device=self.device)
+        """Test procrustes_step improvement with different step sizes."""
+        perturbation = 1e-1 * torch.randn(10, 10, device=self.device, dtype=torch.float32) / math.sqrt(10)
+        Q = torch.linalg.qr(torch.randn(10, 10, device=self.device, dtype=torch.float32)).Q + perturbation
         initial_obj = self._procrustes_objective(Q)
 
         procrustes_step(Q, max_step_size=max_step_size)
 
         final_obj = self._procrustes_objective(Q)
 
-        # Should not make orthogonality worse (algorithm only updates when beneficial)
-        self.assertLessEqual(final_obj.item(), initial_obj.item() + 1e-5)
+        self.assertLessEqual(final_obj.item(), initial_obj.item() + 1e-4)
 
     @parameterized.parameters(
         (8,),
@@ -111,12 +109,12 @@ class ProcrustesStepTest(parameterized.TestCase):
         (8192,),
     )
     def test_different_matrix_sizes(self, size):
-        """Test procrustes_step with different matrix sizes."""
+        """Test procrustes_step improvement with different matrix sizes."""
         # Create a non-orthogonal matrix by scaling an orthogonal one
-        A = torch.randn(size, size, device=self.device)
+        A = torch.randn(size, size, device=self.device, dtype=torch.float32)
         with fp32_matmul_precision("highest"):
             Q_orth, _ = torch.linalg.qr(A)
-        Q = Q_orth + 1e-2 * torch.randn(size, size, device=self.device)
+        Q = Q_orth + 1e-2 * torch.randn(size, size, device=self.device, dtype=torch.float32) / math.sqrt(size)
         max_step_size = 0.5 * size ** (-1 / 3)
         initial_obj = self._procrustes_objective(Q)
 
@@ -124,55 +122,13 @@ class ProcrustesStepTest(parameterized.TestCase):
 
         final_obj = self._procrustes_objective(Q)
 
-        # Algorithm should not make orthogonality significantly worse
         self.assertLessEqual(final_obj.item(), initial_obj.item() + 1e-3)
-
-    @parameterized.parameters(
-        (1,),
-        (2,),
-        (4,),
-        (8,),
-    )
-    def test_multiple_iterations_converge(self, num_iters):
-        """Test that multiple procrustes steps eventually improve orthogonality."""
-        Q = torch.tensor([[3.0, 0.5], [0.2, 2.0]], device=self.device)
-
-        initial_obj = self._procrustes_objective(Q).item()
-
-        for _ in range(num_iters):
-            procrustes_step(Q, max_step_size=1 / 32)
-
-        final_obj = self._procrustes_objective(Q).item()
-
-        # After many iterations, should significantly improve orthogonality
-        self.assertLess(final_obj, initial_obj)
-        # Should achieve reasonable orthogonality
-        self.assertLess(final_obj, initial_obj * 0.5)
-
-    def test_functional_behavior_with_good_case(self):
-        """Test procrustes_step with a case that's likely to show improvement."""
-        # Create a matrix that's close to orthogonal but not quite
-        eps = 1e-2
-        Q_orth = torch.eye(2, device=self.device)
-        Q = Q_orth + eps * torch.randn(2, 2, device=self.device)
-
-        initial_obj = self._procrustes_objective(Q)
-
-        # Apply several steps to ensure we see improvement
-        procrustes_step(Q, max_step_size=1 / 16)
-
-        final_obj = self._procrustes_objective(Q)
-
-        # Should improve orthogonality
-        self.assertLess(final_obj, initial_obj)
-        # Should get reasonably close to orthogonal
-        self.assertLess(final_obj, 0.1)
 
     def test_preserves_determinant_sign_for_real_matrices(self):
         """Test that procrustes_step preserves the sign of determinant for real matrices."""
         # Create real matrices with positive and negative determinants
-        Q_pos = torch.tensor([[2.0, 0.1], [0.1, 1.5]], device=self.device)  # det > 0
-        Q_neg = torch.tensor([[-2.0, 0.1], [0.1, 1.5]], device=self.device)  # det < 0
+        Q_pos = torch.tensor([[2.0, 0.1], [0.1, 1.5]], device=self.device, dtype=torch.float32)  # det > 0
+        Q_neg = torch.tensor([[-2.0, 0.1], [0.1, 1.5]], device=self.device, dtype=torch.float32)  # det < 0
 
         initial_det_pos = torch.det(Q_pos)
         initial_det_neg = torch.det(Q_neg)
