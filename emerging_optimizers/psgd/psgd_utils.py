@@ -53,32 +53,6 @@ def balance_q_in_place(Q_list: List[torch.Tensor]) -> None:
 
 
 @torch.compile  # type: ignore[misc]
-def solve_triangular_right(X: torch.Tensor, A: torch.Tensor) -> torch.Tensor:
-    """Solve system of linear equations y A = X with upper-triangular A for y.
-
-    This wraps `torch.linalg.solve_triangular` with `left=False`
-    so that you compute :math:`X A^{-1}`. If :math:`X` is 1D, we temporarily
-    add a leading batch dimension to satisfy the solver's requirements
-    and then remove it from the result.
-
-    Args:
-        X: Tensor of shape :math:`(..., n)` or :math:`(n,)` containing one or more
-           right-hand sides.
-        A: Upper-triangular square matrix of shape :math:`(n, n)`.
-
-    Returns:
-        A Tensor of the same shape as X, equal to :math:`X A^{-1}`.
-
-    """
-    if X.dim() > 1:
-        return torch.linalg.solve_triangular(A, X, upper=True, left=False)
-    # `torch.linalg.solve_triangular` requires at least 2D RHS, so we reshape
-    batch_result = torch.linalg.solve_triangular(A, X[None, :], upper=True, left=False)
-    solution = batch_result.squeeze(0)  # Remove the added batch dimension to get back to 1D
-    return solution
-
-
-@torch.compile  # type: ignore[misc]
 def norm_lower_bound_spd(A: torch.Tensor, k: int = 4, half_iters: int = 2) -> torch.Tensor:
     r"""Returns a cheap lower bound for the spectral norm of a symmetric positive definite matrix.
 
