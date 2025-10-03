@@ -5,7 +5,6 @@ import torch
 
 __all__ = [
     "balance_q_in_place",
-    "solve_triangular_right",
     "norm_lower_bound_spd",
     "norm_lower_bound_skew",
 ]
