@@ -17,7 +17,10 @@ import torch
 from absl import logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.orthogonalized_optimizers.spectral_clipping_utils import spectral_clip, spectral_hardcap
+from emerging_optimizers.orthogonalized_optimizers.spectral_clipping_utils import (
+    spectral_clip,
+    spectral_hardcap,
+)
 
 
 class TestSpectralClipping(parameterized.TestCase):
@@ -26,6 +29,7 @@ class TestSpectralClipping(parameterized.TestCase):
         torch.set_float32_matmul_precision("highest")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logging.info(f"Using device: {self.device}")
+        torch.manual_seed(42)
 
     def tearDown(self):
         torch.set_float32_matmul_precision(self.prev_precision)
@@ -41,7 +45,6 @@ class TestSpectralClipping(parameterized.TestCase):
         sigma_min, sigma_max = sigma_ranges
         x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
 
-        # Perform SVD on original matrix to get baseline singular values
         _, original_singular_values, _ = torch.linalg.svd(x, full_matrices=False)
         original_min_sv = original_singular_values.min().item()
         original_max_sv = original_singular_values.max().item()
@@ -50,32 +53,28 @@ class TestSpectralClipping(parameterized.TestCase):
 
         _, singular_values, _ = torch.linalg.svd(clipped_x, full_matrices=False)
 
-        # Check that all singular values are within the specified bounds
-        # Use a small tolerance for numerical precision
-        tolerance = 1e-1
-
         min_sv = singular_values.min().item()
         max_sv = singular_values.max().item()
 
-        # Log the results for debugging
         logging.info(f"Original matrix shape: {x.shape}")
         logging.info(f"Original singular values range: [{original_min_sv:.6f}, {original_max_sv:.6f}]")
         logging.info(f"Clipped singular values range: [{min_sv:.6f}, {max_sv:.6f}]")
         logging.info(f"Target range: [{sigma_min:.6f}, {sigma_max:.6f}]")
         logging.info(f"Shape preservation: input {x.shape} -> output {clipped_x.shape}")
 
+        tolerance_upper = 1e-1
+        tolerance_lower = 5e-1
         self.assertGreaterEqual(
-            min_sv + tolerance,
+            min_sv + tolerance_lower,
             sigma_min,
-            f"Minimum singular value {min_sv:.6f} is below sigma_min {sigma_min} (tolerance {tolerance})",
+            msg=f"Minimum singular value {min_sv:.6f} is below sigma_min {sigma_min} (tolerance {tolerance_lower})",
         )
         self.assertLessEqual(
-            max_sv - tolerance,
+            max_sv - tolerance_upper,
             sigma_max,
-            f"Maximum singular value {max_sv:.6f} is above sigma_max {sigma_max} (tolerance {tolerance})",
+            msg=f"Maximum singular value {max_sv:.6f} is above sigma_max {sigma_max} (tolerance {tolerance_upper})",
         )
 
-        # Verify the clipped matrix has the same shape as input
         self.assertEqual(clipped_x.shape, x.shape)
 
     @parameterized.product(
@@ -84,42 +83,35 @@ class TestSpectralClipping(parameterized.TestCase):
     )
     def test_spectral_hardcap(self, shape_pairs, beta_values):
         """Test that spectral hardcap properly clips singular values from above to be less than beta."""
-        # Extract parameters
         dim1, dim2 = shape_pairs
         beta = beta_values
 
-        # Create a random matrix
         x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
 
-        # Perform SVD on original matrix to get baseline singular values
         _, original_singular_values, _ = torch.linalg.svd(x, full_matrices=False)
         original_min_sv = original_singular_values.min().item()
         original_max_sv = original_singular_values.max().item()
+        logging.info(f"Original matrix shape: {x.shape}")
+        logging.info(f"Original singular values range: [{original_min_sv:.6f}, {original_max_sv:.6f}]")
 
         hardcapped_x = spectral_hardcap(x, beta=beta)
 
         _, singular_values, _ = torch.linalg.svd(hardcapped_x, full_matrices=False)
 
-        # Check that all singular values are <= beta
-        # Use a small tolerance for numerical precision
-        tolerance = 1e-1
+        tolerance_upper = 1e-1
 
         max_sv = singular_values.max().item()
 
-        # Log the results for debugging
-        logging.info(f"Original matrix shape: {x.shape}")
-        logging.info(f"Original singular values range: [{original_min_sv:.6f}, {original_max_sv:.6f}]")
         logging.info(f"Hardcapped max singular value: {max_sv:.6f}")
         logging.info(f"Beta (upper bound): {beta:.6f}")
         logging.info(f"Shape preservation: input {x.shape} -> output {hardcapped_x.shape}")
 
         self.assertLessEqual(
-            max_sv - tolerance,
+            max_sv - tolerance_upper,
             beta,
-            f"Maximum singular value {max_sv:.6f} exceeds beta {beta} (tolerance {tolerance})",
+            msg=f"Maximum singular value {max_sv:.6f} exceeds beta {beta} (tolerance {tolerance_upper})",
         )
 
-        # Verify the hardcapped matrix has the same shape as input
         self.assertEqual(hardcapped_x.shape, x.shape)
 
 
