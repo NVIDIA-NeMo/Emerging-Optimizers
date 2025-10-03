@@ -33,7 +33,7 @@ class ObliqueSGD(Optimizer):
         lr: learning rate
         momentum: momentum coefficient
         weight_decay: weight decay coefficient
-        dim: The dimension to compute the inner product over
+        dim: The dimension to normalize over
         eps: epsilon for numerical stability
     """
 
@@ -128,7 +128,7 @@ class ObliqueAdam(Optimizer):
             lr: The learning rate.
             betas: The coefficients used for computing running averages of gradient and its square.
             weight_decay: The weight decay coefficient.
-            dim: The dimension to compute the inner product over.
+            dim: The dimension to normalize over.
             eps: The epsilon for numerical stability.
             correct_bias: Whether to correct bias in Adam-like computation.
         """
@@ -222,7 +222,7 @@ def _compute_riemannian_grad_and_update(param, grad_like, dim, lr, wd):
     Args:
         param: Parameter tensor (2D)
         grad_like: Gradient-like tensor (momentum buffer or normalized gradient)
-        dim: The dimension to compute the inner product over
+        dim: The dimension to normalize over
         lr: Learning rate
         wd: Weight decay coefficient
     """
