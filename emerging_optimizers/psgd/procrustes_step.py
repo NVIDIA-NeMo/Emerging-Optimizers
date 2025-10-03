@@ -14,8 +14,8 @@
 # limitations under the License.
 import torch
 
+import emerging_optimizers.utils as utils
 from emerging_optimizers.psgd.psgd_utils import norm_lower_bound_skew
-from emerging_optimizers.utils import fp32_matmul_precision
 
 
 __all__ = [
@@ -38,14 +38,17 @@ def procrustes_step(Q, max_step_size=1 / 8):
         Q: Tensor of shape (n, n), general square matrix to orthogonalize.
         max_step_size: Maximum step size for the line search. Default is 1/8.
     """
-    with fp32_matmul_precision("highest"):
-        R = Q.H - Q
+    with utils.fp32_matmul_precision("highest"):
+        R = Q.T - Q
         R /= norm_lower_bound_skew(R) + torch.finfo(R.dtype).smallest_normal
         RQ = R @ Q
+        # trace of RQ is always positive, mathematically.
         tr_RQ = torch.trace(RQ)
         RRQ = R @ RQ
         tr_RRQ = torch.trace(RRQ)
+        # clip step size to max_step_size, based on a 2nd order Taylor expansion.
         step_size = torch.clamp(-tr_RQ / tr_RRQ, min=0, max=max_step_size)
+        # If tr_RRQ >= 0, the quadratic approximation is not concave, we fallback to max_step_size.
         a = torch.where(tr_RRQ < 0, step_size, max_step_size)
         # rotate Q as exp(a R) Q ~ (I + a R + a^2 R^2/2) Q with an optimal step size by line search
         # for 2nd order Taylor expansion, only expand exp(a R) to its 2nd term.
