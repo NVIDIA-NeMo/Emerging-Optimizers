@@ -28,6 +28,13 @@ class ObliqueSGD(Optimizer):
         - Jianlin Su: https://kexue.fm/archives/11196
         - Raman et al.: https://arxiv.org/abs/1909.06463
         - Franz Cesista: https://leloykun.github.io/ponder/steepest-descent-stiefel/#6-bonus-a-muon-like-optimizer-for-the-embedding-and-unembedding-layers
+
+    Args:
+        lr: learning rate
+        momentum: momentum coefficient
+        weight_decay: weight decay coefficient
+        mode: 'col' for column-oblique (default), 'row' for row-oblique
+        eps: epsilon for numerical stability
     """
 
     def __init__(
@@ -38,15 +45,7 @@ class ObliqueSGD(Optimizer):
         weight_decay=0.0,
         mode="col",
         eps=1e-8,
-    ):
-        """
-        Args:
-            lr: learning rate
-            momentum: momentum coefficient
-            weight_decay: weight decay coefficient
-            mode: 'col' for column-oblique (default), 'row' for row-oblique
-            eps: epsilon for numerical stability
-        """
+    ) -> None:
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
         if momentum < 0.0 or momentum >= 1.0:
@@ -96,7 +95,7 @@ class ObliqueSGD(Optimizer):
                 buf = state["momentum_buffer"]
 
                 # theory style momentum
-                buf.mul_(mom).add_(grad)
+                buf = torch.add(grad, buf, alpha=mom)
 
                 # Apply Riemannian gradient update
                 _compute_riemannian_grad_and_update(param, buf, mode, lr, wd)
