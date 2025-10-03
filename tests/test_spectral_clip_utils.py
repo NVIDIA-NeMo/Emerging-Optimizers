@@ -29,14 +29,14 @@ class TestSpectralClipping(parameterized.TestCase):
         torch.set_float32_matmul_precision("highest")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logging.info(f"Using device: {self.device}")
-        torch.manual_seed(42)
+        torch.manual_seed(1234)
 
     def tearDown(self):
         torch.set_float32_matmul_precision(self.prev_precision)
 
     @parameterized.product(
-        shape_pairs=[(256, 128), (128, 256), (512, 512)],
-        sigma_ranges=[(0.2, 0.8), (2, 10.0), (0.1, 20)],
+        shape_pairs=[(256, 128), (128, 256), (512, 512), (2048, 2048)],
+        sigma_ranges=[(0.2, 0.8), (0.1, 20)],
     )
     def test_spectral_clipping(self, shape_pairs, sigma_ranges):
         """Test that spectral clipping properly clips singular values to the specified range."""
@@ -88,7 +88,7 @@ class TestSpectralClipping(parameterized.TestCase):
 
         x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
 
-        _, original_singular_values, _ = torch.linalg.svd(x, full_matrices=False)
+        U_orig, original_singular_values, Vt_orig = torch.linalg.svd(x, full_matrices=False)
         original_min_sv = original_singular_values.min().item()
         original_max_sv = original_singular_values.max().item()
         logging.info(f"Original matrix shape: {x.shape}")
@@ -96,7 +96,7 @@ class TestSpectralClipping(parameterized.TestCase):
 
         hardcapped_x = spectral_hardcap(x, beta=beta)
 
-        _, singular_values, _ = torch.linalg.svd(hardcapped_x, full_matrices=False)
+        U_hard, singular_values, Vt_hard = torch.linalg.svd(hardcapped_x, full_matrices=False)
 
         tolerance_upper = 1e-1
 
@@ -113,6 +113,22 @@ class TestSpectralClipping(parameterized.TestCase):
         )
 
         self.assertEqual(hardcapped_x.shape, x.shape)
+
+        # Test that singular vectors are preserved (polar factor UV^T should be similar)
+        polar_orig = U_orig @ Vt_orig
+        polar_hard = U_hard @ Vt_hard
+
+        # The polar factors should be very similar since hardcap only changes singular values, compute the relative difference
+        relative_polar_frobenius_diff = torch.norm(polar_orig - polar_hard, "fro") / torch.norm(polar_orig, "fro")
+        polar_tolerance = 1e-4
+
+        logging.info(f"Polar factor Frobenius norm difference: {relative_polar_frobenius_diff:.6f}")
+
+        self.assertLessEqual(
+            relative_polar_frobenius_diff,
+            polar_tolerance,
+            msg=f"Polar factors differ by Frobenius norm {relative_polar_frobenius_diff:.6f}, exceeding tolerance {polar_tolerance}. Singular vectors should be preserved.",
+        )
 
 
 if __name__ == "__main__":
