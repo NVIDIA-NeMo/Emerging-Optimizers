@@ -14,7 +14,7 @@ from emerging_optimizers.utils import fp32_matmul_precision
 class TestPSGDKronContractions(parameterized.TestCase):
     """Test cases for PSGD Kronecker contractions."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test fixtures."""
         torch.manual_seed(42)
         self.device = torch.device("cuda")
@@ -24,7 +24,7 @@ class TestPSGDKronContractions(parameterized.TestCase):
         (2, 3, 4),
         (2, 3, 5),
     )
-    def test_partial_contraction_matches_reconstructed(self, size1, size2, size3):
+    def test_partial_contraction_matches_reconstructed(self, size1: int, size2: int, size3: int) -> None:
         """Test partial_contraction matches reconstructed."""
         G1 = torch.randn(size1, size2, size3, device=self.device)
         G2 = torch.randn(size1, size2, size3, device=self.device)
@@ -33,7 +33,7 @@ class TestPSGDKronContractions(parameterized.TestCase):
             reconstructed = torch.tensordot(G1, G2, dims=([0, 2], [0, 2]))
         torch.testing.assert_close(result, reconstructed)
 
-    def test_apply_kronecker_factors_matches_reconstructed(self):
+    def test_apply_kronecker_factors_matches_reconstructed(self) -> None:
         """Test apply_kronecker_factors matches reconstructed."""
         Q_list = [
             torch.triu(torch.randn(2, 2, device=self.device)),
@@ -62,7 +62,7 @@ class TestPSGDKronContractions(parameterized.TestCase):
 
         torch.testing.assert_close(result, reconstructed)
 
-    def test_apply_preconditioner_matches_reconstructed(self):
+    def test_apply_preconditioner_matches_reconstructed(self) -> None:
         """Test apply_preconditioner matches manual reconstruction for 2D tensor."""
         Q_list = [torch.triu(torch.randn(3, 3, device=self.device)), torch.triu(torch.randn(4, 4, device=self.device))]
         X = torch.randn(3, 4, device=self.device)
@@ -97,7 +97,7 @@ class TestPSGDKronContractions(parameterized.TestCase):
         (2, 3, 5, 2),
         (4, 6, 2, 1),
     )
-    def test_mode_n_mul_and_permute_shapes(self, dim0, dim1, dim2, mode):
+    def test_mode_n_mul_and_permute_shapes(self, dim0: int, dim1: int, dim2: int, mode: int) -> None:
         """Test `_mode_n_mul_and_permute` with non-uniform shapes and different modes."""
         X = torch.randn(dim0, dim1, dim2, device=self.device)
         input_shape = X.shape

@@ -23,7 +23,7 @@ __all__ = [
 ]
 
 
-def procrustes_step(Q, max_step_size=1 / 8):
+def procrustes_step(Q: torch.Tensor, max_step_size: float = 1 / 8) -> None:
     r"""One step of an in-place online solver for the orthogonal Procrustes problem.
 
     The orthogonal Procrustes problem is min_U || U Q - I ||_F,   s.t. U^H U = I
