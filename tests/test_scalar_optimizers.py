@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
+from absl import flags
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.scalar_optimizers import (
@@ -23,15 +24,43 @@ from emerging_optimizers.scalar_optimizers import (
 )
 
 
+# Define command line flags
+flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu', 'cuda', or 'auto'")
+flags.DEFINE_integer("seed", 42, "Random seed for reproducible tests")
+flags.DEFINE_boolean("skip_gpu_tests", False, "Skip GPU tests even if CUDA is available")
+
+FLAGS = flags.FLAGS
+
+
 # Base class for tests requiring seeding for determinism
 class BaseTestCase(parameterized.TestCase):
     def setUp(self):
-        """Set random seed before each test."""
-        # Set seed for PyTorch
-        torch.manual_seed(42)
+        """Set random seed and device before each test."""
+        # Set seed for PyTorch (using seed from flags)
+        torch.manual_seed(FLAGS.seed)
         # Set seed for CUDA if available
         if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(42)
+            torch.cuda.manual_seed_all(FLAGS.seed)
+
+        # Set up device based on flags
+        self.device = self._get_test_device()
+
+    def _get_test_device(self):
+        """Get the device to use for testing based on flags."""
+        if FLAGS.device == "auto":
+            return "cuda" if torch.cuda.is_available() and not FLAGS.skip_gpu_tests else "cpu"
+        elif FLAGS.device == "cuda":
+            if not torch.cuda.is_available():
+                self.skipTest("CUDA not available")
+            if FLAGS.skip_gpu_tests:
+                self.skipTest("GPU tests skipped by flag")
+            return "cuda"
+        else:
+            return "cpu"
+
+    def _move_to_device(self, *tensors):
+        """Helper method to move tensors to the test device."""
+        return tuple(tensor.to(self.device) for tensor in tensors)
 
 
 class ScalarOptimizerTest(BaseTestCase):
@@ -39,6 +68,10 @@ class ScalarOptimizerTest(BaseTestCase):
         exp_avg_initial = torch.tensor([[1.0]])
         exp_avg_sq_initial = torch.tensor([[2.0]])
         grad = torch.tensor([[0.5]])
+
+        # Move tensors to the test device
+        exp_avg_initial, exp_avg_sq_initial, grad = self._move_to_device(exp_avg_initial, exp_avg_sq_initial, grad)
+
         betas = (0.9, 0.99)
         eps = 1e-8
         step = 10
@@ -59,7 +92,7 @@ class ScalarOptimizerTest(BaseTestCase):
             eps=eps,
         )
 
-        initial_param_val_tensor = torch.tensor([[10.0]])
+        initial_param_val_tensor = torch.tensor([[10.0]]).to(self.device)
         param = torch.nn.Parameter(initial_param_val_tensor.clone())
         param.grad = grad.clone()
 
@@ -248,6 +281,23 @@ class ScalarOptimizerTest(BaseTestCase):
         # With lr=lr, the change is just the update value * lr.
         expected_param_val_after_step = initial_param_val_tensor - lr * sim_ademamix_update
         torch.testing.assert_close(param.data, expected_param_val_after_step, atol=1e-6, rtol=1e-6)
+
+    def test_device_functionality(self) -> None:
+        """Test that tensors are correctly moved to the specified device."""
+        # Create test tensors
+        tensor1 = torch.tensor([1.0, 2.0, 3.0])
+        tensor2 = torch.tensor([[1.0], [2.0]])
+
+        # Move to test device
+        tensor1_device, tensor2_device = self._move_to_device(tensor1, tensor2)
+
+        # Verify they are on the correct device
+        self.assertEqual(str(tensor1_device.device), self.device)
+        self.assertEqual(str(tensor2_device.device), self.device)
+
+        # Verify values are preserved
+        torch.testing.assert_close(tensor1_device.cpu(), tensor1, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(tensor2_device.cpu(), tensor2, atol=1e-6, rtol=1e-6)
 
 
 if __name__ == "__main__":
