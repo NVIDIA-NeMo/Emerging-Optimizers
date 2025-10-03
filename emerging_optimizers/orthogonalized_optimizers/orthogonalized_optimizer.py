@@ -14,7 +14,8 @@
 # limitations under the License.
 from typing import Any, Callable
 
-#TODO(@boxiangw): remove this once bump to python 3.12
+
+# TODO(@boxiangw): remove this once bump to python 3.12
 try:
     from typing import override
 except ImportError:

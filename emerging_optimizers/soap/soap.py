@@ -15,7 +15,8 @@
 from itertools import chain
 from typing import Callable, Iterable, List, Optional, Tuple, Union
 
-#TODO(@boxiangw): remove this once bump to python 3.12
+
+# TODO(@boxiangw): remove this once bump to python 3.12
 try:
     from typing import override
 except ImportError:
