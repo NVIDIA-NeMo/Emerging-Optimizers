@@ -17,10 +17,7 @@ import torch
 from absl import logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.orthogonalized_optimizers.spectral_clipping_utils import (
-    spectral_clip,
-    spectral_hardcap,
-)
+import emerging_optimizers.orthogonalized_optimizers as orthogonalized_optimizers
 
 
 class TestSpectralClipping(parameterized.TestCase):
@@ -48,7 +45,7 @@ class TestSpectralClipping(parameterized.TestCase):
         original_min_sv = original_singular_values.min().item()
         original_max_sv = original_singular_values.max().item()
 
-        clipped_x = spectral_clip(x, sigma_min=sigma_min, sigma_max=sigma_max)
+        clipped_x = orthogonalized_optimizers.spectral_clip(x, sigma_min=sigma_min, sigma_max=sigma_max)
 
         _, singular_values, _ = torch.linalg.svd(clipped_x, full_matrices=False)
 
@@ -88,7 +85,7 @@ class TestSpectralClipping(parameterized.TestCase):
         logging.info(f"Original matrix shape: {x.shape}")
         logging.info(f"Original singular values range: [{original_min_sv:.6f}, {original_max_sv:.6f}]")
 
-        hardcapped_x = spectral_hardcap(x, beta=beta)
+        hardcapped_x = orthogonalized_optimizers.spectral_hardcap(x, beta=beta)
 
         U_hard, singular_values, Vt_hard = torch.linalg.svd(hardcapped_x, full_matrices=False)
 
