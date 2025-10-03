@@ -35,15 +35,14 @@ class TestSpectralClipping(parameterized.TestCase):
         torch.set_float32_matmul_precision(self.prev_precision)
 
     @parameterized.product(
-        shape_pairs=[(256, 128), (128, 256), (512, 512), (2048, 2048)],
-        sigma_ranges=[(0.2, 0.8), (0.1, 20)],
+        dims=[(256, 128), (128, 256), (512, 512), (2048, 2048)],
+        sigma_range=[(0.2, 0.8), (0.1, 20)],
     )
-    def test_spectral_clipping(self, shape_pairs, sigma_ranges):
+    def test_spectral_clipping(self, dims, sigma_range):
         """Test that spectral clipping properly clips singular values to the specified range."""
 
-        dim1, dim2 = shape_pairs
-        sigma_min, sigma_max = sigma_ranges
-        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        sigma_min, sigma_max = sigma_range
+        x = torch.randn(dims, device=self.device, dtype=torch.float32)
 
         _, original_singular_values, _ = torch.linalg.svd(x, full_matrices=False)
         original_min_sv = original_singular_values.min().item()
@@ -76,15 +75,12 @@ class TestSpectralClipping(parameterized.TestCase):
         self.assertEqual(clipped_x.shape, x.shape)
 
     @parameterized.product(
-        shape_pairs=[(256, 128), (128, 256), (512, 512), (100, 200)],
-        beta_values=[0.5, 1.0, 0.8, 2.0],
+        dims=[(256, 128), (128, 256), (512, 512), (100, 200)],
+        beta=[0.5, 1.0, 0.8, 2.0],
     )
-    def test_spectral_hardcap(self, shape_pairs, beta_values):
+    def test_spectral_hardcap(self, dims, beta):
         """Test that spectral hardcap properly clips singular values from above to be less than beta."""
-        dim1, dim2 = shape_pairs
-        beta = beta_values
-
-        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        x = torch.randn(dims, device=self.device, dtype=torch.float32)
 
         U_orig, original_singular_values, Vt_orig = torch.linalg.svd(x, full_matrices=False)
         original_min_sv = original_singular_values.min().item()
