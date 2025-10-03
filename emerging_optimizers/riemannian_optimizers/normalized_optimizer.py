@@ -228,7 +228,7 @@ def _compute_riemannian_grad_and_update(param, grad_like, dim, lr, wd):
     """
 
     inner = (param * grad_like).sum(dim=dim, keepdim=True)
-    riem_grad = grad_like - param * inner
+    riem_grad = torch.add(grad_like, param * inner, alpha=-1)
 
     # Add decoupled weight decay
     param.mul_(1 - lr * wd)
