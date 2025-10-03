@@ -44,7 +44,7 @@ def spectral_clip(X: torch.Tensor, sigma_min: float = -1.0, sigma_max: float = 1
     for s, sign in zip([sigma_min, sigma_max], [1, -1]):
         A = torch.add(s * identity_matrix, OX @ X.T, alpha=-1)
         B = torch.add(s * OX, X, alpha=-1)
-        result = torch.add(result, sign * newton_schulz(A, steps=8, coefficient_type="polar_express") @ B)
+        result = torch.addmm(result, newton_schulz(A, steps=8, coefficient_type="polar_express"), B, alpha=sign)
     result = result * 0.5
 
     if needs_transpose:
