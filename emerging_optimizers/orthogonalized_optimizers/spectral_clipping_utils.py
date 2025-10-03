@@ -39,13 +39,17 @@ def spectral_clip(X: torch.Tensor, sigma_min: float = -1.0, sigma_max: float = 1
     if needs_transpose := X.shape[0] > X.shape[1]:
         X = X.T
     OX = newton_schulz(X, steps=8, coefficient_type="polar_express")
-    result = (1 / 2) * (
-        (sigma_min + sigma_max) * OX
-        + newton_schulz(sigma_min * torch.eye(X.shape[0]) - OX @ X.T, steps=8, coefficient_type="polar_express")
-        @ (sigma_min * OX - X)
-        - newton_schulz(sigma_max * torch.eye(X.shape[0]) - OX @ X.T, steps=8, coefficient_type="polar_express")
-        @ (sigma_max * OX - X)
-    )
+    result = (sigma_min + sigma_max) * OX
+    identity_matrix = torch.eye(X.shape[0], device=X.device, dtype=X.dtype)
+    # Pre-allocate tensors for memory efficiency
+    A = torch.empty_like(identity_matrix)
+    B = torch.empty_like(X)
+    for s, sign in zip([sigma_min, sigma_max], [1, -1]):
+        torch.add(s * identity_matrix, OX @ X.T, alpha=-1, out=A)
+        torch.add(s * OX, X, alpha=-1, out=B)
+        torch.add(result, sign * newton_schulz(A, steps=8, coefficient_type="polar_express") @ B, out=result)
+    result = (1 / 2) * result
+
     if needs_transpose:
         result = result.T
     return result
@@ -68,8 +72,11 @@ def spectral_hardcap(X: torch.Tensor, beta: float = 1.0) -> torch.Tensor:
     if needs_transpose := X.shape[0] > X.shape[1]:
         X = X.T
     OX = newton_schulz(X, steps=8, coefficient_type="polar_express")
-    aX = beta * OX - X
-    result = (1 / 2) * (beta * OX + X - aX @ newton_schulz(aX, steps=8, coefficient_type="polar_express").T @ OX)
+    aX = torch.add(beta * OX, X, alpha=-1)
+    result = torch.empty_like(X)
+    torch.add(beta * OX, X, out=result)
+    torch.add(result, aX @ newton_schulz(aX, steps=8, coefficient_type="polar_express").T @ OX, alpha=-1, out=result)
+    result = (1 / 2) * result
     if needs_transpose:
         result = result.T
     return result
@@ -90,4 +97,4 @@ def spectral_clipped_weight_decay(X: torch.Tensor, beta: float = 1.0, c: float =
     Returns:
         The spectral clipped weight decay tensor.
     """
-    return (1 - c) * X + c * spectral_hardcap(X, beta)
+    return torch.add((1 - c) * X, spectral_hardcap(X, beta), alpha=c)
