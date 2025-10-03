@@ -34,11 +34,11 @@ class BaseTestCase(parameterized.TestCase):
 class NormalizedOptimizerFunctionalTest(BaseTestCase):
     """Tests for ObliqueSGD and ObliqueAdam optimizers that preserve row/column norms."""
 
-    @parameterized.named_parameters(
-        ("col_mode", "col"),
-        ("row_mode", "row"),
+    @parameterized.parameters(
+        (0),
+        (1),
     )
-    def test_oblique_sgd_preserves_norms(self, mode):
+    def test_oblique_sgd_preserves_norms(self, dim):
         """Test that ObliqueSGD preserves row or column norms after one optimization step."""
         # Create a 4x6 matrix for testing
         matrix_size = (4, 6)
@@ -46,16 +46,12 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         # Initialize with random values then normalize
         param = torch.nn.Parameter(torch.randn(matrix_size, dtype=torch.float32, device=self.device))
 
-        # Normalize according to mode
-        if mode == "col":
-            # Normalize columns (each column has unit norm)
-            param.data = param.data / param.data.norm(dim=0, keepdim=True).clamp(min=1e-8)
-        else:  # mode == "row"
-            # Normalize rows (each row has unit norm)
-            param.data = param.data / param.data.norm(dim=1, keepdim=True).clamp(min=1e-8)
+        # Normalize according to dim
+        with torch.no_grad():
+            torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=1e-8, out=param)
 
         # Create optimizer
-        optimizer = ObliqueSGD([param], lr=0.1, momentum=0.9, mode=mode)
+        optimizer = ObliqueSGD([param], lr=0.1, momentum=0.9, dim=dim)
 
         # Generate random gradient
         torch.manual_seed(1234)  # For reproducible gradients
@@ -65,9 +61,9 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         optimizer.step()
 
         # Check that norms are preserved (should be 1.0 within tolerance)
-        if mode == "col":
+        if dim == 0:
             final_norms = param.data.norm(dim=0)
-        else:  # mode == "row"
+        else:  # dim == 1
             final_norms = param.data.norm(dim=1)
 
         # All norms should be approximately 1.0 (unit norm constraint)
@@ -75,15 +71,15 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         torch.testing.assert_close(
             final_norms,
             expected_norms,
-            atol=1e-6,
+            atol=0,
             rtol=1e-6,
         )
 
-    @parameterized.named_parameters(
-        ("col_mode", "col"),
-        ("row_mode", "row"),
+    @parameterized.parameters(
+        (0),
+        (1),
     )
-    def test_oblique_adam_preserves_norms(self, mode):
+    def test_oblique_adam_preserves_norms(self, dim):
         """Test that ObliqueAdam preserves row or column norms after one optimization step."""
         # Create a 3x5 matrix for testing
         matrix_size = (3, 5)
@@ -91,16 +87,11 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         # Initialize with random values then normalize
         param = torch.nn.Parameter(torch.randn(matrix_size, dtype=torch.float32, device=self.device))
 
-        # Normalize according to mode
-        if mode == "col":
-            # Normalize columns (each column has unit norm)
-            param.data = param.data / param.data.norm(dim=0, keepdim=True).clamp(min=1e-8)
-        else:  # mode == "row"
-            # Normalize rows (each row has unit norm)
-            param.data = param.data / param.data.norm(dim=1, keepdim=True).clamp(min=1e-8)
-
+        # Normalize
+        with torch.no_grad():
+            torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=1e-8, out=param)
         # Create optimizer
-        optimizer = ObliqueAdam([param], lr=0.01, betas=(0.9, 0.999), mode=mode)
+        optimizer = ObliqueAdam([param], lr=0.01, betas=(0.9, 0.999), dim=dim)
 
         # Generate random gradient
         torch.manual_seed(1234)  # For reproducible gradients
@@ -110,17 +101,14 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         optimizer.step()
 
         # Check that norms are preserved (should be 1.0 within tolerance)
-        if mode == "col":
-            final_norms = param.data.norm(dim=0)
-        else:  # mode == "row"
-            final_norms = param.data.norm(dim=1)
+        final_norms = param.data.norm(dim=dim)
 
         # All norms should be approximately 1.0 (unit norm constraint)
         expected_norms = torch.ones_like(final_norms)
         torch.testing.assert_close(
             final_norms,
             expected_norms,
-            atol=1e-6,
+            atol=0,
             rtol=1e-6,
         )
 
@@ -129,11 +117,12 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         matrix_size = (2, 4)
         param = torch.nn.Parameter(torch.randn(matrix_size, dtype=torch.float32, device=self.device))
 
-        # Normalize columns
-        param.data = param.data / param.data.norm(dim=0, keepdim=True).clamp(min=1e-8)
+        # Normalize
+        with torch.no_grad():
+            torch.nn.functional.normalize(param, p=2.0, dim=0, eps=1e-8, out=param)
         initial_param = param.data.clone()
 
-        optimizer = ObliqueSGD([param], lr=0.1, mode="col")
+        optimizer = ObliqueSGD([param], lr=0.1, dim=0)
 
         # Set zero gradient
         param.grad = torch.zeros_like(param.data, device=self.device)
@@ -142,23 +131,24 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         optimizer.step()
 
         # Parameter should remain unchanged with zero gradient
-        torch.testing.assert_close(param.data, initial_param, atol=1e-8, rtol=1e-8)
+        torch.testing.assert_close(param.data, initial_param, atol=0, rtol=1e-8)
 
         # Norms should still be 1.0
         final_norms = param.data.norm(dim=0)
         expected_norms = torch.ones_like(final_norms)
-        torch.testing.assert_close(final_norms, expected_norms, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(final_norms, expected_norms, atol=0, rtol=1e-6)
 
     def test_oblique_adam_zero_gradient(self):
         """Test that ObliqueAdam handles zero gradients correctly."""
         matrix_size = (2, 3)
         param = torch.nn.Parameter(torch.randn(matrix_size, dtype=torch.float32, device=self.device))
 
-        # Normalize rows
-        param.data = param.data / param.data.norm(dim=1, keepdim=True).clamp(min=1e-8)
+        # Normalize
+        with torch.no_grad():
+            torch.nn.functional.normalize(param, p=2.0, dim=1, eps=1e-8, out=param)
         initial_param = param.data.clone()
 
-        optimizer = ObliqueAdam([param], lr=0.01, mode="row")
+        optimizer = ObliqueAdam([param], lr=0.01, dim=1)
 
         # Set zero gradient
         param.grad = torch.zeros_like(param.data, device=self.device)
@@ -167,22 +157,22 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         optimizer.step()
 
         # Parameter should remain unchanged with zero gradient
-        torch.testing.assert_close(param.data, initial_param, atol=1e-7, rtol=1e-7)
+        torch.testing.assert_close(param.data, initial_param, atol=0, rtol=1e-6)
 
         # Norms should still be 1.0
         final_norms = param.data.norm(dim=1)
         expected_norms = torch.ones_like(final_norms)
-        torch.testing.assert_close(final_norms, expected_norms, atol=1e-7, rtol=1e-7)
+        torch.testing.assert_close(final_norms, expected_norms, atol=0, rtol=1e-6)
 
     def test_oblique_sgd_large_gradient(self):
         """Test that ObliqueSGD handles large gradients correctly."""
         matrix_size = (3, 4)
         param = torch.nn.Parameter(torch.randn(matrix_size, dtype=torch.float32, device=self.device))
 
-        # Normalize columns
+        # Normalize
         param.data = param.data / param.data.norm(dim=0, keepdim=True).clamp(min=1e-8)
 
-        optimizer = ObliqueSGD([param], lr=0.1, mode="col")
+        optimizer = ObliqueSGD([param], lr=0.1, dim=0)
 
         # Set large gradient
         param.grad = 100.0 * torch.randn_like(param.data, device=self.device)
@@ -193,7 +183,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         # Norms should still be preserved despite large gradient
         final_norms = param.data.norm(dim=0)
         expected_norms = torch.ones_like(final_norms)
-        torch.testing.assert_close(final_norms, expected_norms, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(final_norms, expected_norms, atol=0, rtol=1e-6)
 
     def test_oblique_adam_large_gradient(self):
         """Test that ObliqueAdam handles large gradients correctly."""
@@ -203,7 +193,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         # Normalize rows
         param.data = param.data / param.data.norm(dim=1, keepdim=True).clamp(min=1e-8)
 
-        optimizer = ObliqueAdam([param], lr=0.01, mode="row")
+        optimizer = ObliqueAdam([param], lr=0.01, dim=1)
 
         # Set large gradient
         param.grad = 1000.0 * torch.randn_like(param.data, device=self.device)
@@ -217,7 +207,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         torch.testing.assert_close(
             final_norms,
             expected_norms,
-            atol=1e-6,
+            atol=0,
             rtol=1e-6,
         )
 
@@ -226,10 +216,10 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         matrix_size = (4, 4)
         param = torch.nn.Parameter(torch.randn(matrix_size, dtype=torch.float32, device=self.device))
 
-        # Normalize columns
+        # Normalize
         param.data = param.data / param.data.norm(dim=0, keepdim=True).clamp(min=1e-8)
 
-        optimizer = ObliqueSGD([param], lr=0.05, momentum=0.8, mode="col")
+        optimizer = ObliqueSGD([param], lr=0.05, momentum=0.8, dim=0)
 
         # Perform multiple optimization steps
         for step in range(10):
@@ -243,7 +233,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
             torch.testing.assert_close(
                 final_norms,
                 expected_norms,
-                atol=1e-6,
+                atol=0,
                 rtol=1e-6,
             )
 
@@ -252,10 +242,10 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         matrix_size = (3, 3)
         param = torch.nn.Parameter(torch.randn(matrix_size, dtype=torch.float32, device=self.device))
 
-        # Normalize rows
+        # Normalize
         param.data = param.data / param.data.norm(dim=1, keepdim=True).clamp(min=1e-8)
 
-        optimizer = ObliqueAdam([param], lr=0.01, weight_decay=0.01, mode="row")
+        optimizer = ObliqueAdam([param], lr=0.01, weight_decay=0.01, dim=1)
 
         # Generate random gradient
         param.grad = torch.randn_like(param.data, device=self.device)
@@ -269,7 +259,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         torch.testing.assert_close(
             final_norms,
             expected_norms,
-            atol=1e-6,
+            atol=0,
             rtol=1e-6,
         )
 

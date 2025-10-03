@@ -33,7 +33,7 @@ class ObliqueSGD(Optimizer):
         lr: learning rate
         momentum: momentum coefficient
         weight_decay: weight decay coefficient
-        mode: 'col' for column-oblique (default), 'row' for row-oblique
+        dim: The dimension to compute the inner product over
         eps: epsilon for numerical stability
     """
 
@@ -43,7 +43,7 @@ class ObliqueSGD(Optimizer):
         lr=1e-3,
         momentum=0.9,
         weight_decay=0.0,
-        mode="col",
+        dim=0,
         eps=1e-8,
     ) -> None:
         if lr < 0.0:
@@ -52,14 +52,12 @@ class ObliqueSGD(Optimizer):
             raise ValueError(f"Invalid momentum value: {momentum}")
         if weight_decay < 0.0:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
-        if mode not in ("col", "row"):
-            raise ValueError(f"Invalid mode '{mode}'; expected 'col' or 'row'")
 
         defaults = dict(
             lr=lr,
             momentum=momentum,
             weight_decay=weight_decay,
-            mode=mode,
+            dim=dim,
             eps=eps,
         )
         super().__init__(params, defaults)
@@ -77,7 +75,7 @@ class ObliqueSGD(Optimizer):
             lr = group["lr"]
             mom = group["momentum"]
             wd = group["weight_decay"]
-            mode = group["mode"]
+            dim = group["dim"]
             eps = group["eps"]
 
             for param in group["params"]:
@@ -98,15 +96,10 @@ class ObliqueSGD(Optimizer):
                 buf = torch.add(grad, buf, alpha=mom)
 
                 # Apply Riemannian gradient update
-                _compute_riemannian_grad_and_update(param, buf, mode, lr, wd)
+                _compute_riemannian_grad_and_update(param, buf, dim, lr, wd)
 
-                # Retraction back to the manifold
-                if mode == "col":
-                    norm = param.norm(dim=0, keepdim=True).clamp(min=eps)
-                elif mode == "row":
-                    norm = param.norm(dim=1, keepdim=True).clamp(min=eps)
-
-                param.div_(norm)
+                # Retraction back to the manifold, the hyper-sphere
+                torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=eps, out=param)
 
         return loss
 
@@ -125,7 +118,7 @@ class ObliqueAdam(Optimizer):
         lr=1e-3,
         betas=(0.9, 0.99),
         weight_decay=0.0,
-        mode="col",
+        dim=0,
         eps=1e-8,
         correct_bias=True,
     ):
@@ -135,7 +128,7 @@ class ObliqueAdam(Optimizer):
             lr: The learning rate.
             betas: The coefficients used for computing running averages of gradient and its square.
             weight_decay: The weight decay coefficient.
-            mode: The mode to use for the optimizer.
+            dim: The dimension to compute the inner product over.
             eps: The epsilon for numerical stability.
             correct_bias: Whether to correct bias in Adam-like computation.
         """
@@ -147,14 +140,12 @@ class ObliqueAdam(Optimizer):
             raise ValueError(f"Invalid beta2 value: {betas[1]}")
         if weight_decay < 0.0:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
-        if mode not in ("col", "row"):
-            raise ValueError(f"Invalid mode '{mode}'; expected 'col' or 'row'")
 
         defaults = dict(
             lr=lr,
             betas=betas,
             weight_decay=weight_decay,
-            mode=mode,
+            dim=dim,
             eps=eps,
             correct_bias=correct_bias,
         )
@@ -173,7 +164,7 @@ class ObliqueAdam(Optimizer):
             lr = group["lr"]
             betas = group["betas"]
             wd = group["weight_decay"]
-            mode = group["mode"]
+            dim = group["dim"]
             eps = group["eps"]
             correct_bias = group["correct_bias"]
 
@@ -217,37 +208,24 @@ class ObliqueAdam(Optimizer):
                 norm_grad = (exp_avg / bias_correction1) / (exp_avg_sq.sqrt() / bias_correction2 + eps)
 
                 # Apply Riemannian gradient update
-                _compute_riemannian_grad_and_update(param, norm_grad, mode, lr, wd)
+                _compute_riemannian_grad_and_update(param, norm_grad, dim, lr, wd)
 
-                # Retraction back to the manifold (compute norm after weight decay)
-                if mode == "col":
-                    norm = param.norm(dim=0, keepdim=True).clamp(min=eps)
-                else:  # mode == "row"
-                    norm = param.norm(dim=1, keepdim=True).clamp(min=eps)
-
-                param.div_(norm)
+                # Retraction back to the manifold, i.e. the hyper-sphere
+                torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=eps, out=param)
 
         return loss
 
 
-def _compute_riemannian_grad_and_update(param, grad_like, mode, lr, wd):
+def _compute_riemannian_grad_and_update(param, grad_like, dim, lr, wd):
     """Compute Riemannian gradient for oblique manifold and update parameter in-place.
 
     Args:
         param: Parameter tensor (2D)
         grad_like: Gradient-like tensor (momentum buffer or normalized gradient)
-        mode: 'col' for column-oblique, 'row' for row-oblique
+        dim: The dimension to compute the inner product over
         lr: Learning rate
         wd: Weight decay coefficient
     """
-    if mode == "col":
-        # Column oblique: inner products over rows (dim=0), shape (1, p)
-        dim = 0
-    elif mode == "row":
-        # Row oblique: inner products over columns (dim=1), shape (n, 1)
-        dim = 1
-    else:
-        raise ValueError(f"Invalid mode '{mode}'; expected 'col' or 'row'")
 
     inner = (param * grad_like).sum(dim=dim, keepdim=True)
     riem_grad = grad_like - param * inner
