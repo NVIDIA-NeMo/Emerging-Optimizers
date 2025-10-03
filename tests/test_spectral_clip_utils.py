@@ -67,12 +67,10 @@ class TestSpectralClipping(parameterized.TestCase):
         self.assertGreaterEqual(
             min_sv + tolerance_lower,
             sigma_min,
-            msg=f"Minimum singular value {min_sv:.6f} is below sigma_min {sigma_min} (tolerance {tolerance_lower})",
         )
         self.assertLessEqual(
             max_sv - tolerance_upper,
             sigma_max,
-            msg=f"Maximum singular value {max_sv:.6f} is above sigma_max {sigma_max} (tolerance {tolerance_upper})",
         )
 
         self.assertEqual(clipped_x.shape, x.shape)
@@ -109,7 +107,6 @@ class TestSpectralClipping(parameterized.TestCase):
         self.assertLessEqual(
             max_sv - tolerance_upper,
             beta,
-            msg=f"Maximum singular value {max_sv:.6f} exceeds beta {beta} (tolerance {tolerance_upper})",
         )
 
         self.assertEqual(hardcapped_x.shape, x.shape)
@@ -127,7 +124,6 @@ class TestSpectralClipping(parameterized.TestCase):
         self.assertLessEqual(
             relative_polar_frobenius_diff,
             polar_tolerance,
-            msg=f"Polar factors differ by Frobenius norm {relative_polar_frobenius_diff:.6f}, exceeding tolerance {polar_tolerance}. Singular vectors should be preserved.",
         )
 
 
