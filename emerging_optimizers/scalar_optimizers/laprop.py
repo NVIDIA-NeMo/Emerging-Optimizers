@@ -76,7 +76,7 @@ def calculate_laprop_update(
 
     # construct the denominator of the inner ADAM optimizer
     second_moment = exp_avg_sq / bias_correction2
-    second_moment = second_moment.sqrt() + eps
+    second_moment.sqrt_().add_(eps)
 
     normalized_grad = grad / second_moment
 
