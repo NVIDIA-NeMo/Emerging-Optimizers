@@ -195,9 +195,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         # Norms should still be preserved despite large gradient
         final_norms = param.data.norm(dim=0)
         expected_norms = torch.ones_like(final_norms)
-        torch.testing.assert_close(
-            final_norms, expected_norms, atol=1e-6, rtol=1e-6, msg="Large gradients should not break norm preservation"
-        )
+        torch.testing.assert_close(final_norms, expected_norms, atol=1e-6, rtol=1e-6)
 
     def test_oblique_adam_large_gradient(self):
         """Test that ObliqueAdam handles large gradients correctly."""
@@ -395,7 +393,6 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
                 expected_norms,
                 atol=1e-5,
                 rtol=1e-5,
-                msg="Column norms should be preserved during training",
             )
 
     def test_oblique_sgd_convergence(self):
@@ -469,7 +466,6 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
                 expected_norms,
                 atol=1e-5,
                 rtol=1e-5,
-                msg=f"Norms should be preserved in {optimizer_kwargs['mode']} mode",
             )
 
 
