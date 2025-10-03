@@ -41,7 +41,7 @@ class ObliqueSGD(Optimizer):
 
     def __init__(
         self,
-        params,
+        params: list[torch.nn.Parameter],
         lr: float = 1e-3,
         momentum: float = 0.9,
         weight_decay: float = 0.0,
@@ -116,7 +116,7 @@ class ObliqueAdam(Optimizer):
 
     def __init__(
         self,
-        params,
+        params: list[torch.nn.Parameter],
         lr: float = 1e-3,
         betas: tuple[float, float] = (0.9, 0.99),
         weight_decay: float = 0.0,
@@ -154,7 +154,7 @@ class ObliqueAdam(Optimizer):
         super().__init__(params, defaults)
 
     @torch.no_grad()
-    def step(self, closure=None):
+    def step(self, closure: Callable[[], float] | None = None) -> float | None:
         """Performs a single optimization step.
         Args:
             closure (callable, optional): A closure that reevaluates the model
