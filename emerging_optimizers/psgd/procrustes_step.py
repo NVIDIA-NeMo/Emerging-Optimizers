@@ -42,7 +42,8 @@ def procrustes_step(Q, max_step_size=1 / 8):
         R = Q.T - Q
         R /= norm_lower_bound_skew(R) + torch.finfo(R.dtype).smallest_normal
         RQ = R @ Q
-        # trace of RQ is always positive, mathematically.
+        # trace of RQ is always positive,
+        # since tr(RQ) = ⟨R, Q⟩_F = ⟨Q^T - Q, Q⟩_F = ||Q||_F^2 - ⟨Q, Q⟩_F = ||Q||_F^2 - tr(Q^T Q) ≥ 0
         tr_RQ = torch.trace(RQ)
         RRQ = R @ RQ
         tr_RRQ = torch.trace(RRQ)
