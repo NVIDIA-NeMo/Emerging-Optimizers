@@ -121,7 +121,7 @@ class ObliqueAdam(Optimizer):
         dim=0,
         eps=1e-8,
         correct_bias=True,
-    ):
+    ) -> None:
         """An Adam-like optimizer for Normalized 2d Parameters
 
         Args:
@@ -216,7 +216,9 @@ class ObliqueAdam(Optimizer):
         return loss
 
 
-def _compute_riemannian_grad_and_update(param, grad_like, dim, lr, wd):
+def _compute_riemannian_grad_and_update(
+    param: torch.Tensor, grad_like: torch.Tensor, dim: int, lr: float, wd: float
+) -> None:
     """Compute Riemannian gradient for oblique manifold and update parameter in-place.
 
     Args:
