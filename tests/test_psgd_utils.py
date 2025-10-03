@@ -12,17 +12,17 @@ from emerging_optimizers.psgd.psgd_utils import (
 class BalanceQTest(parameterized.TestCase):
     """Test cases for balance_Q function."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test fixtures."""
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    def test_normalization_on_empty_list(self):
+    def test_normalization_on_empty_list(self) -> None:
         """Test balance_Q with empty list."""
         Q_list = []
         balance_q_in_place(Q_list)  # Should not raise any errors
         self.assertEqual(len(Q_list), 0)
 
-    def test_normalization_on_single_tensor(self):
+    def test_normalization_on_single_tensor(self) -> None:
         """Test balance_Q with single tensor."""
         Q = torch.randn(3, 3, device=self.device)
         original_Q = Q.clone()
@@ -30,7 +30,7 @@ class BalanceQTest(parameterized.TestCase):
         # for a single tensor, the result should be the same as the original
         torch.testing.assert_close(Q, original_Q)
 
-    def test_normalization_on_two_tensors(self):
+    def test_normalization_on_two_tensors(self) -> None:
         """Test balance_Q with two tensors."""
         Q1 = torch.tensor([[1.0, 2.0], [3.0, 4.0]], device=self.device)
         Q2 = torch.tensor([[0.1, 0.2], [0.3, 0.4]], device=self.device)
@@ -53,7 +53,7 @@ class BalanceQTest(parameterized.TestCase):
         (256, 256, 256),
         (4096, 4096, 4096),
     )
-    def test_normalization_on_three_tensors(self, size1, size2, size3):
+    def test_normalization_on_three_tensors(self, size1: int, size2: int, size3: int) -> None:
         """Test balance_Q with multiple tensors of different dynamic ranges."""
         Q1 = torch.randn(size1, size1, device=self.device) * 10.0
         Q2 = torch.randn(size2, size2, device=self.device) * 0.01
@@ -76,7 +76,7 @@ class BalanceQTest(parameterized.TestCase):
         self.assertAlmostEqual(new_max2.item(), expected_max.item(), places=5)
         self.assertAlmostEqual(new_max3.item(), expected_max.item(), places=5)
 
-    def test_modifies_in_place_on_three_tensors(self):
+    def test_modifies_in_place_on_three_tensors(self) -> None:
         """Test that balance_Q modifies tensors in place."""
         Q = torch.randn(3, 3, device=self.device)
         original_id = id(Q)
@@ -89,12 +89,12 @@ class BalanceQTest(parameterized.TestCase):
 class NormLowerBoundSpdTest(parameterized.TestCase):
     """Test cases for norm_lower_bound_spd function."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test fixtures."""
         torch.manual_seed(42)  # For reproducible tests
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    def test_diagonal_matrix(self):
+    def test_diagonal_matrix(self) -> None:
         """Test norm_lower_bound_spd with diagonal matrix."""
         # For diagonal matrix, spectral norm equals largest diagonal entry
         diag_values = torch.tensor([1.0, 3.0, 2.0], device=self.device)
@@ -108,7 +108,7 @@ class NormLowerBoundSpdTest(parameterized.TestCase):
         # For diagonal matrix, bound should be reasonably tight
         self.assertGreater(bound.item(), 0.5 * actual_norm.item())
 
-    def test_identity_matrix(self):
+    def test_identity_matrix(self) -> None:
         """Test norm_lower_bound_spd with identity matrix."""
         A = torch.eye(3, device=self.device)
         bound = norm_lower_bound_spd(A)
@@ -116,7 +116,7 @@ class NormLowerBoundSpdTest(parameterized.TestCase):
         # For identity matrix, spectral norm is 1
         self.assertAlmostEqual(bound.item(), 1.0, places=5)
 
-    def test_zero_matrix(self):
+    def test_zero_matrix(self) -> None:
         """Test norm_lower_bound_spd with zero matrix."""
         A = torch.zeros(3, 3, device=self.device)
         bound = norm_lower_bound_spd(A)
@@ -128,7 +128,7 @@ class NormLowerBoundSpdTest(parameterized.TestCase):
         dtype=[torch.float32, torch.bfloat16],
         size=[32, 256, 4096],
     )
-    def test_norm_lower_bound_spd_is_lower_bound(self, dtype, size):
+    def test_norm_lower_bound_spd_is_lower_bound(self, dtype: torch.dtype, size: int) -> None:
         """Test that norm_lower_bound_spd provides a valid lower bound."""
         # Create a random SPD matrix
         B = torch.randn(size, size, dtype=dtype, device=self.device)
@@ -150,12 +150,12 @@ class NormLowerBoundSpdTest(parameterized.TestCase):
 class NormLowerBoundSkewTest(parameterized.TestCase):
     """Test cases for norm_lower_bound_skew function."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test fixtures."""
         torch.manual_seed(42)  # For reproducible tests
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-    def test_zero_matrix(self):
+    def test_zero_matrix(self) -> None:
         """Test norm_lower_bound_skew with zero matrix."""
         A = torch.zeros(3, 3, device=self.device)
         bound = norm_lower_bound_skew(A)
@@ -163,7 +163,7 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         # For zero matrix, bound should be 0
         self.assertAlmostEqual(bound.item(), 0.0, places=5)
 
-    def test_small_skew_symmetric_matrix(self):
+    def test_small_skew_symmetric_matrix(self) -> None:
         """Test norm_lower_bound_skew with a simple skew-symmetric matrix."""
         # Create a simple 3x3 skew-symmetric matrix
         A = torch.tensor([[0.0, 1.0, -2.0], [-1.0, 0.0, 3.0], [2.0, -3.0, 0.0]], device=self.device)
@@ -177,7 +177,7 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         # Bound should be positive for non-zero matrix
         self.assertGreater(bound.item(), 0.0)
 
-    def test_identity_based_skew_matrix(self):
+    def test_identity_based_skew_matrix(self) -> None:
         """Test norm_lower_bound_skew with matrix based on identity structure."""
         # Create skew-symmetric matrix from anti-symmetric part of random matrix
         n = 4
@@ -194,7 +194,7 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         dtype=[torch.float32, torch.float64],
         size=[32, 128, 256],
     )
-    def test_norm_lower_bound_skew_is_lower_bound(self, dtype, size):
+    def test_norm_lower_bound_skew_is_lower_bound(self, dtype: torch.dtype, size: int) -> None:
         """Test that norm_lower_bound_skew provides a valid lower bound."""
         # Create a random skew-symmetric matrix
         B = torch.randn(size, size, dtype=dtype, device=self.device)
@@ -211,7 +211,7 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         self.assertGreaterEqual(bound.item(), 0.0)
 
     @parameterized.parameters([4, 16, 32])
-    def test_different_subspace_dimensions(self, rank):
+    def test_different_subspace_dimensions(self, rank: int) -> None:
         """Test norm_lower_bound_skew with different subspace dimensions."""
         # Create a skew-symmetric matrix
         B = torch.randn(64, 64, device=self.device)
@@ -222,7 +222,7 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         self.assertGreaterEqual(bound.item(), 0.0)
 
         actual_norm = torch.linalg.matrix_norm(A, ord=2)
-        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-4)
+        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-5)
 
 
 if __name__ == "__main__":
