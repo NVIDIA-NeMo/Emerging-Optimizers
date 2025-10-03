@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Callable
+
 import torch
 from torch.optim.optimizer import Optimizer
 
@@ -40,11 +42,11 @@ class ObliqueSGD(Optimizer):
     def __init__(
         self,
         params,
-        lr=1e-3,
-        momentum=0.9,
-        weight_decay=0.0,
-        dim=0,
-        eps=1e-8,
+        lr: float = 1e-3,
+        momentum: float = 0.9,
+        weight_decay: float = 0.0,
+        dim: int = 0,
+        eps: float = 1e-8,
     ) -> None:
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
@@ -63,7 +65,7 @@ class ObliqueSGD(Optimizer):
         super().__init__(params, defaults)
 
     @torch.no_grad()
-    def step(self, closure=None):
+    def step(self, closure: Callable[[], float] | None = None) -> float | None:
         """Performs a single optimization step.
         Args:
             closure (callable, optional): A closure that reevaluates the model
@@ -115,11 +117,11 @@ class ObliqueAdam(Optimizer):
     def __init__(
         self,
         params,
-        lr=1e-3,
-        betas=(0.9, 0.99),
-        weight_decay=0.0,
-        dim=0,
-        eps=1e-8,
+        lr: float = 1e-3,
+        betas: tuple[float, float] = (0.9, 0.99),
+        weight_decay: float = 0.0,
+        dim: int = 0,
+        eps: float = 1e-8,
         correct_bias=True,
     ) -> None:
         """An Adam-like optimizer for Normalized 2d Parameters
