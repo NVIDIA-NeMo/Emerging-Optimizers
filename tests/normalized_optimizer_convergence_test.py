@@ -24,23 +24,23 @@ from emerging_optimizers.riemannian_optimizers.normalized_optimizer import Obliq
 class SimpleMLP(nn.Module):
     """Simple MLP with oblique-optimized layers for testing."""
 
-    def __init__(self, input_size=784, hidden_size=128, num_classes=10):
+    def __init__(self, input_size=784, hidden_size=128, num_classes=10, dim=0):
         super().__init__()
         self.fc1 = nn.Linear(input_size, hidden_size, bias=False)
         self.fc2 = nn.Linear(hidden_size, hidden_size, bias=False)
         self.fc3 = nn.Linear(hidden_size, num_classes, bias=True)  # Final layer with bias
-
+        self.dim = dim
         # Initialize weights for oblique optimization
-        self._initialize_oblique_weights()
+        self._initialize_oblique_weights(dim)
 
-    def _initialize_oblique_weights(self):
-        """Initialize weights to be column-normalized for oblique optimization."""
+    def _initialize_oblique_weights(self, dim):
+        """Initialize weights to be normalized for oblique optimization."""
         with torch.no_grad():
-            # Normalize columns of oblique layers
-            self.fc1.weight.data = self.fc1.weight.data / self.fc1.weight.data.norm(dim=0, keepdim=True).clamp(
+            # Normalize  of oblique layers
+            self.fc1.weight.data = self.fc1.weight.data / self.fc1.weight.data.norm(dim=dim, keepdim=True).clamp(
                 min=1e-8
             )
-            self.fc2.weight.data = self.fc2.weight.data / self.fc2.weight.data.norm(dim=0, keepdim=True).clamp(
+            self.fc2.weight.data = self.fc2.weight.data / self.fc2.weight.data.norm(dim=dim, keepdim=True).clamp(
                 min=1e-8
             )
 
@@ -148,7 +148,7 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
             torch.testing.assert_close(
                 column_norms,
                 expected_norms,
-                atol=1e-5,
+                atol=0,
                 rtol=1e-5,
             )
 
@@ -158,7 +158,7 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
 
         # Train with ObliqueSGD
         initial_loss, final_loss, final_accuracy = self._train_model(
-            model, ObliqueSGD, {"lr": 0.01, "momentum": 0.9, "mode": "col"}, num_epochs=10
+            model, ObliqueSGD, {"lr": 0.01, "momentum": 0.9, "dim": 0}, num_epochs=10
         )
 
         # Check convergence
@@ -174,7 +174,7 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
 
         # Train with ObliqueAdam
         initial_loss, final_loss, final_accuracy = self._train_model(
-            model, ObliqueAdam, {"lr": 0.001, "betas": (0.9, 0.999), "mode": "col"}, num_epochs=10
+            model, ObliqueAdam, {"lr": 0.001, "betas": (0.9, 0.999), "dim": 0}, num_epochs=10
         )
 
         # Check convergence
@@ -185,21 +185,19 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
         self._verify_norms_preserved(model)
 
     @parameterized.named_parameters(
-        ("sgd_col", ObliqueSGD, {"lr": 0.1, "momentum": 0.75, "weight_decay": 0.1, "mode": "col"}),
-        ("sgd_row", ObliqueSGD, {"lr": 0.1, "momentum": 0.75, "weight_decay": 0.1, "mode": "row"}),
-        ("adam_col", ObliqueAdam, {"lr": 0.1, "betas": (0.9, 0.999), "weight_decay": 0.1, "mode": "col"}),
-        ("adam_row", ObliqueAdam, {"lr": 0.1, "betas": (0.9, 0.999), "weight_decay": 0.1, "mode": "row"}),
+        ("sgd_col", ObliqueSGD, {"lr": 0.1, "momentum": 0.75, "weight_decay": 0.1, "dim": 0}),
+        ("sgd_row", ObliqueSGD, {"lr": 0.1, "momentum": 0.75, "weight_decay": 0.1, "dim": 1}),
+        ("adam_col", ObliqueAdam, {"lr": 0.1, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 0}),
+        ("adam_row", ObliqueAdam, {"lr": 0.1, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 1}),
     )
     def test_optimizer_modes_convergence(self, optimizer_class, optimizer_kwargs):
         """Test that both row and column modes work for both optimizers."""
         model = SimpleMLP(input_size=784, hidden_size=32, num_classes=10)
 
-        # Adjust initialization based on mode
-        if optimizer_kwargs["mode"] == "row":
-            # Re-initialize for row normalization
-            with torch.no_grad():
-                for param in model.get_oblique_parameters():
-                    param.data = param.data / param.data.norm(dim=1, keepdim=True).clamp(min=1e-8)
+        # Re-initialize for row normalization
+        with torch.no_grad():
+            for param in model.get_oblique_parameters():
+                param.data = param.data / param.data.norm(dim=optimizer_kwargs["dim"], keepdim=True).clamp(min=1e-8)
 
         # Train model
         initial_loss, final_loss, final_accuracy = self._train_model(
@@ -213,16 +211,13 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
 
         # Verify norm preservation based on mode
         for param in model.get_oblique_parameters():
-            if optimizer_kwargs["mode"] == "col":
-                norms = param.data.norm(dim=0)
-            else:  # row mode
-                norms = param.data.norm(dim=1)
+            norms = param.data.norm(dim=optimizer_kwargs["dim"])
 
             expected_norms = torch.ones_like(norms)
             torch.testing.assert_close(
                 norms,
                 expected_norms,
-                atol=1e-5,
+                atol=0,
                 rtol=1e-5,
             )
 
