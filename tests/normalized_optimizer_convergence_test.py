@@ -60,8 +60,9 @@ class SimpleMLP(nn.Module):
         return [self.fc3.weight, self.fc3.bias]
 
 
-# Base class for tests requiring seeding for determinism
-class BaseTestCase(parameterized.TestCase):
+class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
+    """Convergence tests for normalized optimizers on a simple MLP task."""
+
     def setUp(self):
         """Set random seed before each test."""
         # Set seed for PyTorch
@@ -71,11 +72,7 @@ class BaseTestCase(parameterized.TestCase):
             torch.cuda.manual_seed_all(1234)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-class NormalizedOptimizerConvergenceTest(BaseTestCase):
-    """Convergence tests for normalized optimizers on a simple MLP task."""
-
-    def _create_synthetic_mnist_data(self, num_samples=1000):
+    def _create_synthetic_mnist_data(self, num_samples: int = 1000) -> TensorDataset:
         """Create synthetic MNIST-like data for testing."""
         torch.manual_seed(1234)
         X = torch.randn(num_samples, 784, device=self.device)
@@ -83,7 +80,9 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
         y = torch.randint(0, 10, (num_samples,))
         return TensorDataset(X, y)
 
-    def _train_model(self, model, optimizer_class, optimizer_kwargs, num_epochs=5):
+    def _train_model(
+        self, model: SimpleMLP, optimizer_class: torch.optim.Optimizer, optimizer_kwargs: dict, num_epochs: int = 5
+    ) -> tuple[float, float, float]:
         """Train model with given optimizer and return final loss and accuracy."""
         # Create data
         dataset = self._create_synthetic_mnist_data(num_samples=500)
@@ -140,7 +139,7 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
 
         return initial_loss, final_loss, final_accuracy
 
-    def _verify_norms_preserved(self, model):
+    def _verify_norms_preserved(self, model: SimpleMLP) -> None:
         """Verify that oblique parameters maintain unit column norms."""
         for param in model.get_oblique_parameters():
             column_norms = param.data.norm(dim=0)  # Column norms
@@ -152,7 +151,7 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
                 rtol=1e-5,
             )
 
-    def test_oblique_sgd_convergence(self):
+    def test_oblique_sgd_convergence(self) -> None:
         """Test that ObliqueSGD can train a simple MLP and maintain norms."""
         model = SimpleMLP(input_size=784, hidden_size=64, num_classes=10)
 
@@ -168,7 +167,7 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
         # Check norm preservation
         self._verify_norms_preserved(model)
 
-    def test_oblique_adam_convergence(self):
+    def test_oblique_adam_convergence(self) -> None:
         """Test that ObliqueAdam can train a simple MLP and maintain norms."""
         model = SimpleMLP(input_size=784, hidden_size=64, num_classes=10)
 
@@ -190,7 +189,7 @@ class NormalizedOptimizerConvergenceTest(BaseTestCase):
         ("adam_col", ObliqueAdam, {"lr": 0.1, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 0}),
         ("adam_row", ObliqueAdam, {"lr": 0.1, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 1}),
     )
-    def test_optimizer_modes_convergence(self, optimizer_class, optimizer_kwargs):
+    def test_optimizer_modes_convergence(self, optimizer_class: torch.optim.Optimizer, optimizer_kwargs: dict) -> None:
         """Test that both row and column modes work for both optimizers."""
         model = SimpleMLP(input_size=784, hidden_size=32, num_classes=10)
 

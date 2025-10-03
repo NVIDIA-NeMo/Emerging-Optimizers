@@ -19,8 +19,9 @@ from absl.testing import absltest, parameterized
 from emerging_optimizers.riemannian_optimizers.normalized_optimizer import ObliqueAdam, ObliqueSGD
 
 
-# Base class for tests requiring seeding for determinism
-class BaseTestCase(parameterized.TestCase):
+class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
+    """Tests for ObliqueSGD and ObliqueAdam optimizers that preserve row/column norms."""
+
     def setUp(self):
         """Set random seed before each test."""
         # Set seed for PyTorch
@@ -30,15 +31,11 @@ class BaseTestCase(parameterized.TestCase):
             torch.cuda.manual_seed_all(1234)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-class NormalizedOptimizerFunctionalTest(BaseTestCase):
-    """Tests for ObliqueSGD and ObliqueAdam optimizers that preserve row/column norms."""
-
     @parameterized.parameters(
         (0),
         (1),
     )
-    def test_oblique_sgd_preserves_norms(self, dim):
+    def test_oblique_sgd_preserves_norms(self, dim: int) -> None:
         """Test that ObliqueSGD preserves row or column norms after one optimization step."""
         # Create a 4x6 matrix for testing
         matrix_size = (4, 6)
@@ -76,7 +73,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         (0),
         (1),
     )
-    def test_oblique_adam_preserves_norms(self, dim):
+    def test_oblique_adam_preserves_norms(self, dim: int) -> None:
         """Test that ObliqueAdam preserves row or column norms after one optimization step."""
         # Create a 3x5 matrix for testing
         matrix_size = (3, 5)
@@ -109,7 +106,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
             rtol=1e-6,
         )
 
-    def test_oblique_sgd_zero_gradient(self):
+    def test_oblique_sgd_zero_gradient(self) -> None:
         """Test that ObliqueSGD handles zero gradients correctly."""
         matrix_size = (2, 4)
         param = torch.randn(matrix_size, dtype=torch.float32, device=self.device)
@@ -135,7 +132,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         expected_norms = torch.ones_like(final_norms)
         torch.testing.assert_close(final_norms, expected_norms, atol=0, rtol=1e-6)
 
-    def test_oblique_adam_zero_gradient(self):
+    def test_oblique_adam_zero_gradient(self) -> None:
         """Test that ObliqueAdam handles zero gradients correctly."""
         matrix_size = (2, 3)
         param = torch.randn(matrix_size, dtype=torch.float32, device=self.device)
@@ -161,7 +158,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         expected_norms = torch.ones_like(final_norms)
         torch.testing.assert_close(final_norms, expected_norms, atol=0, rtol=1e-6)
 
-    def test_oblique_sgd_large_gradient(self):
+    def test_oblique_sgd_large_gradient(self) -> None:
         """Test that ObliqueSGD handles large gradients correctly."""
         matrix_size = (3, 4)
         param = torch.randn(matrix_size, dtype=torch.float32, device=self.device)
@@ -183,7 +180,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
         expected_norms = torch.ones_like(final_norms)
         torch.testing.assert_close(final_norms, expected_norms, atol=0, rtol=1e-6)
 
-    def test_oblique_adam_large_gradient(self):
+    def test_oblique_adam_large_gradient(self) -> None:
         """Test that ObliqueAdam handles large gradients correctly."""
         matrix_size = (2, 5)
         param = torch.randn(matrix_size, dtype=torch.float32, device=self.device)
@@ -210,7 +207,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
             rtol=1e-6,
         )
 
-    def test_multiple_optimization_steps_preserve_norms(self):
+    def test_multiple_optimization_steps_preserve_norms(self) -> None:
         """Test that norms are preserved across multiple optimization steps."""
         matrix_size = (4, 4)
         param = torch.randn(matrix_size, dtype=torch.float32, device=self.device)
@@ -237,7 +234,7 @@ class NormalizedOptimizerFunctionalTest(BaseTestCase):
                 rtol=1e-6,
             )
 
-    def test_weight_decay_with_norm_preservation(self):
+    def test_weight_decay_with_norm_preservation(self) -> None:
         """Test that weight decay doesn't break norm preservation."""
         matrix_size = (3, 3)
         param = torch.randn(matrix_size, dtype=torch.float32, device=self.device)
