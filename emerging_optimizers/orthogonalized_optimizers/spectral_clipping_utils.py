@@ -42,7 +42,7 @@ def spectral_clip(X: torch.Tensor, sigma_min: float = -1.0, sigma_max: float = 1
     result = (sigma_min + sigma_max) * OX
     identity_matrix = torch.eye(X.shape[0], device=X.device, dtype=X.dtype)
     for s, sign in zip([sigma_min, sigma_max], [1, -1]):
-        A = torch.add(s * identity_matrix, OX @ X.T, alpha=-1)
+        A = torch.addmm(s * identity_matrix, OX, X.T, beta=1.0, alpha=-1.0)
         B = torch.add(s * OX, X, alpha=-1)
         result = torch.addmm(result, newton_schulz(A, steps=8, coefficient_type="polar_express"), B, alpha=sign)
     result = result * 0.5
