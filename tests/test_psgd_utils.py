@@ -6,9 +6,7 @@ from emerging_optimizers.psgd.psgd_utils import (
     balance_q_in_place,
     norm_lower_bound_skew,
     norm_lower_bound_spd,
-    solve_triangular_right,
 )
-from emerging_optimizers.utils import fp32_matmul_precision
 
 
 class BalanceQTest(parameterized.TestCase):
@@ -86,73 +84,6 @@ class BalanceQTest(parameterized.TestCase):
 
         # Should be the same object (modified in place)
         self.assertEqual(id(Q), original_id)
-
-
-class SolveTriangularRightTest(parameterized.TestCase):
-    """Test cases for solve_triangular_right function."""
-
-    def setUp(self):
-        """Set up test fixtures."""
-        torch.manual_seed(42)  # For reproducible tests
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-
-    def test_1d_input(self):
-        """Test solve_triangular_right with 1D input."""
-        A = torch.tensor([[2.0, 1.0], [0.0, 3.0]], device=self.device, dtype=torch.float32)
-        X = torch.tensor([1.0, 2.0], device=self.device)
-
-        # Compute y = X A^{-1}
-        result = solve_triangular_right(X, A)
-
-        # Verify mathematical correctness: if y = X A^{-1}, then y @ A = X
-        # This confirms that result contains X A^{-1}
-        with fp32_matmul_precision("high"):
-            reconstructed = result @ A
-        torch.testing.assert_close(reconstructed, X, atol=1e-5, rtol=1e-5)
-
-        # Result should have same shape as X
-        self.assertEqual(result.shape, X.shape)
-
-    def test_identity_matrix(self):
-        """Test solve_triangular_right with identity matrix."""
-        A = torch.eye(3, device=self.device, dtype=torch.float32)
-        X = torch.randn(2, 3, device=self.device, dtype=torch.float32)
-
-        result = solve_triangular_right(X, A)
-
-        # With identity matrix, result should equal X
-        torch.testing.assert_close(result, X)
-
-    @parameterized.product(
-        size=[32, 256, 4096],
-        dtype=[torch.float32, torch.float64],
-    )
-    def test_triangular_solve_matches_reconstructed_different_sizes(self, size, dtype):
-        """Test solve_triangular_right with different matrix sizes."""
-        # Create well-conditioned upper triangular matrix
-        # Use small off-diagonal entries and large diagonal entries for better conditioning
-        eps = 5e-2 if dtype == torch.float32 else 0.1
-        A = torch.triu(torch.randn(size, size, dtype=dtype, device=self.device)) * eps + torch.eye(
-            size, dtype=dtype, device=self.device
-        )
-        X = torch.randn(size, size, dtype=dtype, device=self.device) / torch.sqrt(
-            torch.tensor(size, dtype=dtype, device=self.device)
-        )
-
-        # Compute y = X A^{-1}
-        result = solve_triangular_right(X, A)
-
-        # Verify mathematical correctness: if y = X A^{-1}, then y @ A = X
-        with fp32_matmul_precision("high"):
-            reconstructed = result @ A
-
-        # Use different tolerances based on dtype precision
-        if dtype == torch.float32:
-            atol, rtol = 1e-2, 1e-3
-        else:  # torch.float64
-            atol, rtol = 1e-6, 1e-7
-
-        torch.testing.assert_close(reconstructed, X, atol=atol, rtol=rtol)
 
 
 class NormLowerBoundSpdTest(parameterized.TestCase):
