@@ -141,7 +141,8 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
         torch.nn.functional.normalize(param, p=2.0, dim=1, eps=1e-8, out=param)
         initial_param = param.clone()
 
-        param = torch.nn.Parameter(param)
+        # Keep as tensor, not parameter, but enable gradients
+        param.requires_grad_(True)
         optimizer = ObliqueAdam([param], lr=0.01, dim=1)
 
         # Set zero gradient
@@ -220,7 +221,6 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
 
         # Perform multiple optimization steps
         for step in range(10):
-            torch.manual_seed(step)  # Different gradient each step
             param.grad = torch.randn_like(param.data, device=self.device)
             optimizer.step()
 
