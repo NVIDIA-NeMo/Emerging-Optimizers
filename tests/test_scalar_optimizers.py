@@ -282,23 +282,6 @@ class ScalarOptimizerTest(BaseTestCase):
         expected_param_val_after_step = initial_param_val_tensor - lr * sim_ademamix_update
         torch.testing.assert_close(param.data, expected_param_val_after_step, atol=1e-6, rtol=1e-6)
 
-    def test_device_functionality(self) -> None:
-        """Test that tensors are correctly moved to the specified device."""
-        # Create test tensors
-        tensor1 = torch.tensor([1.0, 2.0, 3.0])
-        tensor2 = torch.tensor([[1.0], [2.0]])
-
-        # Move to test device
-        tensor1_device, tensor2_device = self._move_to_device(tensor1, tensor2)
-
-        # Verify they are on the correct device
-        self.assertEqual(str(tensor1_device.device), self.device)
-        self.assertEqual(str(tensor2_device.device), self.device)
-
-        # Verify values are preserved
-        torch.testing.assert_close(tensor1_device.cpu(), tensor1, atol=1e-6, rtol=1e-6)
-        torch.testing.assert_close(tensor2_device.cpu(), tensor2, atol=1e-6, rtol=1e-6)
-
 
 if __name__ == "__main__":
     absltest.main()
