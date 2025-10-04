@@ -36,13 +36,9 @@ class SimpleMLP(nn.Module):
     def _initialize_oblique_weights(self, dim):
         """Initialize weights to be normalized for oblique optimization."""
         with torch.no_grad():
-            # Normalize  of oblique layers
-            self.fc1.weight.data = self.fc1.weight.data / self.fc1.weight.data.norm(dim=dim, keepdim=True).clamp(
-                min=1e-8
-            )
-            self.fc2.weight.data = self.fc2.weight.data / self.fc2.weight.data.norm(dim=dim, keepdim=True).clamp(
-                min=1e-8
-            )
+            # Normalize in-place for oblique layers
+            self.fc1.weight.data /= self.fc1.weight.data.norm(dim=dim, keepdim=True).clamp(min=1e-8)
+            self.fc2.weight.data /= self.fc2.weight.data.norm(dim=dim, keepdim=True).clamp(min=1e-8)
 
     def forward(self, x):
         x = x.view(x.size(0), -1)  # Flatten
@@ -196,7 +192,7 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
         # Re-initialize for row normalization
         with torch.no_grad():
             for param in model.get_oblique_parameters():
-                param.data = param.data / param.data.norm(dim=optimizer_kwargs["dim"], keepdim=True).clamp(min=1e-8)
+                param.data /= param.data.norm(dim=optimizer_kwargs["dim"], keepdim=True).clamp(min=1e-8)
 
         # Train model
         initial_loss, final_loss, final_accuracy = self._train_model(
