@@ -85,9 +85,9 @@ def apply_preconditioner(Q_list: List[torch.Tensor], X: torch.Tensor) -> torch.T
         Tensor of shape `(d_0, d_1, ..., d_N)`.
     """
     # Apply Q first, then Q.T to get Q^T @ Q
-    Y = apply_kronecker_factors(Q_list, X)
-    Y = apply_kronecker_factors([q if q.dim() == 1 else q.T for q in Q_list], Y)
-    return Y
+    Px = apply_kronecker_factors(Q_list, X)
+    Px = apply_kronecker_factors([q if q.dim() == 1 else q.T for q in Q_list], Px)
+    return Px
 
 
 def _mode_n_mul_and_permute(X: torch.Tensor, M: torch.Tensor, mode: int) -> torch.Tensor:
