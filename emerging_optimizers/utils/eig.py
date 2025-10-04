@@ -140,6 +140,7 @@ def eig_orthogonal_iteration(
     Q = approx_eigenvectors
     approx_eigvals = conjugate(x, Q, diag=True)
     iteration = 0
+    sorted_approx_eigvals: Tensor = approx_eigvals
     while iteration < max_iterations and not met_approx_eigvals_criteria(x, approx_eigvals, tolerance):
         power_iteration = x @ Q
         Q = torch.linalg.qr(power_iteration).Q
