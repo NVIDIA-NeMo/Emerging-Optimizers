@@ -13,7 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from itertools import chain
-from typing import Callable, Iterable, List, Optional, Tuple, Union, override
+from typing import Callable, Iterable, List, Optional, Tuple, Union
+
+
+# TODO(@boxiangw): remove this once bump to python 3.12
+try:
+    from typing import override
+except ImportError:
+    from typing_extensions import override
 
 import torch
 import torch.optim as optim

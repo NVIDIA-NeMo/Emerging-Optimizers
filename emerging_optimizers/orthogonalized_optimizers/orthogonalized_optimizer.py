@@ -12,7 +12,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Callable, override
+from typing import Any, Callable
+
+
+# TODO(@boxiangw): remove this once bump to python 3.12
+try:
+    from typing import override
+except ImportError:
+    from typing_extensions import override
 
 import torch
 import torch.optim as optim
