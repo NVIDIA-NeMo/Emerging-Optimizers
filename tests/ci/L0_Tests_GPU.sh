@@ -20,5 +20,10 @@ coverage run -p --source=emerging_optimizers tests/test_soap_functions.py
 coverage run -p --source=emerging_optimizers tests/test_soap_utils.py
 coverage run -p --source=emerging_optimizers tests/soap_smoke_test.py
 coverage run -p --source=emerging_optimizers tests/soap_mnist_test.py
+<<<<<<< HEAD
 coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py
 coverage run -p --source=emerging_optimizers tests/test_spectral_clipping_utils.py
+=======
+coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=auto
+
+>>>>>>> 69f98db (added cpu and gpu flag)
