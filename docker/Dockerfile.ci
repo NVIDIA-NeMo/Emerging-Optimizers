@@ -18,7 +18,9 @@ ENV PIP_CONSTRAINT=""
 # Install uv and python
 ARG UV_VERSION=0.7.2
 ENV PATH="/root/.local/bin:$PATH"
-RUN curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh
+RUN apt update \
+    && apt install -y curl \
+    && curl -LsSf https://astral.sh/uv/${UV_VERSION}/install.sh | sh
 
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
 ENV PATH="$UV_PROJECT_ENVIRONMENT/bin:$PATH"
