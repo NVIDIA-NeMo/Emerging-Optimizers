@@ -18,5 +18,5 @@ python tests/test_orthogonalized_optimizer.py
 python tests/test_soap_functions.py
 python tests/test_soap_utils.py
 python tests/soap_smoke_test.py
-python tests/test_scalar_optimizers.py
+python tests/test_scalar_optimizers.py --device=cuda
 python tests/test_spectral_clipping_utils.py
