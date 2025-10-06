@@ -64,7 +64,7 @@ class ObliqueSGD(Optimizer):
         )
         super().__init__(params, defaults)
 
-    @torch.no_grad()
+    @torch.no_grad()  # type: ignore[misc]
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
         """Performs a single optimization step.
         Args:
@@ -122,7 +122,7 @@ class ObliqueAdam(Optimizer):
         weight_decay: float = 0.0,
         dim: int = 0,
         eps: float = 1e-8,
-        correct_bias=True,
+        correct_bias: bool = True,
     ) -> None:
         """An Adam-like optimizer for Normalized 2d Parameters
 
@@ -153,7 +153,7 @@ class ObliqueAdam(Optimizer):
         )
         super().__init__(params, defaults)
 
-    @torch.no_grad()
+    @torch.no_grad()  # type: ignore[misc]
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
         """Performs a single optimization step.
         Args:
