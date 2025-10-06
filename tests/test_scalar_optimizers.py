@@ -25,15 +25,13 @@ from emerging_optimizers.scalar_optimizers import (
 
 
 # Define command line flags
-flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu', 'cuda', or 'auto'")
+flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
 flags.DEFINE_integer("seed", 42, "Random seed for reproducible tests")
-flags.DEFINE_boolean("skip_gpu_tests", False, "Skip GPU tests even if CUDA is available")
 
 FLAGS = flags.FLAGS
 
 
-# Base class for tests requiring seeding for determinism
-class BaseTestCase(parameterized.TestCase):
+class ScalarOptimizerTest(parameterized.TestCase):
     def setUp(self):
         """Set random seed and device before each test."""
         # Set seed for PyTorch (using seed from flags)
@@ -43,34 +41,17 @@ class BaseTestCase(parameterized.TestCase):
             torch.cuda.manual_seed_all(FLAGS.seed)
 
         # Set up device based on flags
-        self.device = self._get_test_device()
+        self.device = FLAGS.device
 
-    def _get_test_device(self):
-        """Get the device to use for testing based on flags."""
-        if FLAGS.device == "auto":
-            return "cuda" if torch.cuda.is_available() and not FLAGS.skip_gpu_tests else "cpu"
-        elif FLAGS.device == "cuda":
-            if not torch.cuda.is_available():
-                self.skipTest("CUDA not available")
-            if FLAGS.skip_gpu_tests:
-                self.skipTest("GPU tests skipped by flag")
-            return "cuda"
-        else:
-            return "cpu"
-
-    def _move_to_device(self, *tensors):
-        """Helper method to move tensors to the test device."""
-        return tuple(tensor.to(self.device) for tensor in tensors)
-
-
-class ScalarOptimizerTest(BaseTestCase):
     def test_calculate_adam_update_simple(self) -> None:
         exp_avg_initial = torch.tensor([[1.0]])
         exp_avg_sq_initial = torch.tensor([[2.0]])
         grad = torch.tensor([[0.5]])
 
         # Move tensors to the test device
-        exp_avg_initial, exp_avg_sq_initial, grad = self._move_to_device(exp_avg_initial, exp_avg_sq_initial, grad)
+        exp_avg_initial = exp_avg_initial.to(self.device)
+        exp_avg_sq_initial = exp_avg_sq_initial.to(self.device)
+        grad = grad.to(self.device)
 
         betas = (0.9, 0.99)
         eps = 1e-8
