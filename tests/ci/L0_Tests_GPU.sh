@@ -20,14 +20,5 @@ coverage run -p --source=emerging_optimizers tests/test_soap_functions.py
 coverage run -p --source=emerging_optimizers tests/test_soap_utils.py
 coverage run -p --source=emerging_optimizers tests/soap_smoke_test.py
 coverage run -p --source=emerging_optimizers tests/soap_mnist_test.py
-<<<<<<< HEAD
-<<<<<<< HEAD
-coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py
-coverage run -p --source=emerging_optimizers tests/test_spectral_clipping_utils.py
-=======
-coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=auto
-=======
 coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=cuda
->>>>>>> b5f68de (added explicit device flag for gpu, removed auto, in test)
-
->>>>>>> 69f98db (added cpu and gpu flag)
+coverage run -p --source=emerging_optimizers tests/test_spectral_clipping_utils.pyg
