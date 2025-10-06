@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM nvcr.io/nvidia/pytorch:25.06-py3
+FROM pytorch/pytorch:2.8.0-cuda12.9-cudnn9-runtime
 
 ENV PIP_CONSTRAINT=""
 
