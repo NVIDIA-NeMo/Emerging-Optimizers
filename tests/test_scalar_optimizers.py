@@ -44,9 +44,9 @@ class ScalarOptimizerTest(parameterized.TestCase):
         self.device = FLAGS.device
 
     def test_calculate_adam_update_simple(self) -> None:
-        exp_avg_initial = torch.tensor([[1.0]])
-        exp_avg_sq_initial = torch.tensor([[2.0]])
-        grad = torch.tensor([[0.5]])
+        exp_avg_initial = torch.tensor([[1.0]], device=self.device)
+        exp_avg_sq_initial = torch.tensor([[2.0]], device=self.device)
+        grad = torch.tensor([[0.5]], device=self.device)
 
         # Move tensors to the test device
         exp_avg_initial = exp_avg_initial.to(self.device)
@@ -87,7 +87,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         )
 
         # Manually set Adam's internal state to match conditions *before* the current update
-        adam_optimizer.state[param]["step"] = torch.tensor(float(step - 1))
+        adam_optimizer.state[param]["step"] = torch.tensor(float(step - 1), device=self.device)
         adam_optimizer.state[param]["exp_avg"] = exp_avg_initial.clone()
         adam_optimizer.state[param]["exp_avg_sq"] = exp_avg_sq_initial.clone()
 
@@ -110,9 +110,9 @@ class ScalarOptimizerTest(parameterized.TestCase):
 
     def test_calculate_laprop_update_with_zero_momentum_equals_rmsprop(self) -> None:
         # LaProp with momentum (beta1) = 0 should be equivalent to RMSProp.
-        exp_avg_initial = torch.tensor([[0.0]])  # Momentum is 0, so exp_avg starts at 0
-        exp_avg_sq_initial = torch.tensor([[2.0]])
-        grad = torch.tensor([[0.5]])
+        exp_avg_initial = torch.tensor([[0.0]], device=self.device)  # Momentum is 0, so exp_avg starts at 0
+        exp_avg_sq_initial = torch.tensor([[2.0]], device=self.device)
+        grad = torch.tensor([[0.5]], device=self.device)
         betas = (0.0, 0.99)  # beta1=0 for momentum
         eps = 1e-8
         step = 10
@@ -133,7 +133,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         )
 
         # Manually verify with RMSProp logic
-        initial_param_val_tensor = torch.tensor([[10.0]])
+        initial_param_val_tensor = torch.tensor([[10.0]], device=self.device)
         param = torch.nn.Parameter(initial_param_val_tensor.clone())
         param.grad = grad.clone()
 
@@ -148,7 +148,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         )
 
         # Manually set RMSProp's internal state
-        rmsprop_optimizer.state[param]["step"] = torch.tensor(float(step))
+        rmsprop_optimizer.state[param]["step"] = torch.tensor(float(step), device=self.device)
         rmsprop_optimizer.state[param]["square_avg"] = exp_avg_sq_initial.clone()
         rmsprop_optimizer.state[param]["momentum_buffer"] = exp_avg_initial.clone()
 
@@ -164,10 +164,10 @@ class ScalarOptimizerTest(parameterized.TestCase):
 
     def test_calculate_ademamix_update_with_alpha_zero_equals_adam(self) -> None:
         # AdEMAMix with alpha=0 and no beta scheduling should be equivalent to Adam.
-        exp_avg_fast_initial = torch.tensor([[1.0]])
-        exp_avg_slow_initial = torch.tensor([[1.0]])
-        exp_avg_sq_initial = torch.tensor([[2.0]])
-        grad = torch.tensor([[0.5]])
+        exp_avg_fast_initial = torch.tensor([[1.0]], device=self.device)
+        exp_avg_slow_initial = torch.tensor([[1.0]], device=self.device)
+        exp_avg_sq_initial = torch.tensor([[2.0]], device=self.device)
+        grad = torch.tensor([[0.5]], device=self.device)
         betas = (0.9, 0.99, 0.999)
         eps = 1e-8
         step = 10
@@ -209,9 +209,9 @@ class ScalarOptimizerTest(parameterized.TestCase):
 
     def test_calculate_sim_ademamix_update_with_zero_momentum_and_alpha_equals_rmsprop(self) -> None:
         # sim_ademamix with momentum (beta_fast) = 0 and alpha = 0 should be equivalent to RMSProp.
-        exp_avg_initial = torch.tensor([[0.0]])  # Momentum is 0, so exp_avg starts at 0
-        exp_avg_sq_initial = torch.tensor([[2.0]])
-        grad = torch.tensor([[0.5]])
+        exp_avg_initial = torch.tensor([[0.0]], device=self.device)  # Momentum is 0, so exp_avg starts at 0
+        exp_avg_sq_initial = torch.tensor([[2.0]], device=self.device)
+        grad = torch.tensor([[0.5]], device=self.device)
         betas = (0.0, 0.99)  # beta1=0 for momentum
         eps = 1e-8
         step = 10
@@ -235,7 +235,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         )
 
         # Manually verify with RMSProp logic
-        initial_param_val_tensor = torch.tensor([[10.0]])
+        initial_param_val_tensor = torch.tensor([[10.0]], device=self.device)
         param = torch.nn.Parameter(initial_param_val_tensor.clone())
         param.grad = grad.clone()
 
@@ -250,7 +250,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         )
 
         # Manually set RMSProp's internal state
-        rmsprop_optimizer.state[param]["step"] = torch.tensor(float(step))
+        rmsprop_optimizer.state[param]["step"] = torch.tensor(float(step), device=self.device)
         rmsprop_optimizer.state[param]["square_avg"] = exp_avg_sq_initial.clone()
 
         rmsprop_optimizer.step()
