@@ -24,6 +24,7 @@ __all__ = [
 ]
 
 
+@torch.compile  # type: ignore[misc]
 def partial_contraction(G1: torch.Tensor, G2: torch.Tensor, axis: int) -> torch.Tensor:
     """Compute the partial contraction of G1 and G2 along axis `axis`.
     This is the contraction of the two tensors, but with all axes except `axis` contracted.
@@ -43,7 +44,7 @@ def partial_contraction(G1: torch.Tensor, G2: torch.Tensor, axis: int) -> torch.
     return torch.tensordot(G1, G2, dims=(dims, dims))
 
 
-# @torch.compile  # type: ignore[misc]
+@torch.compile  # type: ignore[misc]
 def apply_kronecker_factors(Q_list: List[torch.Tensor], X: torch.Tensor) -> torch.Tensor:
     """Apply all Kronecker factors once to tensor :math:`X`, each to its corresponding dimension.
 
@@ -67,7 +68,7 @@ def apply_kronecker_factors(Q_list: List[torch.Tensor], X: torch.Tensor) -> torc
     return Y
 
 
-# @torch.compile  # type: ignore[misc]
+@torch.compile  # type: ignore[misc]
 def apply_preconditioner(Q_list: List[torch.Tensor], X: torch.Tensor) -> torch.Tensor:
     """Apply the full PSGD preconditioner to X.
 
@@ -130,6 +131,7 @@ def _dim_n_mul_and_permute(X: torch.Tensor, M: torch.Tensor, contract_dim: int) 
     return Y.permute(perm)
 
 
+@torch.compile  # type: ignore[misc]
 def _apply_single_kronecker_factor(Q_list: List[torch.Tensor], X: torch.Tensor, axis: int) -> torch.Tensor:
     """Apply a single Kronecker factor Q to X at dimension `axis`. Helper function for apply_kronecker_factors.
 

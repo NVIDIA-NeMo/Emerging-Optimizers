@@ -23,6 +23,7 @@ __all__ = [
 ]
 
 
+@torch.compile  # type: ignore[misc]
 def procrustes_step(Q: torch.Tensor, max_step_size: float = 0.125) -> torch.Tensor:
     r"""One step of an online solver for the orthogonal Procrustes problem.
 
