@@ -22,15 +22,6 @@ Emerging optimizers have demonstrated significant practical impact in large-scal
 - Improve final model quality through better conditioning of the optimization landscape
 - Enable more efficient hyperparameter tuning due to reduced sensitivity to learning rates
 
-### Optimizers Included
-
-This project currently includes the following optimizers:
-
-- **Shampoo**: Uses Kronecker-factored preconditioning ([arXiv:1802.09568](https://arxiv.org/abs/1802.09568))
-- **SOAP (Shampoo with Adam in the Preconditioner)**: Combines Shampoo's preconditioning with Adam-style momentum ([arXiv:2409.11321](https://arxiv.org/abs/2409.11321))
-- **Muon**: Uses Newton-Schulz orthogonalization for improved stability and convergence in large-scale training ([arXiv:2502.16982](https://arxiv.org/abs/2502.16982))
-
-
 ## Installation
 
 ### Prerequisites
