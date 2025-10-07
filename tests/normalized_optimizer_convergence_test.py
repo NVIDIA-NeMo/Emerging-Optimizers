@@ -15,10 +15,17 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from absl import flags
 from absl.testing import absltest, parameterized
 from torch.utils.data import DataLoader, TensorDataset
 
 from emerging_optimizers.riemannian_optimizers.normalized_optimizer import ObliqueAdam, ObliqueSGD
+
+
+# Define command line flags
+flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+
+FLAGS = flags.FLAGS
 
 
 class SimpleMLP(nn.Module):
@@ -66,7 +73,7 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
         # Set seed for CUDA if available
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(1234)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = FLAGS.device
 
     def _create_synthetic_mnist_data(self, num_samples: int = 1000) -> TensorDataset:
         """Create synthetic MNIST-like data for testing."""
