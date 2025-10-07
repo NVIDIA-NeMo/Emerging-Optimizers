@@ -73,7 +73,7 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
         torch.manual_seed(1234)
         X = torch.randn(num_samples, 784, device=self.device)
         # Create somewhat realistic targets with class imbalance
-        y = torch.randint(0, 10, (num_samples,))
+        y = torch.randint(0, 10, (num_samples,), device=self.device)
         return TensorDataset(X, y)
 
     def _train_model(
