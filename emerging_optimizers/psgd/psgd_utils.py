@@ -50,15 +50,19 @@ def balance_q_in_place(Q_list: List[torch.Tensor]) -> None:
         None
 
     """
-    if (order := len(Q_list)) <= 1:
+    if not Q_list:
+        raise TypeError("Q_list cannot be empty.")
+
+    order = len(Q_list)
+    if order == 1:
+        # with a single factor, no balancing is needed
         return
 
     # Compute max-abs norm of each factor
     norms = [torch.max(torch.abs(Q)) for Q in Q_list]
 
     # Compute geometric mean of those norms
-    stacked = torch.stack(norms)
-    gmean = torch.prod(stacked) ** (1.0 / order)
+    gmean = torch.prod(torch.stack(norms)) ** (1.0 / order)
 
     # Rescale each factor so its max‐abs entry == geometric mean
     for Q, norm in zip(Q_list, norms, strict=True):
@@ -66,7 +70,7 @@ def balance_q_in_place(Q_list: List[torch.Tensor]) -> None:
 
 
 @torch.compile  # type: ignore[misc]
-def norm_lower_bound_spd(A: torch.Tensor, k: int = 4, half_iters: int = 2) -> torch.Tensor:
+def norm_lower_bound_spd(A: torch.Tensor, k: int = 4, half_iters: int = 2, eps: float = 1e-8) -> torch.Tensor:
     r"""Returns a cheap lower bound for the spectral norm of a symmetric positive definite matrix.
 
 
@@ -74,21 +78,23 @@ def norm_lower_bound_spd(A: torch.Tensor, k: int = 4, half_iters: int = 2) -> to
         A: Tensor of shape :math:`(n, n)`, symmetric positive definite.
         k: Dimension of the subspace.
         half_iters: Half of the number of subspace iterations.
+        eps: Small number for numerical stability.
+
     Returns:
         A scalar giving a lower bound on :math:`\\|A\\|_2`.
     """
 
     # Compute normalizing factor from the largest diagonal entry to prevent overflow/underflow and use smallest representable normal number for numerical stability
-    normalization = A.diagonal().amax() + torch.finfo(A.dtype).smallest_normal
+    normalization = A.diagonal().amax() + eps
     A = A / normalization
 
-    bound_unnormalized = _subspace_iteration_bound(A, k=k, half_iters=half_iters)
+    bound_unnormalized = _subspace_iteration_bound(A, k=k, half_iters=half_iters, eps=eps)
 
     return normalization * bound_unnormalized
 
 
 @torch.compile  # type: ignore[misc]
-def norm_lower_bound_skew(A: torch.Tensor, k: int = 32, half_iters: int = 2) -> torch.Tensor:
+def norm_lower_bound_skew(A: torch.Tensor, k: int = 32, half_iters: int = 2, eps: float = 1e-8) -> torch.Tensor:
     """Compute a cheap lower bound on the spectral norm (largest eigenvalue) of skew-symmetric matrix.
 
 
@@ -99,6 +105,7 @@ def norm_lower_bound_skew(A: torch.Tensor, k: int = 32, half_iters: int = 2) -> 
         A: Tensor of shape :math:`(n, n)`, skew-symmetric.
         k: Dimension of the subspace. Suggested values: 128 for bfloat16, 32 for float32, 4 for float64.
         half_iters: Half of the number of subspace iterations.
+        eps: Small number for numerical stability.
 
     Returns:
         A scalar Tensor giving a lower bound on :math:`\\|A\\|_2`.
@@ -106,10 +113,10 @@ def norm_lower_bound_skew(A: torch.Tensor, k: int = 32, half_iters: int = 2) -> 
     """
 
     # Normalize to avoid extreme values, by extracting the max absolute value and use smallest representable normal number for numerical stability
-    normalizing_factor = A.abs().amax() + torch.finfo(A.dtype).smallest_normal
+    normalizing_factor = A.abs().amax() + eps
     A = A / normalizing_factor
 
-    bound_unnormalized = _subspace_iteration_bound(A, k=k, half_iters=half_iters)
+    bound_unnormalized = _subspace_iteration_bound(A, k=k, half_iters=half_iters, eps=eps)
 
     return normalizing_factor * bound_unnormalized
 
@@ -119,6 +126,7 @@ def _subspace_iteration_bound(
     A: torch.Tensor,
     k: int = 32,
     half_iters: int = 2,
+    eps: float = 1e-8,
 ) -> torch.Tensor:
     """Helper function for subspace iteration to estimate spectral norm bounds.
 
@@ -137,11 +145,11 @@ def _subspace_iteration_bound(
         A: Input matrix, already normalized by caller.
         k: Dimension of the subspace (number of random vectors).
         half_iters: Number of half-iterations (each applies A twice).
+        eps: Smallest number for numerical stability.
 
     Returns:
         Maximum vector norm from the final subspace iteration (unnormalized).
     """
-    smallest_normal = torch.finfo(A.dtype).smallest_normal
 
     # Initialize random subspace matrix V of shape (k, n)
     V = torch.randn(k, A.shape[1], dtype=A.dtype, device=A.device)
@@ -160,7 +168,7 @@ def _subspace_iteration_bound(
     for _ in range(half_iters):
         V = V @ A
         # Normalize each row of V to prevent exponential growth/decay
-        V /= torch.linalg.vector_norm(V, dim=1, keepdim=True) + smallest_normal
+        V /= torch.linalg.vector_norm(V, dim=1, keepdim=True) + eps
         # Apply A again (V approximates the dominant eigenspace of A^2)
         V = V @ A
 

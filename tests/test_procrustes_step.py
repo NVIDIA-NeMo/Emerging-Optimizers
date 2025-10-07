@@ -54,7 +54,7 @@ class ProcrustesStepTest(parameterized.TestCase):
         Q = torch.randn(3, 3, device=self.device)
         Q_original_id = id(Q)
 
-        procrustes_step(Q, max_step_size=1 / 16)
+        Q = procrustes_step(Q, max_step_size=1 / 16)
 
         self.assertEqual(id(Q), Q_original_id)
 
@@ -72,7 +72,7 @@ class ProcrustesStepTest(parameterized.TestCase):
 
         initial_obj = self._procrustes_objective(Q)
 
-        procrustes_step(Q, max_step_size=1 / 16)
+        Q = procrustes_step(Q, max_step_size=1 / 16)
 
         final_obj = self._procrustes_objective(Q)
 
@@ -91,7 +91,7 @@ class ProcrustesStepTest(parameterized.TestCase):
 
         initial_obj = self._procrustes_objective(Q)
 
-        procrustes_step(Q, max_step_size=1 / 16)
+        Q = procrustes_step(Q, max_step_size=1 / 16)
 
         final_obj = self._procrustes_objective(Q)
 
@@ -110,7 +110,7 @@ class ProcrustesStepTest(parameterized.TestCase):
         Q = torch.linalg.qr(torch.randn(10, 10, device=self.device, dtype=torch.float32)).Q + perturbation
         initial_obj = self._procrustes_objective(Q)
 
-        procrustes_step(Q, max_step_size=max_step_size)
+        Q = procrustes_step(Q, max_step_size=max_step_size)
 
         final_obj = self._procrustes_objective(Q)
 
@@ -132,7 +132,7 @@ class ProcrustesStepTest(parameterized.TestCase):
         max_step_size = 0.5 * size ** (-1 / 3)
         initial_obj = self._procrustes_objective(Q)
 
-        procrustes_step(Q, max_step_size=max_step_size)
+        Q = procrustes_step(Q, max_step_size=max_step_size)
 
         final_obj = self._procrustes_objective(Q)
 
@@ -147,8 +147,8 @@ class ProcrustesStepTest(parameterized.TestCase):
         initial_det_pos = torch.det(Q_pos)
         initial_det_neg = torch.det(Q_neg)
 
-        procrustes_step(Q_pos, max_step_size=1 / 16)
-        procrustes_step(Q_neg, max_step_size=1 / 16)
+        Q_pos = procrustes_step(Q_pos, max_step_size=1 / 16)
+        Q_neg = procrustes_step(Q_neg, max_step_size=1 / 16)
 
         final_det_pos = torch.det(Q_pos)
         final_det_neg = torch.det(Q_neg)
