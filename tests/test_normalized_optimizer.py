@@ -14,9 +14,16 @@
 # limitations under the License.
 
 import torch
+from absl import flags
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.riemannian_optimizers.normalized_optimizer import ObliqueAdam, ObliqueSGD
+
+
+# Define command line flags
+flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+
+FLAGS = flags.FLAGS
 
 
 class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
@@ -29,7 +36,7 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
         # Set seed for CUDA if available
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(1234)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = FLAGS.device
 
     @parameterized.parameters(
         (0),
