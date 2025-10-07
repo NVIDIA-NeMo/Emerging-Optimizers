@@ -27,6 +27,7 @@ class ObliqueSGD(Optimizer):
 
     References:
         - An Introduction to Optimization on Smooth Manifolds (Nicolas Boumal)
+        - EDM2: https://arxiv.org/abs/2312.02696
         - Jianlin Su: https://kexue.fm/archives/11196
         - Raman et al.: https://arxiv.org/abs/1909.06463
         - Franz Cesista: https://leloykun.github.io/ponder/steepest-descent-stiefel/#6-bonus-a-muon-like-optimizer-for-the-embedding-and-unembedding-layers
