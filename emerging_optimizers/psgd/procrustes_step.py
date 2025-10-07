@@ -38,6 +38,7 @@ def procrustes_step(Q: torch.Tensor, max_step_size: float = 0.125) -> torch.Tens
         Q: Tensor of shape (n, n), general square matrix to orthogonalize.
         max_step_size: Maximum step size for the line search. Default is 1/8. (0.125)
     """
+    # Note: this function is written in fp32 to avoid numerical instability while computing the taylor expansion of the exponential map
     with utils.fp32_matmul_precision("highest"):
         R = Q.T - Q
         R /= norm_lower_bound_skew(R) + torch.finfo(R.dtype).smallest_normal
@@ -48,11 +49,12 @@ def procrustes_step(Q: torch.Tensor, max_step_size: float = 0.125) -> torch.Tens
         RRQ = R @ RQ
         tr_RRQ = torch.trace(RRQ)
         # clip step size to max_step_size, based on a 2nd order expansion.
-        step_size = torch.clamp(-tr_RQ / tr_RRQ, min=0, max=max_step_size)
+        _step_size = torch.clamp(-tr_RQ / tr_RRQ, min=0, max=max_step_size)
         # If tr_RRQ >= 0, the quadratic approximation is not concave, we fallback to max_step_size.
-        a = torch.where(tr_RRQ < 0, step_size, max_step_size)
+        step_size = torch.where(tr_RRQ < 0, _step_size, max_step_size)
         # rotate Q as exp(a R) Q ~ (I + a R + a^2 R^2/2) Q with an optimal step size by line search
         # for 2nd order expansion, only expand exp(a R) to its 2nd term.
-        Q += a * (RQ + 0.5 * a * RRQ)
+        # Q += step_size * (RQ + 0.5 * step_size * RRQ)
+        Q = torch.add(Q, torch.add(RQ, RRQ, alpha=0.5 * step_size), alpha=step_size)
 
     return Q

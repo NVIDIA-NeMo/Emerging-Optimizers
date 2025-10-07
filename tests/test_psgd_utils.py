@@ -13,46 +13,52 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
-from absl import testing
+from absl import flags, testing
 from absl.testing import parameterized
 
 from emerging_optimizers.psgd.psgd_utils import (
-    balance_q_in_place,
     norm_lower_bound_skew,
     norm_lower_bound_spd,
+    uniformize_q_in_place,
 )
 
 
+# Define command line flags
+flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+
+FLAGS = flags.FLAGS
+
+
 class BalanceQTest(parameterized.TestCase):
-    """Test cases for balance_Q function."""
+    """Test cases for uniformize_q_in_place function."""
 
     def setUp(self) -> None:
         """Set up test fixtures."""
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.device = FLAGS.device
 
     def test_normalization_on_empty_list(self) -> None:
-        """Test balance_Q with empty list."""
+        """Test uniformize_q_in_place with empty list."""
         Q_list = []
-        balance_q_in_place(Q_list)  # Should not raise any errors
+        uniformize_q_in_place(Q_list)  # Should not raise any errors
         self.assertEqual(len(Q_list), 0)
 
     def test_normalization_on_single_tensor(self) -> None:
-        """Test balance_Q with single tensor."""
+        """Test uniformize_q_in_place with single tensor."""
         Q = torch.randn(3, 3, device=self.device)
         original_Q = Q.clone()
-        balance_q_in_place([Q])
+        uniformize_q_in_place([Q])
         # for a single tensor, the result should be the same as the original
         torch.testing.assert_close(Q, original_Q)
 
     def test_normalization_on_two_tensors(self) -> None:
-        """Test balance_Q with two tensors."""
+        """Test uniformize_q_in_place with two tensors."""
         Q1 = torch.tensor([[1.0, 2.0], [3.0, 4.0]], device=self.device)
         Q2 = torch.tensor([[0.1, 0.2], [0.3, 0.4]], device=self.device)
 
         orig_max1 = torch.max(torch.abs(Q1))
         orig_max2 = torch.max(torch.abs(Q2))
 
-        balance_q_in_place([Q1, Q2])
+        uniformize_q_in_place([Q1, Q2])
 
         new_max1 = torch.max(torch.abs(Q1))
         new_max2 = torch.max(torch.abs(Q2))
@@ -68,7 +74,7 @@ class BalanceQTest(parameterized.TestCase):
         (4096, 4096, 4096),
     )
     def test_normalization_on_three_tensors(self, size1: int, size2: int, size3: int) -> None:
-        """Test balance_Q with multiple tensors of different dynamic ranges."""
+        """Test uniformize_q_in_place with multiple tensors of different dynamic ranges."""
         Q1 = torch.randn(size1, size1, device=self.device) * 10.0
         Q2 = torch.randn(size2, size2, device=self.device) * 0.01
         Q3 = torch.randn(size3, size3, device=self.device) * 1.0
@@ -77,7 +83,7 @@ class BalanceQTest(parameterized.TestCase):
         orig_max2 = torch.max(torch.abs(Q2))
         orig_max3 = torch.max(torch.abs(Q3))
 
-        balance_q_in_place([Q1, Q2, Q3])
+        uniformize_q_in_place([Q1, Q2, Q3])
 
         # All tensors should have the same max absolute value
         new_max1 = torch.max(torch.abs(Q1))
@@ -91,10 +97,10 @@ class BalanceQTest(parameterized.TestCase):
         self.assertAlmostEqual(new_max3.item(), expected_max.item(), places=5)
 
     def test_modifies_in_place_on_three_tensors(self) -> None:
-        """Test that balance_Q modifies tensors in place."""
+        """Test that uniformize_q_in_place modifies tensors in place."""
         Q = torch.randn(3, 3, device=self.device)
         original_id = id(Q)
-        balance_q_in_place([Q, torch.randn(2, 2, device=self.device)])
+        uniformize_q_in_place([Q, torch.randn(2, 2, device=self.device)])
 
         # Should be the same object (modified in place)
         self.assertEqual(id(Q), original_id)
@@ -105,8 +111,7 @@ class NormLowerBoundSpdTest(parameterized.TestCase):
 
     def setUp(self) -> None:
         """Set up test fixtures."""
-        torch.manual_seed(42)  # For reproducible tests
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.device = FLAGS.device
 
     def test_diagonal_matrix(self) -> None:
         """Test norm_lower_bound_spd with diagonal matrix."""
@@ -166,8 +171,7 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
 
     def setUp(self) -> None:
         """Set up test fixtures."""
-        torch.manual_seed(42)  # For reproducible tests
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.device = FLAGS.device
 
     def test_zero_matrix(self) -> None:
         """Test norm_lower_bound_skew with zero matrix."""

@@ -90,39 +90,43 @@ def apply_preconditioner(Q_list: List[torch.Tensor], X: torch.Tensor) -> torch.T
     return Px
 
 
-def _mode_n_mul_and_permute(X: torch.Tensor, M: torch.Tensor, mode: int) -> torch.Tensor:
-    """Multiply tensor X along axis `mode` by 2D matrix M.
+def _dim_n_mul_and_permute(X: torch.Tensor, M: torch.Tensor, contract_dim: int) -> torch.Tensor:
+    """Multiply tensor X along axis `contract_dim` by 2D matrix M.
 
     Helper function for `_apply_single_kronecker_factor`.
-    If M is (d_out, d_in) we contract M’s second index with X’s `mode` index.
-    `torch.tensordot` is used to contract the two tensors, and then the result is permuted to move the new axis 0 to position `mode`.
-    Returns a new tensor of the same rank, but with size[mode] replaced by d_out.
-    Note that d_{mode} == d_in.
+    If M is (d_out, d_in) we contract M’s second index with X’s `contract_dim` index.
+    `torch.tensordot` is used to contract the two tensors, and then the result is permuted to move the new axis 0 to position `contract_dim`.
+    Returns a new tensor of the same rank, but with size[contract_dim] replaced by d_out.
+    Note that d_{contract_dim} == d_in.
 
     Args:
-        X: Tensor of shape (d_0, d_1, ..., d_{mode-1}, d_{mode}, d_{mode+1}, ..., d_N)
+        X: Tensor of shape (d_0, d_1, ..., d_{contract_dim-1}, d_{contract_dim}, d_{contract_dim+1}, ..., d_N)
         M: Tensor of shape (d_out, d_in)
-        mode: int, the mode to contract with M, with d_{mode} == d_in
+        contract_dim: int, the dimension to contract with M, with d_{contract_dim} == d_in
 
     Returns:
-        Tensor of shape (d_0, d_1, ..., d_{mode-1}, d_out, d_{mode+1}, ..., d_N)
+        Tensor of shape (d_0, d_1, ..., d_{contract_dim-1}, d_out, d_{contract_dim+1}, ..., d_N)
 
-    Example:
-        X = torch.randn(2, 3, 6)
-        M = torch.randn(5, 6)
-        mode = 2
-        result = _mode_n_mul_and_permute(X, M, mode)
-        print(result.shape)  # Output: torch.Size([2, 3, 5])
+    Examples
+    --------
+    >>> X = torch.randn(2, 3, 6)
+    >>> M = torch.randn(5, 6)
+    >>> contract_dim = 2
+    >>> result = _dim_n_mul_and_permute(X, M, contract_dim)
+    >>> print(result.shape)
+    torch.Size([2, 3, 5])
 
     """
-    if X.shape[mode] != M.shape[1]:
-        raise ValueError(f"Shape mismatch: X.shape[{mode}] = {X.shape[mode]}, M.shape[1] = {M.shape[1]}")
-    # Contract M's 2nd dim (idx=1) with X's `mode` dim
-    Y = torch.tensordot(M, X, dims=([1], [mode]))
-    # Y now has shape (d_out, d_0, …, d_{mode-1}, d_{mode+1}, …).
-    # We want to move that new axis 0 back to position `mode`, due to `torch.tensordot`.
+    if X.shape[contract_dim] != M.shape[1]:
+        raise ValueError(
+            f"Shape mismatch: X.shape[{contract_dim}] = {X.shape[contract_dim]}, M.shape[1] = {M.shape[1]}"
+        )
+    # Contract M's 2nd dim (idx=1) with X's `contract_dim` dim
+    Y = torch.tensordot(M, X, dims=([1], [contract_dim]))
+    # Y now has shape (d_out, d_0, …, d_{contract_dim-1}, d_{contract_dim+1}, …).
+    # We want to move that new axis 0 back to position `contract_dim`, due to `torch.tensordot`.
     nd = X.dim()
-    perm = list(range(1, mode + 1)) + [0] + list(range(mode + 1, nd))
+    perm = list(range(1, contract_dim + 1)) + [0] + list(range(contract_dim + 1, nd))
     return Y.permute(perm)
 
 
@@ -141,5 +145,5 @@ def _apply_single_kronecker_factor(Q_list: List[torch.Tensor], X: torch.Tensor, 
         shape = [1] * X.dim()
         shape[axis] = Q.size(0)
         return X * Q.view(shape)
-    else:
-        return _mode_n_mul_and_permute(X, Q, mode=axis)
+
+    return _dim_n_mul_and_permute(X, Q, contract_dim=axis)

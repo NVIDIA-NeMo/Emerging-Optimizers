@@ -18,14 +18,14 @@ import torch
 
 
 __all__ = [
-    "balance_q_in_place",
+    "uniformize_q_in_place",
     "norm_lower_bound_spd",
     "norm_lower_bound_skew",
 ]
 
 
 @torch.compile  # type: ignore[misc]
-def balance_q_in_place(Q_list: List[torch.Tensor]) -> None:
+def uniformize_q_in_place(Q_list: List[torch.Tensor]) -> None:
     """Balance the dynamic ranges of kronecker factors in place to prevent numerical underflow or overflow.
 
     Each tensor in `Q_list` is rescaled so that its maximum absolute entry
@@ -71,7 +71,7 @@ def balance_q_in_place(Q_list: List[torch.Tensor]) -> None:
 
 @torch.compile  # type: ignore[misc]
 def norm_lower_bound_spd(A: torch.Tensor, k: int = 4, half_iters: int = 2, eps: float = 1e-8) -> torch.Tensor:
-    r"""Returns a cheap lower bound for the spectral norm of a symmetric positive definite matrix.
+    r"""A cheap lower bound for the spectral norm of a symmetric positive definite matrix.
 
 
     Args:
@@ -84,7 +84,7 @@ def norm_lower_bound_spd(A: torch.Tensor, k: int = 4, half_iters: int = 2, eps: 
         A scalar giving a lower bound on :math:`\\|A\\|_2`.
     """
 
-    # Compute normalizing factor from the largest diagonal entry to prevent overflow/underflow and use smallest representable normal number for numerical stability
+    # Compute normalizing factor from the largest diagonal entry to prevent overflow/underflow and use small number for numerical stability
     normalization = A.diagonal().amax() + eps
     A = A / normalization
 
@@ -95,7 +95,7 @@ def norm_lower_bound_spd(A: torch.Tensor, k: int = 4, half_iters: int = 2, eps: 
 
 @torch.compile  # type: ignore[misc]
 def norm_lower_bound_skew(A: torch.Tensor, k: int = 32, half_iters: int = 2, eps: float = 1e-8) -> torch.Tensor:
-    """Compute a cheap lower bound on the spectral norm (largest eigenvalue) of skew-symmetric matrix.
+    """A cheap lower bound on the spectral norm (largest eigenvalue) of skew-symmetric matrix.
 
 
     Note: For skew-symmetric matrices, all diagonal entries are zero and :math:`A^T = -A`.
@@ -112,7 +112,7 @@ def norm_lower_bound_skew(A: torch.Tensor, k: int = 32, half_iters: int = 2, eps
 
     """
 
-    # Normalize to avoid extreme values, by extracting the max absolute value and use smallest representable normal number for numerical stability
+    # Normalize to avoid extreme values, by extracting the max absolute value and use small number for numerical stability
     normalizing_factor = A.abs().amax() + eps
     A = A / normalizing_factor
 
@@ -128,7 +128,7 @@ def _subspace_iteration_bound(
     half_iters: int = 2,
     eps: float = 1e-8,
 ) -> torch.Tensor:
-    """Helper function for subspace iteration to estimate spectral norm bounds.
+    """A helper function for subspace iteration to estimate spectral norm bounds.
 
     Uses numerically stable subspace iteration with a random initialization that aligns with the
     largest row of A to approximate the dominant eigenspace. This is more robust than simple

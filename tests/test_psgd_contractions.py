@@ -13,11 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
-from absl import testing
+from absl import flags, testing
 from absl.testing import parameterized
 
 from emerging_optimizers.psgd.psgd_kron_contractions import (
-    _mode_n_mul_and_permute,
+    _dim_n_mul_and_permute,
     apply_kronecker_factors,
     apply_preconditioner,
     partial_contraction,
@@ -25,13 +25,18 @@ from emerging_optimizers.psgd.psgd_kron_contractions import (
 from emerging_optimizers.utils import fp32_matmul_precision
 
 
+# Define command line flags
+flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+
+FLAGS = flags.FLAGS
+
+
 class TestPSGDKronContractions(parameterized.TestCase):
     """Test cases for PSGD Kronecker contractions."""
 
     def setUp(self) -> None:
         """Set up test fixtures."""
-        torch.manual_seed(42)
-        self.device = torch.device("cuda")
+        self.device = FLAGS.device
 
     @parameterized.parameters(
         (2, 3, 3),
@@ -111,22 +116,23 @@ class TestPSGDKronContractions(parameterized.TestCase):
         (2, 3, 5, 2),
         (4, 6, 2, 1),
     )
-    def test_mode_n_mul_and_permute_shapes(self, dim0: int, dim1: int, dim2: int, mode: int) -> None:
-        """Test `_mode_n_mul_and_permute` with non-uniform shapes and different modes."""
+    def test_dim_n_mul_and_permute__matches_shapes(self, dim0: int, dim1: int, dim2: int, contract_dim: int) -> None:
+        """Test `_dim_n_mul_and_permute` with non-uniform shapes and different contract_dim."""
         X = torch.randn(dim0, dim1, dim2, device=self.device)
         input_shape = X.shape
 
-        input_dim = input_shape[mode]
+        input_dim = input_shape[contract_dim]
         output_dim = 7  # arbitrary output dimension
         M = torch.randn(output_dim, input_dim, device=self.device)
 
-        result = _mode_n_mul_and_permute(X, M, mode)
+        result = _dim_n_mul_and_permute(X, M, contract_dim)
 
-        # Verify output shape: same as input but dimension `mode` replaced by output_dim
+        # Verify output shape: same as input but dimension `contract_dim` replaced by output_dim
         expected_shape = list(input_shape)
-        expected_shape[mode] = output_dim
+        expected_shape[contract_dim] = output_dim
         self.assertEqual(result.shape, torch.Size(expected_shape))
 
 
 if __name__ == "__main__":
+    torch.manual_seed(42)
     testing.absltest.main()

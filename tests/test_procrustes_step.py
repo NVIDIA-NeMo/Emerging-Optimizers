@@ -15,11 +15,17 @@
 import math
 
 import torch
-from absl import testing
+from absl import flags, testing
 from absl.testing import parameterized
 
 from emerging_optimizers.psgd.procrustes_step import procrustes_step
 from emerging_optimizers.utils import fp32_matmul_precision
+
+
+# Define command line flags
+flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+
+FLAGS = flags.FLAGS
 
 
 class ProcrustesStepTest(parameterized.TestCase):
@@ -27,8 +33,7 @@ class ProcrustesStepTest(parameterized.TestCase):
 
     def setUp(self) -> None:
         """Set up test fixtures."""
-        torch.manual_seed(42)
-        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        self.device = FLAGS.device
 
     def _procrustes_objective(self, Q: torch.Tensor) -> torch.Tensor:
         """Helper function to compute Procrustes objective ||Q^H Q - I||_F^2."""
@@ -48,15 +53,6 @@ class ProcrustesStepTest(parameterized.TestCase):
         final_obj = self._procrustes_objective(Q)
 
         self.assertLessEqual(final_obj.item(), initial_obj.item() + 1e-6)
-
-    def test_modifies_matrix_in_place(self) -> None:
-        """Test that procrustes_step modifies the matrix in place."""
-        Q = torch.randn(3, 3, device=self.device)
-        Q_original_id = id(Q)
-
-        Q = procrustes_step(Q, max_step_size=1 / 16)
-
-        self.assertEqual(id(Q), Q_original_id)
 
     @parameterized.parameters(
         (8,),
@@ -91,7 +87,7 @@ class ProcrustesStepTest(parameterized.TestCase):
 
         initial_obj = self._procrustes_objective(Q)
 
-        Q = procrustes_step(Q, max_step_size=1 / 16)
+        Q = procrustes_step(Q, max_step_size=0.0625)
 
         final_obj = self._procrustes_objective(Q)
 
@@ -99,12 +95,12 @@ class ProcrustesStepTest(parameterized.TestCase):
         self.assertLess(final_obj.item(), initial_obj.item() + 1e-6)
 
     @parameterized.parameters(
-        (1 / 64,),
-        (1 / 32,),
-        (1 / 16,),
-        (1 / 8,),
+        (0.015625,),
+        (0.03125,),
+        (0.0625,),
+        (0.125,),
     )
-    def test_different_step_sizes(self, max_step_size: float) -> None:
+    def test_different_step_sizes_reduces_objective(self, max_step_size: float) -> None:
         """Test procrustes_step improvement with different step sizes."""
         perturbation = 1e-1 * torch.randn(10, 10, device=self.device, dtype=torch.float32) / math.sqrt(10)
         Q = torch.linalg.qr(torch.randn(10, 10, device=self.device, dtype=torch.float32)).Q + perturbation
@@ -122,12 +118,14 @@ class ProcrustesStepTest(parameterized.TestCase):
         (512,),
         (8192,),
     )
-    def test_different_matrix_sizes(self, size: int) -> None:
+    def test_different_matrix_sizes_reduces_objective(self, size: int) -> None:
         """Test procrustes_step improvement with different matrix sizes."""
         # Create a non-orthogonal matrix by scaling an orthogonal one
         A = torch.randn(size, size, device=self.device, dtype=torch.float32)
         with fp32_matmul_precision("highest"):
             Q_orth, _ = torch.linalg.qr(A)
+        # Add perturbation, we choose 1e-2 to be small enough to not affect the objective too much
+        # but large enough to make the matrix non-orthogonal.
         Q = Q_orth + 1e-2 * torch.randn(size, size, device=self.device, dtype=torch.float32) / math.sqrt(size)
         max_step_size = 0.5 * size ** (-1 / 3)
         initial_obj = self._procrustes_objective(Q)
@@ -147,8 +145,8 @@ class ProcrustesStepTest(parameterized.TestCase):
         initial_det_pos = torch.det(Q_pos)
         initial_det_neg = torch.det(Q_neg)
 
-        Q_pos = procrustes_step(Q_pos, max_step_size=1 / 16)
-        Q_neg = procrustes_step(Q_neg, max_step_size=1 / 16)
+        Q_pos = procrustes_step(Q_pos, max_step_size=0.0625)
+        Q_neg = procrustes_step(Q_neg, max_step_size=0.0625)
 
         final_det_pos = torch.det(Q_pos)
         final_det_neg = torch.det(Q_neg)
@@ -159,4 +157,5 @@ class ProcrustesStepTest(parameterized.TestCase):
 
 
 if __name__ == "__main__":
+    torch.manual_seed(42)
     testing.absltest.main()
