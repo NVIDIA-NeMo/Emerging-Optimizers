@@ -149,7 +149,7 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
 
     def test_oblique_sgd_convergence(self) -> None:
         """Test that ObliqueSGD can train a simple MLP and maintain norms."""
-        model = SimpleMLP(input_size=784, hidden_size=64, num_classes=10)
+        model = SimpleMLP(input_size=784, hidden_size=64, num_classes=10).to(self.device)
 
         # Train with ObliqueSGD
         initial_loss, final_loss, final_accuracy = self._train_model(
@@ -165,7 +165,7 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
 
     def test_oblique_adam_convergence(self) -> None:
         """Test that ObliqueAdam can train a simple MLP and maintain norms."""
-        model = SimpleMLP(input_size=784, hidden_size=64, num_classes=10)
+        model = SimpleMLP(input_size=784, hidden_size=64, num_classes=10).to(self.device)
 
         # Train with ObliqueAdam
         initial_loss, final_loss, final_accuracy = self._train_model(
@@ -187,7 +187,7 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
     )
     def test_optimizer_modes_convergence(self, optimizer_class: torch.optim.Optimizer, optimizer_kwargs: dict) -> None:
         """Test that both row and column modes work for both optimizers."""
-        model = SimpleMLP(input_size=784, hidden_size=32, num_classes=10)
+        model = SimpleMLP(input_size=784, hidden_size=32, num_classes=10).to(self.device)
 
         # Re-initialize for row normalization
         with torch.no_grad():
