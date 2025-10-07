@@ -27,4 +27,9 @@ emerging_optimizers.soap.soap_utils
 
 .. automodule:: emerging_optimizers.soap.soap_utils
     :members:
+
+.. autofunction:: _orthogonal_iteration
+
+.. autofunction:: _conjugate
+
 ```
