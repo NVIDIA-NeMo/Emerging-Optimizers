@@ -22,6 +22,7 @@ coverage run -p --source=emerging_optimizers tests/soap_smoke_test.py
 coverage run -p --source=emerging_optimizers tests/soap_mnist_test.py
 coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=cuda
 coverage run -p --source=emerging_optimizers tests/test_spectral_clipping_utils.py
+coverage run -p --source=emerging_optimizers tests/test_triton_kernels.py TritonKernelsIntegerInputTest
 coverage run -p --source=emerging_optimizers tests/test_normalized_optimizer.py --device=cuda
 coverage run -p --source=emerging_optimizers tests/normalized_optimizer_convergence_test.py --device=cuda
 coverage run -p --source=emerging_optimizers tests/test_psgd_contractions.py --device=cuda
