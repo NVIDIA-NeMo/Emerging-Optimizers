@@ -43,7 +43,7 @@ def procrustes_step(Q: torch.Tensor, max_step_size: float = 0.125, eps: float = 
     # Note: this function is written in fp32 to avoid numerical instability while computing the taylor expansion of the exponential map
     with utils.fp32_matmul_precision("highest"):
         R = Q.T - Q
-        R /= torch.max(norm_lower_bound_skew(R), eps)
+        R /= torch.clamp(norm_lower_bound_skew(R), min=eps)
         RQ = R @ Q
         # trace of RQ is always positive,
         # since tr(RQ) = ⟨R, Q⟩_F = ⟨Q^T - Q, Q⟩_F = ||Q||_F^2 - ⟨Q, Q⟩_F = ||Q||_F^2 - tr(Q^T Q) ≥ 0
