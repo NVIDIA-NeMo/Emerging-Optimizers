@@ -170,7 +170,6 @@ def prune_invalid_configs(configs: list[triton.Config], named_args: dict, **kwar
         TILE_M = c.kwargs.get("TILE_M", 0)
         TILE_N = c.kwargs.get("TILE_N", 0)
         TILE_K = c.kwargs.get("TILE_K", 0)
-        num_warps = c.num_warps
 
         # 5000 is an empirically determined threshold from size shmoo to select the best config
         if N >= 5000:
@@ -192,7 +191,6 @@ def matmul_tma_set_block_size_hook(nargs: dict) -> None:
     TILE_N = nargs["TILE_N"]
     TILE_K = nargs["TILE_K"]
     TRANS = nargs["TRANS"]
-    GROUP_SIZE_M = nargs["GROUP_SIZE_M"]
     nargs["a_desc"].block_shape = [TILE_K, TILE_M] if TRANS else [TILE_M, TILE_K]
     nargs["a_t_desc"].block_shape = [TILE_K, TILE_N] if TRANS else [TILE_N, TILE_K]
     if nargs["c_desc"] is not None:
