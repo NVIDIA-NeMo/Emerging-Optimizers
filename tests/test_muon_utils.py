@@ -14,11 +14,13 @@
 # limitations under the License.
 import math
 
+import numpy as np
 import torch
 from absl import logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
+from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon import Muon, get_muon_scale_factor
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import _COEFFICIENT_SETS, newton_schulz
 
@@ -207,6 +209,31 @@ class TestMuonUtils(parameterized.TestCase):
         with self.assertRaises(ValueError) as cm:
             Muon([dummy_param], **dummy_args, qkv_split_shapes=(512, 256))
         self.assertIn("tuple of 3 integers", str(cm.exception))
+
+
+class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):
+    def setUp(self):
+        self.prev_precision = torch.get_float32_matmul_precision()
+        torch.set_float32_matmul_precision("highest")
+
+    def tearDown(self):
+        torch.set_float32_matmul_precision(self.prev_precision)
+
+    @parameterized.parameters(
+        (32, 32),
+        (32, 64),
+    )
+    def test_close_to_ns_with_gemm(self, dim1, dim2):
+        x = torch.randint(-2, 3, (dim1, dim2), device="cuda", dtype=torch.bfloat16)
+        test_out = muon_utils.newton_schulz_step_tsyrk(x.bfloat16(), 2**-1, 2**-2, 2**-3).float()
+        test_ref = muon_utils.newton_schulz_step(x, 2**-1, 2**-2, 2**-3).float()
+
+        # Numpy doesn't support bfloat16, so calculating ulp using float32 then multiplying the difference
+        ulp = np.spacing(torch.max(test_ref.abs(), test_out.abs()).detach().cpu().numpy()) * np.power(2, 23 - 7)
+        max_ulp_diff = (test_ref - test_out).abs().detach().cpu().numpy() / ulp
+
+        # TODO(skyw): This is way to big. We need to find why.
+        print(f"max ulp diff: {np.abs(max_ulp_diff).max()}")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,8 @@ from typing import Any, Literal
 import torch
 from absl import logging
 
+from emerging_optimizers import triton_kernels
+
 
 __all__ = ["newton_schulz", "newton_schulz_tp"]
 
@@ -246,4 +248,29 @@ def newton_schulz_step(
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
     B = torch.addmm(A, A, A, beta=b, alpha=c)
     X = torch.addmm(X, B, X, beta=a, alpha=1.0)
+    return X
+
+
+def newton_schulz_step_tsyrk(
+    X: torch.Tensor, a: float, b: float, c: float, tp_group: torch.distributed.ProcessGroup | None = None
+) -> torch.Tensor:
+    """Perform a single Newton-Schulz iteration step.
+
+    This function performs a single Newton-Schulz iteration step using the Triton kernel for extended syrk.
+
+    Arguments:
+        X: The tensor to be orthogonalized. Must be bfloat16.
+        a: The a coefficient.
+        b: The b coefficient.
+        c: The c coefficient.
+        tp_group: The process group to use for the all-reduce.
+
+    Returns:
+        The orthogonalization of X.
+    """
+    A = triton_kernels.tsyrk_ex(X)  # type: ignore[attr-defined]
+    if tp_group is not None:
+        torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
+    B = triton_kernels.tsyrk_ex(A, A, alpha=c, beta=b)  # type: ignore[attr-defined]
+    X = torch.addmm(X, B, X, alpha=a, beta=1.0)
     return X

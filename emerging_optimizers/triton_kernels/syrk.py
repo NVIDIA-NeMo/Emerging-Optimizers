@@ -316,7 +316,7 @@ def tsyrk_ex(
     Returns:
         Output tensor of shape (N, N)
     """
-
+    assert a.dtype == torch.bfloat16, "Input tensor must be bfloat16"
     assert a.dim() == 2, "Input tensor must be 2D"
     assert a.is_contiguous() or a.T.is_contiguous(), "invalid input tensor layout. a or a.T must be contiguous."
 
