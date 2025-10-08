@@ -84,13 +84,13 @@ def norm_lower_bound_spd(A: torch.Tensor, k: int = 4, half_iters: int = 2, eps: 
         A scalar giving a lower bound on :math:`\\|A\\|_2`.
     """
 
-    # Compute normalizing factor from the largest diagonal entry to prevent overflow/underflow and use small number for numerical stability
-    normalization = A.diagonal().amax() + eps
-    A = A / normalization
+    # Compute scaling factor from the largest diagonal entry to prevent overflow/underflow
+    scale = torch.max(A.diagonal().amax(), eps)
+    A = A / scale
 
     bound_unnormalized = _subspace_iteration_bound(A, k=k, half_iters=half_iters, eps=eps)
 
-    return normalization * bound_unnormalized
+    return scale * bound_unnormalized
 
 
 @torch.compile  # type: ignore[misc]
@@ -112,13 +112,13 @@ def norm_lower_bound_skew(A: torch.Tensor, k: int = 32, half_iters: int = 2, eps
 
     """
 
-    # Normalize to avoid extreme values, by extracting the max absolute value and use small number for numerical stability
-    normalizing_factor = A.abs().amax() + eps
-    A = A / normalizing_factor
+    # Compute scaling factor from the max absolute value to prevent overflow/underflow
+    scale = torch.max(A.abs().amax(), eps)
+    A = A / scale
 
     bound_unnormalized = _subspace_iteration_bound(A, k=k, half_iters=half_iters, eps=eps)
 
-    return normalizing_factor * bound_unnormalized
+    return scale * bound_unnormalized
 
 
 @torch.compile  # type: ignore[misc]
