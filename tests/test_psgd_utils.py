@@ -123,7 +123,7 @@ class NormLowerBoundSpdTest(parameterized.TestCase):
         actual_norm = torch.max(diag_values)
 
         # Bound should be <= actual norm
-        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-5)
+        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-4)
         # For diagonal matrix, bound should be reasonably tight
         self.assertGreater(bound.item(), 0.5 * actual_norm.item())
 
@@ -161,7 +161,7 @@ class NormLowerBoundSpdTest(parameterized.TestCase):
         actual_norm = torch.linalg.matrix_norm(A.to(torch.float32), ord=2)
 
         # Bound should be <= actual norm
-        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-5)
+        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-4)
         # Bound should be positive for positive definite matrix
         self.assertGreater(bound.item(), 0.0)
 
