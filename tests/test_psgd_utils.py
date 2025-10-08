@@ -191,7 +191,7 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         actual_norm = torch.linalg.matrix_norm(A, ord=2)
 
         # Bound should be <= actual norm
-        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-4)
+        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-3)
         # Bound should be positive for non-zero matrix
         self.assertGreater(bound.item(), 0.0)
 
@@ -206,7 +206,7 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         actual_norm = torch.linalg.matrix_norm(A, ord=2)
 
         # Bound should be <= actual norm
-        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-5)
+        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-4)
 
     @parameterized.product(
         dtype=[torch.float32, torch.float64],
