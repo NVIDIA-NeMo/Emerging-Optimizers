@@ -24,7 +24,7 @@ __all__ = [
 
 
 @torch.compile  # type: ignore[misc]
-def procrustes_step(Q: torch.Tensor, max_step_size: float = 0.125) -> torch.Tensor:
+def procrustes_step(Q: torch.Tensor, max_step_size: float = 0.125, eps: float = 1e-8) -> torch.Tensor:
     r"""One step of an online solver for the orthogonal Procrustes problem.
 
     The orthogonal Procrustes problem is :math:`\min_U \| U Q - I \|_F` s.t. :math:`U^H U = I`
@@ -38,11 +38,12 @@ def procrustes_step(Q: torch.Tensor, max_step_size: float = 0.125) -> torch.Tens
     Args:
         Q: Tensor of shape (n, n), general square matrix to orthogonalize.
         max_step_size: Maximum step size for the line search. Default is 1/8. (0.125)
+        eps: Small number for numerical stability.
     """
     # Note: this function is written in fp32 to avoid numerical instability while computing the taylor expansion of the exponential map
     with utils.fp32_matmul_precision("highest"):
         R = Q.T - Q
-        R /= norm_lower_bound_skew(R) + torch.finfo(R.dtype).smallest_normal
+        R /= norm_lower_bound_skew(R) + eps
         RQ = R @ Q
         # trace of RQ is always positive,
         # since tr(RQ) = ⟨R, Q⟩_F = ⟨Q^T - Q, Q⟩_F = ||Q||_F^2 - ⟨Q, Q⟩_F = ||Q||_F^2 - tr(Q^T Q) ≥ 0
