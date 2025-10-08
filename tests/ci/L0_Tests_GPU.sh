@@ -24,3 +24,5 @@ coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --d
 coverage run -p --source=emerging_optimizers tests/test_spectral_clipping_utils.py
 coverage run -p --source=emerging_optimizers tests/test_normalized_optimizer.py --device=cuda
 coverage run -p --source=emerging_optimizers tests/normalized_optimizer_convergence_test.py --device=cuda
+coverage run -p --source=emerging_optimizers tests/test_psgd_contractions.py --device=cuda
+coverage run -p --source=emerging_optimizers tests/test_psgd_utils.py --device=cuda
