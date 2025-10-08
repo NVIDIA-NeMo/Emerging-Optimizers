@@ -68,9 +68,9 @@ class ObliqueSGD(Optimizer):
     @torch.no_grad()  # type: ignore[misc]
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
         """Performs a single optimization step.
+
         Args:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
+            closure: A closure that reevaluates the model and returns the loss.
         """
         loss = closure() if closure is not None else None
 
@@ -157,9 +157,9 @@ class ObliqueAdam(Optimizer):
     @torch.no_grad()  # type: ignore[misc]
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
         """Performs a single optimization step.
+
         Args:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
+            closure: A closure that reevaluates the model and returns the loss.
         """
         loss = closure() if closure is not None else None
 
