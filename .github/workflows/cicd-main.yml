@@ -30,62 +30,7 @@ permissions:
 
 jobs:
   pre-flight:
-    runs-on: ubuntu-latest
-    outputs:
-      is_ci_workload: ${{ steps.is_ci_workload.outputs.main }}
-      docs_only: ${{ steps.docs_only.outputs.main == 'true' }}
-    env:
-      EVENT_NAME: ${{ github.event_name }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get PR info
-        id: get-pr-info
-        if: startsWith(github.ref, 'refs/heads/pull-request/')
-        uses: nv-gha-runners/get-pr-info@main
-
-      - name: Determine base reference
-        id: base-ref
-        run: |
-          echo "base=${{ (startsWith(github.ref, 'refs/heads/pull-request/') && fromJSON(steps.get-pr-info.outputs.pr-info).base.ref) || 'HEAD~1' }}" >> $GITHUB_OUTPUT
-
-      - name: Get changed files
-        id: changed-files
-        uses: step-security/changed-files@v45.0.1
-        with:
-          files: |
-            emerging_optimizers/**
-            .github/**
-            pyproject.toml
-            docker/**
-            tests/**
-          base_sha: ${{ steps.base-ref.outputs.base }}
-
-      - name: Check if docs only
-        shell: bash
-        id: docs_only
-        env:
-          DOCS_ONLY: ${{ steps.changed-files.outputs.any_changed == 'false' }}
-        run: |
-          echo "main=$DOCS_ONLY" | tee -a "$GITHUB_OUTPUT"
-
-      - name: Check if this is a CI workload
-        shell: bash
-        id: is_ci_workload
-        run: |
-          branch_name=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
-
-          if [[ "$branch_name" =~ ^bump-ci-container || "$EVENT_NAME" == "schedule" ]]; then
-            is_ci_workload=true
-            echo "main=true" | tee -a "$GITHUB_OUTPUT"
-          else
-            is_ci_workload=false
-          fi
-
-          echo "main=$is_ci_workload" | tee -a "$GITHUB_OUTPUT"
+    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_cicd_preflight.yml@v0.64.2
 
   cicd-wait-in-queue:
     needs: [pre-flight]
@@ -131,6 +76,7 @@ jobs:
       (
         success()
         || needs.pre-flight.outputs.is_ci_workload == 'true'
+        || needs.pre-flight.outputs.force_run_all == 'true'
       )
       && !cancelled()
     steps:
@@ -158,6 +104,8 @@ jobs:
     if: |
       (
         needs.pre-flight.outputs.docs_only == 'true'
+        || needs.pre-flight.outputs.is_deployment_workflow == 'true'
+        || needs.pre-flight.outputs.is_ci_workload == 'true'
         || always()
       )
       && !cancelled()
@@ -173,12 +121,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
           DOCS_ONLY: ${{ needs.pre-flight.outputs.docs_only }}
+          IS_DEPLOYMENT: ${{ needs.pre-flight.outputs.is_deployment_workflow }}
+          IS_CI_WORKLOAD: ${{ needs.pre-flight.outputs.is_ci_workload }}
         run: |
           # Get workflow run details and check job conclusions
           NUM_FAILED=$(gh run view $RUN_ID --json jobs -q '[.jobs[] | select(.conclusion == "failure") | .name] | length')
           NUM_CANCELLED=$(gh run view $RUN_ID --json jobs -q '[.jobs[] | select(.conclusion == "cancelled") | .name] | length')
 
-          if [[ ($NUM_FAILED -eq 0 && $NUM_CANCELLED -eq 0) || $DOCS_ONLY == 'true' ]]; then
+          if [[ ($NUM_FAILED -eq 0 && $NUM_CANCELLED -eq 0) || $DOCS_ONLY == 'true' || $IS_DEPLOYMENT == 'true' || $IS_CI_WORKLOAD == 'true' ]]; then
             RESULT="success"
           elif [[ $NUM_CANCELLED -gt 0 ]]; then
             RESULT="cancelled"
