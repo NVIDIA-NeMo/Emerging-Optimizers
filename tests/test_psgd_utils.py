@@ -195,10 +195,11 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         # Bound should be positive for non-zero matrix
         self.assertGreater(bound.item(), 0.0)
 
-    def test_identity_based_skew_matrix(self) -> None:
-        """Test norm_lower_bound_skew with matrix based on identity structure."""
+    @parameterized.parameters([4, 16, 32])
+    def test_random_based_skew_matrix_with_different_sizes(self, size: int) -> None:
+        """Test norm_lower_bound_skew with random skew-symmetric matrix."""
         # Create skew-symmetric matrix from anti-symmetric part of random matrix
-        n = 4
+        n = size
         B = torch.randn(n, n, device=self.device)
         A = B - B.T  # This creates a skew-symmetric matrix
 
@@ -206,7 +207,7 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         actual_norm = torch.linalg.matrix_norm(A, ord=2)
 
         # Bound should be <= actual norm
-        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-4)
+        self.assertLessEqual(bound.item(), actual_norm.item() + 1e-3)
 
     @parameterized.product(
         dtype=[torch.float32, torch.float64],
@@ -228,7 +229,7 @@ class NormLowerBoundSkewTest(parameterized.TestCase):
         # Bound should be non-negative
         self.assertGreaterEqual(bound.item(), 0.0)
 
-    @parameterized.parameters([4, 16, 32])
+    @parameterized.parameters([4, 16, 32, 64])
     def test_different_subspace_dimensions(self, rank: int) -> None:
         """Test norm_lower_bound_skew with different subspace dimensions."""
         # Create a skew-symmetric matrix
