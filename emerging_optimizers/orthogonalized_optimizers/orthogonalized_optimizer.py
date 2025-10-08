@@ -12,7 +12,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Callable, override
+from typing import Any, Callable
+
+
+# TODO(@boxiangw): remove this once bump to python 3.12
+try:
+    from typing import override
+except ImportError:
+    from typing_extensions import override
 
 import torch
 import torch.optim as optim
@@ -45,9 +52,11 @@ class OrthogonalizedOptimizer(optim.Optimizer):
 
     - Carlson, D., Cevher, V., and Carin, L. *Stochastic spectral descent for Restricted Boltzmann Machines.*
       In International Conference on Artificial Intelligence and Statistics (2015a).
-    - Carlson, D., Hsieh, Y.-P., Collins, E., Carin, L., and Cevher, V. *Stochastic Spectral Descent for Discrete Graphical Models.*
+    - Carlson, D., Hsieh, Y.-P., Collins, E., Carin, L., and Cevher, V.
+      *Stochastic Spectral Descent for Discrete Graphical Models.*
       In IEEE Journal of Selected Topics in Signal Processing, vol. 10, no. 2, pp. 296-311 (2016).
-    - Carlson, D., Collins, E., Hsieh, Y.-P., Carin, L., and Cevher, V. *Preconditioned spectral descent for deep learning.*
+    - Carlson, D., Collins, E., Hsieh, Y.-P., Carin, L., and Cevher, V.
+      *Preconditioned spectral descent for deep learning.*
       In Neural Information Processing Systems (2015b).
     - Flynn, T. *The duality structure gradient descent algorithm: analysis and applications to neural networks.*
       arXiv preprint arXiv:1708.00523 (2017). [`arXiv:1708.00523 <https://arxiv.org/abs/1708.00523>`_]

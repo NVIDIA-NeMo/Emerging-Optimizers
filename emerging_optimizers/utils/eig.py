@@ -12,16 +12,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 from absl import logging
 from torch import Tensor
 
-from emerging_optimizers import utils
 
-
-__all__ = ["eigh_with_fallback", "eig_orthogonal_iteration", "adaptive_early_exit_criteria"]
+__all__ = [
+    "eigh_with_fallback",
+    "met_approx_eigvals_criteria",
+    "conjugate",
+    "orthogonal_iteration",
+]
 
 
 def eigh_with_fallback(
@@ -37,13 +40,15 @@ def eigh_with_fallback(
     Default 2nd argument of eigh UPLO is 'L'.
 
     Args:
-        x: Tensor of shape (*, n, n) where "*" is zero or more batch dimensions consisting of symmetric or Hermitian matrices.
+        x: Tensor of shape (*, n, n) where "*" is zero or more batch dimensions consisting of symmetric or
+            Hermitian matrices.
         force_double: Force double precision computation. Default False.
-        eps: Small offset for numerical stability. If None, uses dtype-appropriate values (1e-7 for float32, 1e-15 for float64). Default None.
+        eps: Small offset for numerical stability. If None, uses dtype-appropriate values (1e-7 for float32,
+            1e-15 for float64). Default None.
         output_dtype: Desired output dtype. If None, uses input dtype. Default None.
 
     Returns:
-        tuple[Tensor, Tensor]: Eigenvalues and eigenvectors tuple (eigenvalues in descending order).
+        Eigenvalues and eigenvectors tuple (eigenvalues in descending order).
     """
     input_dtype = x.dtype
     if output_dtype is None:
@@ -100,25 +105,27 @@ def eig_orthogonal_iteration(
     max_iterations: int = 1,
     tolerance: float = 0.01,
 ) -> tuple[Tensor, Tensor]:
-    """Approximately compute the eigendecomposition of a symmetric matrix by performing the orthogonal iteration algorithm.
+    """Approximately compute the eigen decomposition
 
+    [DEPRECATED] Use `orthogonal_iteration` instead.
 
-    Orthogonal or subspace iteration uses iterative power iteration and QR decomposition to update the approximated eigenvectors.
-    When the initial estimate is the zero matrix, the eigendecomposition is computed using `eigh_with_fallback`.
+    Orthogonal or subspace iteration uses iterative power iteration and QR decomposition to update the approximated
+    eigenvectors. When the initial estimate is the zero matrix, the eigendecomposition is computed
+    using `eigh_with_fallback`.
 
-    Based on Purifying Shampoo (https://www.arxiv.org/abs/2506.03595), we use an early exit criteria to stop the QR iterations.
-    This generalizes SOAP's algorithm of 1 step of power iteration for updating the eigenbasis.
+    Based on Purifying Shampoo (https://www.arxiv.org/abs/2506.03595), we use an early exit criteria to stop the
+    QR iterations. This generalizes SOAP's algorithm of 1 step of power iteration for updating the eigenbasis.
 
     Args:
         x: tensor of shape (n, n) where x is a symmetric or Hermitian matrix.
         approx_eigenvectors: The current estimate of the eigenvectors of x. If None or a zero matrix,
             falls back to using `eigh_with_fallback`.
-        max_iterations: The maximum number of iterations to perform. (Default: 1)
-        tolerance: The tolerance for determining convergence in terms of the norm of the off-diagonal elements of the approximated eigenvalues.
-            (Default: 0.01)
+        max_iterations: The maximum number of iterations to perform.
+        tolerance: The tolerance for determining convergence in terms of the norm of the off-diagonal elements
+            of the approximated eigenvalues.
 
     Returns:
-        tuple[Tensor, Tensor]: A tuple containing the approximated eigenvalues and eigenvectors matrix of the input matrix A.
+        A tuple containing the approximated eigenvalues and eigenvectors matrix of the input matrix A.
     """
 
     # Check if x is already a diagonal matrix
@@ -130,42 +137,128 @@ def eig_orthogonal_iteration(
         return eigh_with_fallback(x, force_double=True)
 
     # Perform power iteration and QR decomposition iteratively.
-    with utils.fp32_matmul_precision("highest"):
-        Q = approx_eigenvectors
-        approx_eigenvalues_matrix = Q.T @ x @ Q
-        approx_eigenvalues = torch.diag(approx_eigenvalues_matrix)
-        iteration = 0
-        while iteration < max_iterations and not adaptive_early_exit_criteria(approx_eigenvalues_matrix, tolerance):
-            power_iteration = x @ Q
-            Q = torch.linalg.qr(power_iteration).Q
-            approx_eigenvalues_matrix = Q.T @ x @ Q
-            iteration += 1
-            # Sort eigenvalues in descending order and reorder eigenvectors accordingly
-            # Sorting can help mitigate numerical instability since QR decompositions can mix the approximated eigenvectors
-            approx_eigenvalues, indices = torch.diag(approx_eigenvalues_matrix).sort(stable=True, descending=True)
-            Q = Q[:, indices]
+    Q = approx_eigenvectors
+    approx_eigvals = conjugate(x, Q, diag=True)
+    iteration = 0
+    sorted_approx_eigvals: Tensor = approx_eigvals
+    while iteration < max_iterations and not met_approx_eigvals_criteria(x, approx_eigvals, tolerance):
+        power_iteration = x @ Q
+        Q = torch.linalg.qr(power_iteration).Q
+        approx_eigvals = conjugate(x, Q, diag=True)
+        iteration += 1
+        # Sort eigenvalues in descending order and reorder eigenvectors accordingly
+        # Sorting can help mitigate numerical instability since QR decompositions can mix the approximated eigenvectors
+        sorted_approx_eigvals, indices = approx_eigvals.sort(stable=True, descending=True)
+        Q = Q[:, indices]
 
-    return approx_eigenvalues, Q
+    return sorted_approx_eigvals, Q
 
 
-def adaptive_early_exit_criteria(approx_eigenvalues_matrix: Tensor, tolerance: float) -> bool:
-    """Evaluates if a criteria using approximated eigenvalues is below or equal to the tolerance.
+def met_approx_eigvals_criteria(
+    kronecker_factor: torch.Tensor,
+    approx_eigvals: torch.Tensor,
+    tolerance: float,
+) -> bool:
+    """Determines whether the eigenbasis for a factor matrix met the desired criteria
 
-    `approx_eigenvalues_matrix` is a matrix created from the approximated eigenvectors and the symmetric matrix that is being eigendecomposed.
-    We check if the ratio of the diagonal norm to the matrix norm is greater than or equal to (1 - tolerance).
+    The approximated eigenvalues update criteria is then defined as
+    :math:`||diag(Q^T K Q)||_F >= (1 - tolerance) * (Q^T K Q)_F`, where :math:`Q` is the approximated eigenvectors and
+    :math:`K` is the kronecker factor (L or R).
+
+    We use the kronecker factor and approximated eigenvalues directly to save compute because Frobenius norm of
+    kronecker factor is the same as that of the approximated eigenvalues matrix.
 
     Args:
-        approx_eigenvalues_matrix: The symmetric matrix whose eigenvalues is being eigendecomposed.
-        tolerance: The tolerance for the early exit criteria, the min relative error between diagonal norm and matrix norm of the approximated eigenvalues and the diagonal.
+        kronecker_factor: Kronecker factor matrix.
+        approx_eigvals: Approximated eigenvalues
+        tolerance: Tolerance threshold for the normalized diagonal component of approximated eigenvalue matrix.
 
     Returns:
-        bool: True if the criteria is below or equal to the tolerance, False otherwise.
-
+        perform_update: Whether to update eigenbasis this iteration
     """
-    matrix_norm = torch.linalg.norm(approx_eigenvalues_matrix)
-    approx_eigvals = torch.diag(approx_eigenvalues_matrix)
+    matrix_norm = torch.linalg.norm(kronecker_factor)
     diagonal_norm = torch.linalg.norm(approx_eigvals)
+
     return diagonal_norm >= (1 - tolerance) * matrix_norm
+
+
+def orthogonal_iteration(
+    approx_eigvals: torch.Tensor,
+    kronecker_factor: torch.Tensor,
+    eigenbasis: torch.Tensor,
+    ind: int,
+    exp_avg_sq: torch.Tensor,
+    convert_to_float: bool,
+    power_iter_steps: int,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Computes the eigenbases of the preconditioner using power iteration and QR decomposition.
+
+    This function performs multiple rounds of power iteration followed by QR decomposition
+    to recompute the eigenbases of the preconditioner kronecker factor. Generalizes Vyas et al.'s (SOAP) algorithm of 1 step of power iteration for updating the eigenbasis.
+
+    Args:
+        approx_eigenvalue_matrix : Projection of kronecker factor onto the eigenbasis, should be close to diagonal
+        kronecker_factor : Kronecker factor matrix.
+        eigenbasis : Kronecker factor eigenbasis matrix.
+        ind : Index for selecting dimension in the exp_avg_sq matrix to apply the sorting order over.
+        exp_avg_sq : inner Adam second moment (exp_avg_sq).
+        convert_to_float : If True, preconditioner matrices and their corresponding
+            orthonormal matrices will be cast to float. Otherwise, they are left in
+            their original type. Defaults to False.
+        power_iter_steps: Number of power iteration steps to perform before QR decomposition.
+            More steps can lead to better convergence but increased computation time.
+
+    Returns:
+        tuple[torch.Tensor, torch.Tensor]: A tuple containing:
+            - Q: The updated eigenbasis
+            - exp_avg_sq: The updated (sorted) inner Adam second moment
+    """
+    # Sort the approximated eigenvalues according to their magnitudes
+    sort_idx = torch.argsort(approx_eigvals, descending=True)
+    # re-order the inner adam second moment
+    exp_avg_sq = exp_avg_sq.index_select(ind, sort_idx)
+
+    # Initialize power iteration after sorting the columns of the eigenbasis matrix according to the descending eigenvalues
+    Q = eigenbasis[:, sort_idx]
+
+    #  By default, perform QR decomposition with power iteration with FP32 precision
+    # Perform multiple steps of power iteration
+    for _ in range(power_iter_steps):
+        # Project current eigenbases on kronecker factor
+        Q = kronecker_factor @ Q
+        # Perform QR to maintain orthogonality between iterations
+        Q = torch.linalg.qr(Q).Q
+
+    # When not converting to float, ensure that Q is in the original dtype
+    if not convert_to_float:
+        Q = Q.to(kronecker_factor.dtype)
+
+    return Q, exp_avg_sq
+
+
+def conjugate(a: torch.Tensor, p: torch.Tensor, diag: bool = False) -> torch.Tensor:
+    """Calculate similarity transformation
+
+    This function calculates :math:`B = P^T A P`. It assumes P is orthogonal so that :math:`P^{-1} = P^T` and
+    the similarity transformation exists.
+
+    Args:
+        a: matrix to be transformed
+        p: An orthogonal matrix.
+        diag: If True, only return the diagonal of the similarity transformation
+
+    Returns:
+        b
+    """
+    if a.dim() != 2 or p.dim() != 2:
+        raise TypeError("a and p must be 2D matrices")
+    pta = p.T @ a
+    if not diag:
+        b = pta @ p
+    else:
+        # return the diagonal of the similarity transformation
+        b = (pta * p.T).sum(dim=1)
+    return b
 
 
 def _is_diagonal(x: Tensor) -> bool:
@@ -189,7 +282,7 @@ def _try_handle_diagonal_matrix(x: Tensor) -> Optional[tuple[Tensor, Tensor]]:
         x: Tensor of shape (n, n) where x is a symmetric or Hermitian matrix.
 
     Returns:
-        Optional[tuple[Tensor, Tensor]]: Sorted eigenvalues and eigenvectors if A is diagonal, None otherwise.
+        Sorted eigenvalues and eigenvectors if A is diagonal, None otherwise.
     """
     input_dtype = x.dtype
     if _is_diagonal(x):

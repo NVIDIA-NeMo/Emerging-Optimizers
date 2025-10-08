@@ -21,4 +21,10 @@ emerging_optimizers.soap
 .. autofunction:: update_kronecker_factors
 
 .. autofunction:: update_eigenbasis_and_momentum
+
+emerging_optimizers.soap.soap_utils
+=====================================
+
+.. automodule:: emerging_optimizers.soap.soap_utils
+    :members:
 ```
