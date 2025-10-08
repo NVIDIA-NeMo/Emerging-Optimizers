@@ -12,15 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from absl.testing import absltest, parameterized
 import torch
+from absl.testing import absltest, parameterized
 
-from emerging_optimizers import triton_kernels
-from emerging_optimizers import utils
+from emerging_optimizers import triton_kernels, utils
 
 
 class TritonKernelsTest(parameterized.TestCase):
-
     @parameterized.product(
         ({"n": 5, "k": 7, "rtol": 1e-5}, {"n": 17, "k": 23, "rtol": 1e-3}, {"n": 127, "k": 255, "rtol": 2e-2}),
         ({"trans": False},),
@@ -52,7 +50,6 @@ class TritonKernelsTest(parameterized.TestCase):
 
 
 class TritonKernelsIntegerInputTest(parameterized.TestCase):
-
     @parameterized.product(
         ({"n": 5, "k": 7}, {"n": 17, "k": 23}, {"n": 127, "k": 255}),
         ({"trans": False},),

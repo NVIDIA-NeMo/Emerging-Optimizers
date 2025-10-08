@@ -17,6 +17,7 @@ import torch
 import triton
 import triton.language as tl
 
+
 try:
     from triton.tools.tensor_descriptor import TensorDescriptor
 except ImportError:
@@ -322,9 +323,9 @@ def tsyrk_ex(
     assert a.is_contiguous() or a.T.is_contiguous(), "invalid input tensor layout. a or a.T must be contiguous."
 
     N, K = a.shape
-    assert (c is None and beta == 0.0) or (
-        c is not None and c.shape == (N, N)
-    ), "if c is provided, c must be of shape (N, N)"
+    assert (c is None and beta == 0.0) or (c is not None and c.shape == (N, N)), (
+        "if c is provided, c must be of shape (N, N)"
+    )
     assert c is None or c.is_contiguous() or c.T.is_contiguous(), "if c is provided, c or c.T must be contiguous"
 
     d = torch.empty((N, N), device=a.device, dtype=a.dtype)
