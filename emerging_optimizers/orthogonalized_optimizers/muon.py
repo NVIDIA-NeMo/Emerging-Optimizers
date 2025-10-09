@@ -82,18 +82,19 @@ class Muon(OrthogonalizedOptimizer):
         if num_ns_steps < 1:
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
 
-        if torch.cuda.is_available():
-            sm_version = torch.cuda.get_device_capability()
-        else:
-            sm_version = (0, 0)
-        if not triton_kernels.HAS_TRITON_340:  # type: ignore[attr-defined]
-            logging.error("Triton 3.4.0 or higher is required for use_syrk to be True.")
-            use_syrk = False
-        elif sm_version not in ((8, 0), (9, 0), (10, 0), (10, 3)):
-            logging.error(
-                f"Correctness of Triton kernel on SM {sm_version} cannot be guaranteed. Setting use_syrk to False."
-            )
-            use_syrk = False
+        if use_syrk:
+            if torch.cuda.is_available():
+                sm_version = torch.cuda.get_device_capability()
+            else:
+                sm_version = (0, 0)
+            if not triton_kernels.HAS_TRITON_340:  # type: ignore[attr-defined]
+                logging.error("Triton 3.4.0 or higher is required for use_syrk to be True.")
+                use_syrk = False
+            elif sm_version not in ((8, 0), (9, 0), (10, 0), (10, 3)):
+                logging.error(
+                    f"Correctness of Triton kernel on SM {sm_version} cannot be guaranteed. Setting use_syrk to False."
+                )
+                use_syrk = False
         orthogonalize_fn = partial(
             newton_schulz, steps=num_ns_steps, coefficient_type=coefficient_type, use_syrk=use_syrk
         )
