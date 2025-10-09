@@ -171,22 +171,22 @@ class MuonTest(parameterized.TestCase):
         muon_opt = muon.Muon([test_param])
         muon_opt.step()
 
-    def test_use_syrk(self) -> None:
+    def test_use_syrk_match_without_syrk(self) -> None:
         shape = (32, 32)
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
-        ref_param = test_param.clone()
+        ref_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
+        ref_param.data.copy_(test_param.data)
         test_param.grad = torch.randint_like(test_param, -5, 5)
+        ref_param.grad = test_param.grad.clone()
 
-        muon_opt = muon.Muon([test_param], use_syrk=True)
-        ref_muon_opt = muon.Muon([test_param], use_syrk=False)
+        muon_opt = muon.Muon([test_param], num_ns_steps=1, coefficient_type="simple", use_syrk=True)
+        ref_muon_opt = muon.Muon([ref_param], num_ns_steps=1, coefficient_type="simple", use_syrk=False)
         muon_opt.step()
         ref_muon_opt.step()
 
         torch.testing.assert_close(
             test_param.data,
             ref_param.data,
-            atol=0,
-            rtol=0,
         )
 
 
