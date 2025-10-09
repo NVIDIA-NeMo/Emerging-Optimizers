@@ -25,8 +25,9 @@ except ImportError:
         f"Triton version ({triton.__version__}) doesn't support tensor descriptor API. Minimum required version is 3.4.0."
     )
 
-
 __all__ = ["ssyrk", "tsyrk_ex"]
+
+_SM_VERSION = torch.cuda.get_device_capability()
 
 
 @triton.jit
@@ -316,6 +317,9 @@ def tsyrk_ex(
     Returns:
         Output tensor of shape (N, N)
     """
+    assert _SM_VERSION in ((8, 0), (9, 0), (10, 0), (11, 0)), (
+        "Correctness ofTriton kernel on some SM versions is not guaranteed."
+    )
     assert a.dtype == torch.bfloat16, "Input tensor must be bfloat16"
     assert a.dim() == 2, "Input tensor must be 2D"
     assert a.is_contiguous() or a.T.is_contiguous(), "invalid input tensor layout. a or a.T must be contiguous."
