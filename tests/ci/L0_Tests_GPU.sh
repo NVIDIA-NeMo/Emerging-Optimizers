@@ -13,17 +13,21 @@
 # limitations under the License.
 export TORCH_COMPILE_DISABLE=1
 export CUDA_VISIBLE_DEVICES=0
-set -o pipefail
-coverage run -p --source=emerging_optimizers tests/test_muon_utils.py
-coverage run -p --source=emerging_optimizers tests/test_orthogonalized_optimizer.py
-coverage run -p --source=emerging_optimizers tests/test_soap_functions.py
-coverage run -p --source=emerging_optimizers tests/test_soap_utils.py
-coverage run -p --source=emerging_optimizers tests/soap_smoke_test.py
-coverage run -p --source=emerging_optimizers tests/soap_mnist_test.py
-coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=cuda
-coverage run -p --source=emerging_optimizers tests/test_spectral_clipping_utils.py
-coverage run -p --source=emerging_optimizers tests/test_triton_kernels.py TritonKernelsIntegerInputTest
-coverage run -p --source=emerging_optimizers tests/test_normalized_optimizer.py --device=cuda
-coverage run -p --source=emerging_optimizers tests/normalized_optimizer_convergence_test.py --device=cuda
-coverage run -p --source=emerging_optimizers tests/test_psgd_contractions.py --device=cuda
-coverage run -p --source=emerging_optimizers tests/test_psgd_utils.py --device=cuda
+export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
+
+error=0
+coverage run -p --source=emerging_optimizers tests/test_muon_utils.py || error=1
+coverage run -p --source=emerging_optimizers tests/test_orthogonalized_optimizer.py || error=1
+coverage run -p --source=emerging_optimizers tests/test_soap_functions.py || error=1
+coverage run -p --source=emerging_optimizers tests/test_soap_utils.py || error=1
+coverage run -p --source=emerging_optimizers tests/soap_smoke_test.py || error=1
+coverage run -p --source=emerging_optimizers tests/soap_mnist_test.py || error=1
+coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=cuda || error=1
+coverage run -p --source=emerging_optimizers tests/test_spectral_clipping_utils.py || error=1
+coverage run -p --source=emerging_optimizers tests/test_triton_kernels.py TsyrkIntegerInputTest || error=1
+coverage run -p --source=emerging_optimizers tests/test_normalized_optimizer.py --device=cuda || error=1
+coverage run -p --source=emerging_optimizers tests/normalized_optimizer_convergence_test.py --device=cuda || error=1
+coverage run -p --source=emerging_optimizers tests/test_psgd_contractions.py --device=cuda || error=1
+coverage run -p --source=emerging_optimizers tests/test_psgd_utils.py --device=cuda || error=1
+
+exit "${error}"

@@ -19,8 +19,10 @@ from absl import logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
-from emerging_optimizers.orthogonalized_optimizers.muon import Muon, get_muon_scale_factor
-from emerging_optimizers.orthogonalized_optimizers.muon_utils import _COEFFICIENT_SETS, newton_schulz
+from emerging_optimizers.orthogonalized_optimizers import muon, muon_utils
+
+
+_SM_VERSION = torch.cuda.get_device_capability() if torch.cuda.is_available() else (0, 0)
 
 
 def newton_schulz_ref(x: torch.Tensor, coefficient_sets: list[tuple[float, float, float]]) -> torch.Tensor:
@@ -69,7 +71,7 @@ class TestMuonUtils(parameterized.TestCase):
     def test_newtonschulz5_svd_close(self, dim1, dim2):
         shape = (dim1, dim2)
         x = torch.randn(*shape, device="cuda", dtype=torch.float32)
-        out_zeropowerns = newton_schulz(x, steps=5, coefficient_type="quintic")
+        out_zeropowerns = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
         U, _, V = torch.linalg.svd(x, full_matrices=False)
         out_zeropower_svd = (U @ V).float()
         # Check that the outputs are close.
@@ -90,10 +92,10 @@ class TestMuonUtils(parameterized.TestCase):
     )
     def test_newtonschulz5_close_to_reference(self, dim1, dim2):
         x = torch.randn(dim1, dim2, device="cuda", dtype=torch.float32)
-        out_zeropower_test = newton_schulz(x, steps=5, coefficient_type="quintic")
+        out_zeropower_test = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
         out_zeropowerns_ref = newton_schulz_ref(
             x,
-            coefficient_sets=_COEFFICIENT_SETS["quintic"],
+            coefficient_sets=muon_utils._COEFFICIENT_SETS["quintic"],
         )
 
         torch.testing.assert_close(
@@ -115,7 +117,7 @@ class TestMuonUtils(parameterized.TestCase):
             (3, 5, 7),
             (11, 13, 17),
         ]
-        out_zeropower_test = newton_schulz(
+        out_zeropower_test = muon_utils.newton_schulz(
             x,
             steps=2,
             coefficient_type="custom",
@@ -158,8 +160,8 @@ class TestMuonUtils(parameterized.TestCase):
 
         # Compare polar express vs quintic Newton-Schulz methods
         out_svd = (u @ v.T).float()
-        out_polar_express = newton_schulz(x, steps=8, coefficient_type="polar_express")
-        out_quintic = newton_schulz(x, steps=5, coefficient_type="quintic")
+        out_polar_express = muon_utils.newton_schulz(x, steps=8, coefficient_type="polar_express")
+        out_quintic = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
 
         l2_norm_diff_polar = torch.norm(out_polar_express.float() - out_svd.float(), p=2)
         l2_norm_diff_quintic = torch.norm(out_quintic.float() - out_svd.float(), p=2)
@@ -179,7 +181,7 @@ class TestMuonUtils(parameterized.TestCase):
     )
     def test_get_scale_factor(self, size_pairs, mode):
         size_out, size_in = size_pairs
-        scale = get_muon_scale_factor(size_out, size_in, mode)
+        scale = muon.get_muon_scale_factor(size_out, size_in, mode)
         if mode == "shape_scaling":
             self.assertEqual(scale, math.sqrt(max(1, size_out / size_in)))
         elif mode == "spectral":
@@ -195,18 +197,35 @@ class TestMuonUtils(parameterized.TestCase):
         dummy_args = dict(split_qkv=True, is_qkv_fn=lambda x: True)
         # Test non-integer values
         with self.assertRaises(ValueError) as cm:
-            Muon([dummy_param], **dummy_args, qkv_split_shapes=(512.5, 256, 256))
+            muon.Muon([dummy_param], **dummy_args, qkv_split_shapes=(512.5, 256, 256))
         self.assertIn("must be integers", str(cm.exception))
 
         # Test negative values
         with self.assertRaises(ValueError) as cm:
-            Muon([dummy_param], **dummy_args, qkv_split_shapes=(512, -256, 256))
+            muon.Muon([dummy_param], **dummy_args, qkv_split_shapes=(512, -256, 256))
         self.assertIn("must be positive", str(cm.exception))
 
         # Test wrong number of elements
         with self.assertRaises(ValueError) as cm:
-            Muon([dummy_param], **dummy_args, qkv_split_shapes=(512, 256))
+            muon.Muon([dummy_param], **dummy_args, qkv_split_shapes=(512, 256))
         self.assertIn("tuple of 3 integers", str(cm.exception))
+
+
+@absltest.skipIf(
+    _SM_VERSION not in ((8, 0), (9, 0), (10, 0), (10, 3)),
+    f"Correctness of Triton kernel on SM {_SM_VERSION} cannot be guaranteed.",
+)
+class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):
+    @parameterized.parameters(
+        (32, 32),
+        (32, 64),
+    )
+    def test_match_newton_schulz_step_by_gemm(self, dim1, dim2):
+        x = torch.randint(-2, 3, (dim1, dim2), device="cuda", dtype=torch.bfloat16)
+        test_out = muon_utils.newton_schulz_step_tsyrk(x, 2**-1, 2**-2, 2**-3)
+        test_ref = muon_utils.newton_schulz_step(x, 2**-1, 2**-2, 2**-3)
+
+        torch.testing.assert_close(test_out, test_ref, atol=0, rtol=0)
 
 
 if __name__ == "__main__":
