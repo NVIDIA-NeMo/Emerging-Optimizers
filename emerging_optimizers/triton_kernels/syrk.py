@@ -13,9 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # type: ignore
+import sys
+
 import torch
 import triton
 import triton.language as tl
+from absl import logging
 
 
 try:
@@ -76,23 +79,30 @@ def matmul_tma_set_block_size_hook(nargs: dict) -> None:
     nargs["d_t_desc"].block_shape = [TILE_N, TILE_M]
 
 
+_CONFIGS = [
+    triton.Config(
+        {"TILE_M": tm, "TILE_N": tn, "TILE_K": tk, "GROUP_SIZE_M": gm},
+        num_warps=nw,
+        num_stages=ns,
+        num_ctas=nc,
+        pre_hook=matmul_tma_set_block_size_hook,
+    )
+    for tm in (64, 128, 256)
+    for tn in (64, 128, 256)
+    for tk in (64, 128, 256)
+    for gm in (2, 4, 8)
+    for nw in (4, 8)
+    for ns in (2, 3, 4)
+    for nc in (1,)
+]
+
+if "absl.testing" in sys.modules.keys():
+    logging.warning("Running in absl.testing mode, disable autotune for triton.")
+    _CONFIGS = _CONFIGS[:1]
+
+
 @triton.autotune(
-    configs=[
-        triton.Config(
-            {"TILE_M": tm, "TILE_N": tn, "TILE_K": tk, "GROUP_SIZE_M": gm},
-            num_warps=nw,
-            num_stages=ns,
-            num_ctas=nc,
-            pre_hook=matmul_tma_set_block_size_hook,
-        )
-        for tm in (64, 128, 256)
-        for tn in (64, 128, 256)
-        for tk in (64, 128, 256)
-        for gm in (2, 4, 8)
-        for nw in (4, 8)
-        for ns in (2, 3, 4)
-        for nc in (1,)
-    ],
+    configs=_CONFIGS,
     key=["N", "K", "TRANS", "WARP_SPECIALIZE"],
     prune_configs_by={"early_config_prune": prune_invalid_configs},
 )
