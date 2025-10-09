@@ -22,6 +22,9 @@ from emerging_optimizers import utils
 from emerging_optimizers.orthogonalized_optimizers import muon, muon_utils
 
 
+_SM_VERSION = torch.cuda.get_device_capability() if torch.cuda.is_available() else None
+
+
 def newton_schulz_ref(x: torch.Tensor, coefficient_sets: list[tuple[float, float, float]]) -> torch.Tensor:
     """Reference Newton-Schulz iteration to compute the zeroth power / orthogonalization of x."""
     # Muon is not for 1d parameters
@@ -208,14 +211,11 @@ class TestMuonUtils(parameterized.TestCase):
         self.assertIn("tuple of 3 integers", str(cm.exception))
 
 
+@absltest.skipIf(
+    _SM_VERSION is None or _SM_VERSION not in ((8, 0), (9, 0), (10, 0), (11, 0)),
+    f"Correctness of Triton kernel on SM {_SM_VERSION} cannot be guaranteed.",
+)
 class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):
-    def setUp(self):
-        self.prev_precision = torch.get_float32_matmul_precision()
-        torch.set_float32_matmul_precision("highest")
-
-    def tearDown(self):
-        torch.set_float32_matmul_precision(self.prev_precision)
-
     @parameterized.parameters(
         (32, 32),
         (32, 64),

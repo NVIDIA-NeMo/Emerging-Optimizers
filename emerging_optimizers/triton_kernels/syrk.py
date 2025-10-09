@@ -315,10 +315,6 @@ def tsyrk_ex(
     Returns:
         Output tensor of shape (N, N)
     """
-    sm_version = torch.cuda.get_device_capability()
-    assert sm_version in ((8, 0), (9, 0), (10, 0), (11, 0)), (
-        f"Correctness of Triton kernel on SM {sm_version} can not be guaranteed."
-    )
     assert a.dtype == torch.bfloat16, "Input tensor must be bfloat16"
     assert a.dim() == 2, "Input tensor must be 2D"
     assert a.is_contiguous() or a.T.is_contiguous(), "invalid input tensor layout. a or a.T must be contiguous."
