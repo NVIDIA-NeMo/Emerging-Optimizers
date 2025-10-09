@@ -84,6 +84,7 @@ dev = [
     "pre-commit>=3.6.0",
     "ruff>=0.9.9",
     "mypy>=1.8.0",
+    "triton>=3.4.0",
 ]
 
 [tool.uv]

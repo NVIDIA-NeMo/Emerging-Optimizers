@@ -15,8 +15,7 @@ export TORCH_COMPILE_DISABLE=1
 export CUDA_VISIBLE_DEVICES=0
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 
-
-error=0 
+error=0
 coverage run -p --source=emerging_optimizers tests/test_muon_utils.py || error=1
 coverage run -p --source=emerging_optimizers tests/test_orthogonalized_optimizer.py || error=1
 coverage run -p --source=emerging_optimizers tests/test_soap_functions.py || error=1

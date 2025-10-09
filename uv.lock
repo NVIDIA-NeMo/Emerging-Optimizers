@@ -315,6 +315,7 @@ dev = [
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "ruff" },
+    { name = "triton" },
 ]
 docs = [
     { name = "myst-parser" },
@@ -346,6 +347,7 @@ dev = [
     { name = "mypy", specifier = ">=1.8.0" },
     { name = "pre-commit", specifier = ">=3.6.0" },
     { name = "ruff", specifier = ">=0.9.9" },
+    { name = "triton", specifier = ">=3.4.0" },
 ]
 docs = [
     { name = "myst-parser", specifier = ">=4.0.1" },
