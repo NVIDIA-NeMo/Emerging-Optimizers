@@ -222,10 +222,10 @@ class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):
         (32, 32),
         (32, 64),
     )
-    def test_close_to_ns_with_gemm(self, dim1, dim2):
+    def test_match_newton_schulz_step_by_gemm(self, dim1, dim2):
         x = torch.randint(-2, 3, (dim1, dim2), device="cuda", dtype=torch.bfloat16)
-        test_out = muon_utils.newton_schulz_step_tsyrk(x, 2**-1, 2**-2, 2**-3).float()
-        test_ref = muon_utils.newton_schulz_step(x, 2**-1, 2**-2, 2**-3).float()
+        test_out = muon_utils.newton_schulz_step_tsyrk(x, 2**-1, 2**-2, 2**-3)
+        test_ref = muon_utils.newton_schulz_step(x, 2**-1, 2**-2, 2**-3)
 
         torch.testing.assert_close(test_out, test_ref, atol=0, rtol=0)
 
