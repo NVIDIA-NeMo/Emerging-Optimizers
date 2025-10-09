@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 export TORCH_COMPILE_DISABLE=1
-set -o pipefail
-torchrun --nproc_per_node=8 --no-python coverage run -p tests/test_distributed_muon_utils_cpu.py
-torchrun --nproc_per_node=4 --no-python coverage run -p tests/test_distributed_muon_utils_cpu.py
-coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=cpu 
-coverage run -p --source=emerging_optimizers tests/test_procrustes_step.py --device=cpu
+error=0 
+torchrun --nproc_per_node=8 --no-python coverage run -p tests/test_distributed_muon_utils_cpu.py || error=1
+torchrun --nproc_per_node=4 --no-python coverage run -p tests/test_distributed_muon_utils_cpu.py || error=1
+coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=cpu || error=1
+coverage run -p --source=emerging_optimizers tests/test_procrustes_step.py --device=cpu || error=1
+
+exit "${error}"
