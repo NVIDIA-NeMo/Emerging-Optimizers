@@ -171,6 +171,10 @@ omit = ["/tmp/*"]
 relative_files = true
 source = ["emerging_optimizers"]
 
-
 [tool.coverage.paths]
 source = ["emerging_optimizers/", "/workspace/emerging_optimizers"]
+
+[too.coverage.report]
+exclude_also = [
+    "@triton"
+]
