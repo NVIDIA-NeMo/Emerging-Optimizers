@@ -14,7 +14,6 @@
 # limitations under the License.
 import math
 
-import numpy as np
 import torch
 from absl import logging
 from absl.testing import absltest, parameterized
@@ -225,15 +224,10 @@ class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):
     )
     def test_close_to_ns_with_gemm(self, dim1, dim2):
         x = torch.randint(-2, 3, (dim1, dim2), device="cuda", dtype=torch.bfloat16)
-        test_out = muon_utils.newton_schulz_step_tsyrk(x.bfloat16(), 2**-1, 2**-2, 2**-3).float()
+        test_out = muon_utils.newton_schulz_step_tsyrk(x, 2**-1, 2**-2, 2**-3).float()
         test_ref = muon_utils.newton_schulz_step(x, 2**-1, 2**-2, 2**-3).float()
 
-        # Numpy doesn't support bfloat16, so calculating ulp using float32 then multiplying the difference
-        ulp = np.spacing(torch.max(test_ref.abs(), test_out.abs()).detach().cpu().numpy()) * np.power(2, 23 - 7)
-        max_ulp_diff = (test_ref - test_out).abs().detach().cpu().numpy() / ulp
-
-        # TODO(skyw): This is way to big. We need to find why.
-        print(f"max ulp diff: {np.abs(max_ulp_diff).max()}")
+        torch.testing.assert_close(test_out, test_ref, atol=0, rtol=0)
 
 
 if __name__ == "__main__":

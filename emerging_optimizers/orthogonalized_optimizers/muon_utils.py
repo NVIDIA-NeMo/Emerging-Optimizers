@@ -271,6 +271,6 @@ def newton_schulz_step_tsyrk(
     A = triton_kernels.tsyrk_ex(X)  # type: ignore[attr-defined]
     if tp_group is not None:
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
-    B = triton_kernels.tsyrk_ex(A, A, alpha=c, beta=b)  # type: ignore[attr-defined]
-    X = torch.addmm(X, B, X, alpha=a, beta=1.0)
+    B = triton_kernels.tsyrk_ex(A, A, A, alpha=c, beta=b)  # type: ignore[attr-defined]
+    X = torch.addmm(X, B, X, alpha=1.0, beta=a)
     return X
