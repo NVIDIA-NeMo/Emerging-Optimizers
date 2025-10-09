@@ -22,7 +22,7 @@ from emerging_optimizers import utils
 from emerging_optimizers.orthogonalized_optimizers import muon, muon_utils
 
 
-_SM_VERSION = torch.cuda.get_device_capability() if torch.cuda.is_available() else None
+_SM_VERSION = torch.cuda.get_device_capability() if torch.cuda.is_available() else (0, 0)
 
 
 def newton_schulz_ref(x: torch.Tensor, coefficient_sets: list[tuple[float, float, float]]) -> torch.Tensor:
@@ -212,7 +212,7 @@ class TestMuonUtils(parameterized.TestCase):
 
 
 @absltest.skipIf(
-    _SM_VERSION is None or _SM_VERSION not in ((8, 0), (9, 0), (10, 0), (11, 0)),
+    _SM_VERSION not in ((8, 0), (9, 0), (10, 0), (10, 3)),
     f"Correctness of Triton kernel on SM {_SM_VERSION} cannot be guaranteed.",
 )
 class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):

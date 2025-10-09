@@ -278,6 +278,9 @@ def newton_schulz_step_tsyrk(
     Returns:
         The orthogonalization of X.
     """
+    assert triton_kernels.HAS_TRITON_340, (  # type: ignore[attr-defined]
+        "Triton version doesn't support tensor descriptor API. Minimum required version is 3.4.0."
+    )
     A = triton_kernels.tsyrk_ex(X)  # type: ignore[attr-defined]
     if tp_group is not None:
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)

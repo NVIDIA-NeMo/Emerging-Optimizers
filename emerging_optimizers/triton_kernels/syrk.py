@@ -20,12 +20,13 @@ import triton.language as tl
 
 try:
     from triton.tools.tensor_descriptor import TensorDescriptor
-except ImportError:
-    raise ImportError(
-        f"Triton version ({triton.__version__}) doesn't support tensor descriptor API. Minimum required version is 3.4.0."
-    )
 
-__all__ = ["ssyrk", "tsyrk_ex"]
+    HAS_TRITON_340 = True
+except ImportError:
+    HAS_TRITON_340 = False
+
+
+__all__ = ["ssyrk", "tsyrk_ex", "HAS_TRITON_340"]
 
 
 @triton.jit
