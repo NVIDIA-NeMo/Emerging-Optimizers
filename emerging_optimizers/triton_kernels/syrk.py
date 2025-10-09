@@ -318,7 +318,7 @@ def tsyrk_ex(
         Output tensor of shape (N, N)
     """
     assert _SM_VERSION in ((8, 0), (9, 0), (10, 0), (11, 0)), (
-        "Correctness ofTriton kernel on some SM versions is not guaranteed."
+        f"Correctness of Triton kernel on SM {_SM_VERSION} can not be guaranteed."
     )
     assert a.dtype == torch.bfloat16, "Input tensor must be bfloat16"
     assert a.dim() == 2, "Input tensor must be 2D"

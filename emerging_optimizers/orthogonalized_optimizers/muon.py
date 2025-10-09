@@ -56,6 +56,7 @@ class Muon(OrthogonalizedOptimizer):
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
         scale_mode: The type of scale factor to use for the update. Defaults to "spectral" style scaling.
         extra_scale_factor: The additional scale factor to use for the update.
+        use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
     """
 
     def __init__(
@@ -74,11 +75,14 @@ class Muon(OrthogonalizedOptimizer):
         num_ns_steps: int = 5,
         scale_mode: str = "spectral",
         extra_scale_factor: float = 1.0,
+        use_syrk: bool = False,
     ) -> None:
         if num_ns_steps < 1:
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
 
-        orthogonalize_fn = partial(newton_schulz, steps=num_ns_steps, coefficient_type=coefficient_type)
+        orthogonalize_fn = partial(
+            newton_schulz, steps=num_ns_steps, coefficient_type=coefficient_type, use_syrk=use_syrk
+        )
         scale_factor_fn = partial(get_muon_scale_factor, mode=scale_mode, extra_scale_factor=extra_scale_factor)
 
         super().__init__(

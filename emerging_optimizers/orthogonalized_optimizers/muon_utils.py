@@ -72,6 +72,7 @@ def newton_schulz(
     eps: float = 1e-7,
     transpose: bool | None = None,
     tp_group: torch.distributed.ProcessGroup | None = None,
+    use_syrk: bool = False,
 ) -> torch.Tensor:
     """Use Newton-Schulz iteration to compute the zeroth power / orthogonalization of x.
 
@@ -99,6 +100,7 @@ def newton_schulz(
         transpose: Whether to transpose the tensor to perform whitening on the smaller dimension.
             If None, will be determined based on the size of the tensor.
         tp_group: The process group for communication if input is distributed.
+        use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
 
     Returns:
         The orthogonalization of x.
@@ -133,6 +135,7 @@ def newton_schulz(
     if steps % len(coefficient_sets) != 0:
         raise ValueError(f"steps ({steps}) must be multiple of len(coefficient_sets) ({len(coefficient_sets)}).")
 
+    ns_step_fn = newton_schulz_step
     # Perform the NS iterations
     if torch.get_float32_matmul_precision() == "medium":
         # PyTorch doesn't really have FP32 I/O BF16 compute kernels for precision "medium"
@@ -142,10 +145,12 @@ def newton_schulz(
         # is always in FP32.
         X = X.to(torch.bfloat16)
         logging.log_first_n(logging.INFO, "Using BF16 I/O kernels for Newton-Schulz iteration.", 1)
+        if use_syrk:
+            ns_step_fn = newton_schulz_step_tsyrk
 
     for i in range(steps):
         a, b, c = coefficient_sets[i % len(coefficient_sets)]
-        X = newton_schulz_step(X, a, b, c, tp_group=tp_group)
+        X = ns_step_fn(X, a, b, c, tp_group=tp_group)
 
     # Convert back to FP32. This is a noop if X is already in FP32.
     X = X.to(torch.float32)
