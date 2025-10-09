@@ -315,6 +315,7 @@ dev = [
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "ruff" },
+    { name = "triton" },
 ]
 docs = [
     { name = "myst-parser" },
@@ -332,6 +333,7 @@ test = [
     { name = "coverage" },
     { name = "flake8" },
     { name = "pylint" },
+    { name = "triton" },
 ]
 
 [package.metadata]
@@ -346,6 +348,7 @@ dev = [
     { name = "mypy", specifier = ">=1.8.0" },
     { name = "pre-commit", specifier = ">=3.6.0" },
     { name = "ruff", specifier = ">=0.9.9" },
+    { name = "triton", specifier = ">=3.4.0" },
 ]
 docs = [
     { name = "myst-parser", specifier = ">=4.0.1" },
@@ -361,6 +364,7 @@ test = [
     { name = "coverage", specifier = ">=7.8.1" },
     { name = "flake8", specifier = ">=7.2.0" },
     { name = "pylint", specifier = ">=3.3.7" },
+    { name = "triton", specifier = ">=3.4.0" },
 ]
 
 [[package]]
