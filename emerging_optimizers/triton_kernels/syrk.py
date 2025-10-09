@@ -27,8 +27,6 @@ except ImportError:
 
 __all__ = ["ssyrk", "tsyrk_ex"]
 
-_SM_VERSION = torch.cuda.get_device_capability()
-
 
 @triton.jit
 def cvt_tf32_rn(x: tl.tensor) -> tl.tensor:
@@ -317,8 +315,9 @@ def tsyrk_ex(
     Returns:
         Output tensor of shape (N, N)
     """
-    assert _SM_VERSION in ((8, 0), (9, 0), (10, 0), (11, 0)), (
-        f"Correctness of Triton kernel on SM {_SM_VERSION} can not be guaranteed."
+    sm_version = torch.cuda.get_device_capability()
+    assert sm_version in ((8, 0), (9, 0), (10, 0), (11, 0)), (
+        f"Correctness of Triton kernel on SM {sm_version} can not be guaranteed."
     )
     assert a.dtype == torch.bfloat16, "Input tensor must be bfloat16"
     assert a.dim() == 2, "Input tensor must be 2D"
