@@ -146,12 +146,7 @@ def newton_schulz(
         X = X.to(torch.bfloat16)
         logging.log_first_n(logging.INFO, "Using BF16 I/O kernels for Newton-Schulz iteration.", 1)
         if use_syrk:
-            sm_version = torch.cuda.get_device_capability()
-            if sm_version in ((8, 0), (9, 0), (10, 0), (11, 0)):
-                logging.log_first_n(
-                    logging.INFO, f"Using Triton SYRK kernels for Newton-Schulz iteration on SM {sm_version}.", 1
-                )
-                ns_step_fn = newton_schulz_step_tsyrk
+            ns_step_fn = newton_schulz_step_tsyrk
 
     for i in range(steps):
         a, b, c = coefficient_sets[i % len(coefficient_sets)]
