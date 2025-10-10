@@ -169,12 +169,17 @@ line-ending = "auto"
 concurrency = ["thread", "multiprocessing"]
 omit = ["/tmp/*"]
 relative_files = true
+branch = true
 source = ["emerging_optimizers"]
 
 [tool.coverage.paths]
 source = ["emerging_optimizers/", "/workspace/emerging_optimizers"]
 
-[too.coverage.report]
+[tool.coverage.report]
+exclude_lines = [
+    "raise ValueError"
+]
 exclude_also = [
     "@triton"
 ]
+
