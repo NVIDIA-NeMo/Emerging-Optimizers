@@ -27,6 +27,7 @@ concurrency:
 permissions:
   id-token: write
   contents: read
+  statuses: write
 
 jobs:
   pre-flight:
@@ -46,7 +47,15 @@ jobs:
 
   cicd-container-build:
     uses: ./.github/workflows/_build_container.yml
-    needs: cicd-wait-in-queue
+    needs: [pre-flight, cicd-wait-in-queue]
+    if: |
+      (
+        success()
+        || needs.pre-flight.outputs.is_ci_workload == 'true'
+        || needs.pre-flight.outputs.force_run_all == 'true'
+      )
+      && needs.pre-flight.outputs.docs_only == 'false'
+      && !cancelled()
     with:
       image-name: emerging_optimizers
       dockerfile: docker/Dockerfile.ci
