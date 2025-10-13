@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Callable
+from typing import Any, Callable, List
 
 
 # TODO(@boxiangw): remove this once bump to python 3.12
@@ -88,7 +88,7 @@ class OrthogonalizedOptimizer(optim.Optimizer):
         use_decoupled_weight_decay: bool,
         split_fused: bool,
         is_fused_fn: Callable[[torch.Tensor], bool] | None,
-        split_fn: Callable | None,
+        split_fn: Callable[[torch.Tensor], List[torch.Tensor]] | None,
         fp32_matmul_prec: str,
         orthogonalize_fn: Callable | None = None,
         scale_factor_fn: Callable | None = None,

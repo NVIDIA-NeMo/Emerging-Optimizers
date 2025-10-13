@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from functools import partial
-from typing import Callable
+from typing import Callable, List
 
 import torch
 from absl import logging
@@ -71,7 +71,7 @@ class Muon(OrthogonalizedOptimizer):
         use_decoupled_weight_decay: bool = True,
         split_fused: bool = False,
         is_fused_fn: Callable[[torch.Tensor], bool] | None = None,
-        split_fn: Callable | None = None,
+        split_fn: Callable[[torch.Tensor], List[torch.Tensor]] | None = None,
         fp32_matmul_prec: str = "medium",
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
