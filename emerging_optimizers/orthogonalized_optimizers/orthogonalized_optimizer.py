@@ -36,10 +36,12 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
         use_decoupled_weight_decay: Whether to use decoupled weight decay, default to be True.
-        split_qkv: Whether parameter is fused attention parameters (QKV, GQA, etc.), default to be False.
-        is_qkv_fn: Function to check if a parameter is fused attention parameters (QKV, GQA, etc.).
-        qkv_split_shapes: For grouped attention parameters (QKV, GQA, etc.), specify the shapes as a tuple of 3 integers
-            representing the sizes of Q, K, V components along the first dimension.
+        split_fused: Whether to split fused parameters (QKV, GQA, etc.) for preconditioning, default to be False.
+        is_fused_fn: Function to check if a parameter is fused parameters (QKV, GQA, etc.).
+            If multiple types of parameters are fused, the function should return True for all of which needs to be
+            split for preconditioning.
+        split_fn: Function to split the fused parameters (QKV, GQA, etc.) into a list of parameters.
+            It should support all the types of parameters that is_fused_fn returns True for.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
 """
 
@@ -62,10 +64,9 @@ class OrthogonalizedOptimizer(optim.Optimizer):
       arXiv preprint arXiv:1708.00523 (2017). [`arXiv:1708.00523 <https://arxiv.org/abs/1708.00523>`_]
 
     Note:
-        Orthogonalizing QKV sperately when they are fused is supported but with limitations. User must provide
-        a function to check if a weight tensor is fused attention parameters (QKV, GQA, etc.) as well as the
-        leading dimension of Q, K, V components. Only one split size is supported, i.e. all attention layers across
-        the network must have the same size.
+        Orthogonalizing fused parameters separately is supported but with limitations. User must provide
+        a function to check if a weight tensor is fused parameters (QKV, GQA, etc.) as well as the
+        split function to split the fused parameters into a list of parameters.
 
     Args:
         {_args_doc}
@@ -85,9 +86,9 @@ class OrthogonalizedOptimizer(optim.Optimizer):
         use_nesterov: bool,
         weight_decay: float,
         use_decoupled_weight_decay: bool,
-        split_qkv: bool,
-        is_qkv_fn: Callable[[torch.Tensor], bool] | None,
-        qkv_split_shapes: tuple[int, int, int] | None,
+        split_fused: bool,
+        is_fused_fn: Callable[[torch.Tensor], bool] | None,
+        split_fn: Callable | None,
         fp32_matmul_prec: str,
         orthogonalize_fn: Callable | None = None,
         scale_factor_fn: Callable | None = None,
@@ -105,20 +106,13 @@ class OrthogonalizedOptimizer(optim.Optimizer):
 
             scale_factor_fn = return_one
 
-        if split_qkv:
-            assert is_qkv_fn is not None, "is_qkv_fn must be provided when split_qkv is True"
-            assert qkv_split_shapes is not None, "qkv_split_shapes must be provided when split_qkv is True"
-            if len(qkv_split_shapes) != 3:
-                raise ValueError(
-                    f"qkv_split_shapes must be a tuple of 3 integers, got {len(qkv_split_shapes)} elements"
-                )
-            if not all(isinstance(s, int) for s in qkv_split_shapes):
-                raise ValueError(f"All elements in qkv_split_shapes must be integers, got {qkv_split_shapes}")
-            if any(s <= 0 for s in qkv_split_shapes):
-                raise ValueError(f"All elements in qkv_split_shapes must be positive, got {qkv_split_shapes}")
-        self.split_qkv = split_qkv
-        self.is_qkv_fn = is_qkv_fn
-        self.qkv_split_shapes = qkv_split_shapes
+        if split_fused:
+            assert is_fused_fn is not None, "is_fused_fn must be provided when split_fused is True"
+            assert split_fn is not None, "split_fn must be provided when split_fused is True"
+
+        self.split_fused = split_fused
+        self.is_fused_fn = is_fused_fn
+        self.split_fn = split_fn
 
         self.fp32_matmul_prec = fp32_matmul_prec
         default_args_dict = dict(
@@ -201,15 +195,17 @@ class OrthogonalizedOptimizer(optim.Optimizer):
         Returns:
             The orthogonalized gradient tensor.
         """
-        if self.split_qkv and self.is_qkv_fn(p):  # type: ignore[misc]
-            logging.log_first_n(logging.INFO, f"split qkv with {p.shape} to {self.qkv_split_shapes}", 1)
-            # split grouped attention parameters (e.g., QKV, GQA, etc.)
-            qkv_grads = torch.split(grad, self.qkv_split_shapes, dim=0)
-            # Apply Newton-Schulz to each component
-            qkv_whitened = [self.orthogonalize_fn(g) for g in qkv_grads]
-            qkv_scales = [self.scale_factor_fn(g.size(0), g.size(1)) for g in qkv_grads]
-            # Apply individual scales to each component and concatenate
-            grad = torch.cat([whitened * scale for whitened, scale in zip(qkv_whitened, qkv_scales)])
+        if self.split_fused and self.is_fused_fn(p):  # type: ignore[misc]
+            logging.log_first_n(logging.INFO, f"split fused parameters with {p.shape} by {self.split_fn}", 1)
+            split_grads = self.split_fn(grad)  # type: ignore[misc]
+
+            assert sum([g.numel() for g in split_grads]) == grad.numel(), "Split grads do not sum to the original grad"
+
+            split_grads_whitened = [self.orthogonalize_fn(g) for g in split_grads]
+            split_grad_scales = [self.scale_factor_fn(g.size(0), g.size(1)) for g in split_grads]
+
+            # TODO(skyw): Revisit whether there are cases that concatenating is not done along dim=0.
+            grad = torch.cat([whitened * scale for whitened, scale in zip(split_grads_whitened, split_grad_scales)])
         else:
             grad = self.orthogonalize_fn(grad) * self.scale_factor_fn(grad.size(0), grad.size(1))
         return grad

@@ -12,6 +12,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from functools import partial
+from typing import List
+
 import torch
 import torch.nn as nn
 from absl.testing import absltest, parameterized
@@ -42,9 +45,9 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             use_nesterov=False,
             weight_decay=0.5,
             use_decoupled_weight_decay=True,
-            split_qkv=False,
-            is_qkv_fn=None,
-            qkv_split_shapes=None,
+            split_fused=False,
+            is_fused_fn=None,
+            split_fn=None,
             fp32_matmul_prec="highest",
         )
 
@@ -86,9 +89,9 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             use_nesterov=False,
             weight_decay=0.0,
             use_decoupled_weight_decay=False,
-            split_qkv=False,
-            is_qkv_fn=None,
-            qkv_split_shapes=None,
+            split_fused=False,
+            is_fused_fn=None,
+            split_fn=None,
             fp32_matmul_prec="highest",
         )
 
@@ -114,7 +117,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             rtol=0,
         )
 
-    def test_split_qkv_matches_ref(self) -> None:
+    def test_split_stacked_qkv_matches_ref(self) -> None:
         test_param = torch.randint(-5, 5, (6, 7), dtype=torch.float32, device="cuda")
         test_param.grad = torch.randint_like(test_param, -5, 5)
         split_shapes = (1, 2, 3)
@@ -125,6 +128,8 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
 
         def dummy_orth_fn(x: torch.Tensor) -> torch.Tensor:
             return x * x
+
+        split_fn = partial(torch.split, split_size_or_sections=split_shapes, dim=0)
 
         ref_orth_grads = []
         for g in torch.split(test_param.grad, split_shapes, dim=0):
@@ -138,9 +143,9 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             use_nesterov=False,
             weight_decay=0.0,
             use_decoupled_weight_decay=False,
-            split_qkv=True,
-            is_qkv_fn=is_qkv_fn,
-            qkv_split_shapes=(1, 2, 3),
+            split_fused=True,
+            is_fused_fn=is_qkv_fn,
+            split_fn=split_fn,
             fp32_matmul_prec="highest",
             orthogonalize_fn=dummy_orth_fn,
         )
@@ -148,6 +153,51 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
 
         torch.testing.assert_close(
             test_param.data,
+            ref_out,
+            atol=0,
+            rtol=0,
+        )
+
+    def test_split_fn_interleaved(self) -> None:
+        """Test a three way interleaved split function.
+
+        With 0 weights and lr -1, returned param should match orthogonalized grads.
+        """
+        test_param = torch.zeros((6, 7), dtype=torch.float32, device="cuda")
+        test_param.grad = torch.empty_like(test_param.data)
+
+        for i in range(test_param.shape[0]):
+            test_param.grad[i] = i + 1
+
+        def three_way_interleaved_split_fn(x: torch.Tensor) -> List[torch.Tensor]:
+            out_list = [[], [], []]
+            for i in range(x.shape[0]):
+                out_list[i % 3].append(x[i : i + 1])
+            return [torch.cat(t, dim=0) for t in out_list]
+
+        def dummy_orth_fn(x: torch.Tensor) -> torch.Tensor:
+            return torch.empty_like(x).fill_(x.max())
+
+        orthogonalized_opt = OrthogonalizedOptimizer(
+            [test_param],
+            lr=-1,
+            momentum_beta=0,
+            use_nesterov=False,
+            weight_decay=0.0,
+            use_decoupled_weight_decay=False,
+            split_fused=True,
+            is_fused_fn=lambda x: True,
+            split_fn=three_way_interleaved_split_fn,
+            orthogonalize_fn=dummy_orth_fn,
+            fp32_matmul_prec="highest",
+        )
+        orthogonalized_opt.step()
+
+        assert not torch.allclose(test_param, test_param.grad)
+
+        ref_out = torch.cat([dummy_orth_fn(g) for g in three_way_interleaved_split_fn(test_param.grad)], dim=0)
+        torch.testing.assert_close(
+            test_param,
             ref_out,
             atol=0,
             rtol=0,
