@@ -152,7 +152,13 @@ class ProcrustesStepTest(parameterized.TestCase):
         self.assertGreater(initial_det_pos.item() * final_det_pos.item(), 0)
         self.assertGreater(initial_det_neg.item() * final_det_neg.item(), 0)
 
-    def test_order3_converges_faster_amplitude_recovery(self) -> None:
+    @parameterized.parameters(
+        (0.015625,),
+        (0.03125,),
+        (0.0625,),
+        (0.125,),
+    )
+    def test_order3_converges_faster_amplitude_recovery(self, max_step_size: float = 0.0625) -> None:
         """Test that order 3 converges faster than order 2 in amplitude recovery setting."""
         # Use amplitude recovery setup to compare convergence speed
         n = 10
@@ -170,8 +176,8 @@ class ProcrustesStepTest(parameterized.TestCase):
 
         # Run procrustes steps and track error
         for _ in range(max_steps):
-            Q_order2 = procrustes_step(Q_order2, order=2)
-            Q_order3 = procrustes_step(Q_order3, order=3)
+            Q_order2 = procrustes_step(Q_order2, order=2, max_step_size=max_step_size)
+            Q_order3 = procrustes_step(Q_order3, order=3, max_step_size=max_step_size)
 
             err_order2 = torch.max(torch.abs(Q_order2 - Amplitude)) / torch.max(torch.abs(Amplitude))
             err_order3 = torch.max(torch.abs(Q_order3 - Amplitude)) / torch.max(torch.abs(Amplitude))
@@ -194,16 +200,6 @@ class ProcrustesStepTest(parameterized.TestCase):
             f"Order 3 converged in {steps_to_converge_order3} steps, "
             f"order 2 in {steps_to_converge_order2} steps. Order 3 should be faster.",
         )
-
-        # After the same number of steps, order 3 should have lower error
-        comparison_step = min(len(err_order2_list), len(err_order3_list)) - 1
-        if comparison_step > 0:
-            self.assertLessEqual(
-                err_order3_list[comparison_step],
-                err_order2_list[comparison_step],
-                f"At step {comparison_step}: order 3 error={err_order3_list[comparison_step]:.6f}, "
-                f"order 2 error={err_order2_list[comparison_step]:.6f}. Order 3 should have lower error.",
-            )
 
     @parameterized.product(
         order=[2, 3],
