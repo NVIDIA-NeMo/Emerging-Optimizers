@@ -73,5 +73,6 @@ def procrustes_step(
             _step_size = (-tr_RRQ - torch.sqrt(tr_RRQ * tr_RRQ - 1.5 * tr_RQ * tr_RRRQ)) / (0.75 * tr_RRRQ)
             step_size = torch.clamp(_step_size, max=max_step_size)
             # Q += step_size * (RQ + 0.5 * step_size * (RRQ + 0.25 * step_size * RRRQ))
-            Q.add_(step_size * (RQ + 0.5 * step_size * (RRQ + 0.25 * step_size * RRRQ)))
+            Q = torch.add(Q, torch.add(RQ, RRQ, alpha=0.5 * step_size), alpha=step_size)
+            Q = torch.add(Q, torch.add(RRQ, RRRQ, alpha=0.25 * step_size), alpha=step_size)
     return Q
