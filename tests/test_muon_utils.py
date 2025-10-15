@@ -191,25 +191,6 @@ class TestMuonUtils(parameterized.TestCase):
         else:
             raise ValueError(f"Invalid mode: {mode}")
 
-    def test_qkv_split_shapes_validation(self):
-        """Test validation of qkv_split_shapes parameter"""
-        dummy_param = torch.nn.Parameter(torch.randn(4, 4))
-        dummy_args = dict(split_qkv=True, is_qkv_fn=lambda x: True)
-        # Test non-integer values
-        with self.assertRaises(ValueError) as cm:
-            muon.Muon([dummy_param], **dummy_args, qkv_split_shapes=(512.5, 256, 256))
-        self.assertIn("must be integers", str(cm.exception))
-
-        # Test negative values
-        with self.assertRaises(ValueError) as cm:
-            muon.Muon([dummy_param], **dummy_args, qkv_split_shapes=(512, -256, 256))
-        self.assertIn("must be positive", str(cm.exception))
-
-        # Test wrong number of elements
-        with self.assertRaises(ValueError) as cm:
-            muon.Muon([dummy_param], **dummy_args, qkv_split_shapes=(512, 256))
-        self.assertIn("tuple of 3 integers", str(cm.exception))
-
 
 @absltest.skipIf(
     _SM_VERSION not in ((8, 0), (9, 0), (10, 0), (10, 3)),

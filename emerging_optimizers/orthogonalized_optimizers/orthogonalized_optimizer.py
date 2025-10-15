@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Callable, List
+from typing import Any, Callable
 
 
 # TODO(@boxiangw): remove this once bump to python 3.12
@@ -86,33 +86,13 @@ class OrthogonalizedOptimizer(optim.Optimizer):
         use_nesterov: bool,
         weight_decay: float,
         use_decoupled_weight_decay: bool,
-        split_fused: bool,
-        is_fused_fn: Callable[[torch.Tensor], bool] | None,
-        split_fn: Callable[[torch.Tensor], List[torch.Tensor]] | None,
         fp32_matmul_prec: str,
-        orthogonalize_fn: Callable | None = None,
-        scale_factor_fn: Callable | None = None,
+        scaled_orthogonalize_fn: Callable | None = None,
         **kwargs: Any,
     ):
-        if orthogonalize_fn is None:
-            logging.warning("orthogonalize_fn not provided. Using noop")
-            orthogonalize_fn = torch.nn.Identity()
-
-        if scale_factor_fn is None:
-            logging.warning("scale_factor_fn not provided. Using default scale_factor_fn.")
-
-            def return_one(*args, **kwargs):  # type: ignore[no-untyped-def]
-                return 1.0
-
-            scale_factor_fn = return_one
-
-        if split_fused:
-            assert is_fused_fn is not None, "is_fused_fn must be provided when split_fused is True"
-            assert split_fn is not None, "split_fn must be provided when split_fused is True"
-
-        self.split_fused = split_fused
-        self.is_fused_fn = is_fused_fn
-        self.split_fn = split_fn
+        if scaled_orthogonalize_fn is None:
+            logging.warning("scaled_orthogonalize_fn not provided. Using noop")
+            scaled_orthogonalize_fn = torch.nn.Identity()
 
         self.fp32_matmul_prec = fp32_matmul_prec
         default_args_dict = dict(
@@ -125,8 +105,7 @@ class OrthogonalizedOptimizer(optim.Optimizer):
         )
 
         super().__init__(params, default_args_dict)
-        self.orthogonalize_fn = orthogonalize_fn
-        self.scale_factor_fn = scale_factor_fn
+        self.scaled_orthogonalize_fn = scaled_orthogonalize_fn
 
     @torch.no_grad()  # type: ignore[misc]
     @override
@@ -195,19 +174,7 @@ class OrthogonalizedOptimizer(optim.Optimizer):
         Returns:
             The orthogonalized gradient tensor.
         """
-        if self.split_fused and self.is_fused_fn(p):  # type: ignore[misc]
-            logging.log_first_n(logging.INFO, f"split fused parameters with {p.shape} by {self.split_fn}", 1)
-            split_grads = self.split_fn(grad)  # type: ignore[misc]
-
-            assert sum([g.numel() for g in split_grads]) == grad.numel(), "Split grads do not sum to the original grad"
-
-            split_grads_whitened = [self.orthogonalize_fn(g) for g in split_grads]
-            split_grad_scales = [self.scale_factor_fn(g.size(0), g.size(1)) for g in split_grads]
-
-            # TODO(skyw): Revisit whether there are cases that concatenating is not done along dim=0.
-            grad = torch.cat([whitened * scale for whitened, scale in zip(split_grads_whitened, split_grad_scales)])
-        else:
-            grad = self.orthogonalize_fn(grad) * self.scale_factor_fn(grad.size(0), grad.size(1))
+        grad = self.scaled_orthogonalize_fn(grad)
         return grad
 
 

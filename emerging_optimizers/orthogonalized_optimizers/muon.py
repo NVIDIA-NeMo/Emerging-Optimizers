@@ -12,8 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from functools import partial
-from typing import Callable, List
 
 import torch
 from absl import logging
@@ -69,9 +67,6 @@ class Muon(OrthogonalizedOptimizer):
         use_nesterov: bool = True,
         weight_decay: float = 0.01,
         use_decoupled_weight_decay: bool = True,
-        split_fused: bool = False,
-        is_fused_fn: Callable[[torch.Tensor], bool] | None = None,
-        split_fn: Callable[[torch.Tensor], List[torch.Tensor]] | None = None,
         fp32_matmul_prec: str = "medium",
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
@@ -95,10 +90,14 @@ class Muon(OrthogonalizedOptimizer):
                     f"Correctness of Triton kernel on SM {sm_version} cannot be guaranteed. Setting use_syrk to False."
                 )
                 use_syrk = False
-        orthogonalize_fn = partial(
-            newton_schulz, steps=num_ns_steps, coefficient_type=coefficient_type, use_syrk=use_syrk
-        )
-        scale_factor_fn = partial(get_muon_scale_factor, mode=scale_mode, extra_scale_factor=extra_scale_factor)
+
+        def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
+            logging.debug(
+                f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, {scale_mode} scale mode, extra_scale_factor={extra_scale_factor}"
+            )
+            orth_grad = newton_schulz(grad, steps=num_ns_steps, coefficient_type=coefficient_type, use_syrk=use_syrk)
+            scale_factor = get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
+            return orth_grad * scale_factor * extra_scale_factor
 
         super().__init__(
             params,
@@ -107,21 +106,15 @@ class Muon(OrthogonalizedOptimizer):
             use_nesterov,
             weight_decay,
             use_decoupled_weight_decay,
-            split_fused,
-            is_fused_fn,
-            split_fn,
             fp32_matmul_prec,
-            orthogonalize_fn,
-            scale_factor_fn,
+            scaled_orthogonalize_fn,
         )
 
 
 Muon.__doc__ = Muon.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
 
 
-def get_muon_scale_factor(
-    size_out: int, size_in: int, mode: str = "spectral", extra_scale_factor: float = 1.0
-) -> float:
+def get_muon_scale_factor(size_out: int, size_in: int, mode: str = "spectral") -> float:
     """Get the scale for the update.
 
     Default mode is "spectral", which is the mode that allows for learning rate transferability from AdamW.
@@ -133,19 +126,18 @@ def get_muon_scale_factor(
         size_out: The size of the output tensor.
         size_in: The size of the input tensor.
         mode: The mode to use for the scale.
-        extra_scale_factor: The additional scale factor to use for the update.
     Returns:
         The scale factor for the update.
     """
     if mode == "shape_scaling":
         # Suggested by Muon (https://kellerjordan.github.io/posts/muon/)
-        return extra_scale_factor * max(1, size_out / size_in) ** 0.5
+        return max(1, size_out / size_in) ** 0.5
     elif mode == "spectral":
         # Suggested by K. Jordan and Kimi (https://arxiv.org/abs/2502.16982)
-        return extra_scale_factor * max(size_out, size_in) ** 0.5
+        return max(size_out, size_in) ** 0.5
     elif mode == "unit_rms_norm":
         # Suggested by Scion (https://arxiv.org/abs/2502.07529) and Bernstein et al.
         # (https://jeremybernste.in/writing/deriving-muon)
-        return extra_scale_factor * (size_out / size_in) ** 0.5
+        return (size_out / size_in) ** 0.5
     else:
         raise ValueError(f"Invalid mode for Muon update scale factor: {mode}")
