@@ -189,6 +189,11 @@ def newton_schulz_tp(
         tp_group: The process group for communication if input is distributed.
         mode: The mode to use for the Newton-Schulz iteration.
     """
+
+    # Set in megatron/core/tensor_parallel/layers.py
+    if hasattr(x, "partition_dim"):
+        partition_dim = x.partition_dim
+
     if partition_dim is None:
         # Fallback path for non TP params.
         return newton_schulz(x, steps, coefficient_type)
