@@ -32,7 +32,10 @@ __all__ = [
 class PSGDPro(torch.optim.Optimizer):
     """Implements a variant of the PSGD optimization algorithm (PSGD-Kron-Whiten with Procrustes step for preconditioner update).
 
-    PSGD ()
+    Preconditioned Stochastic Gradient Descent (PSGD) (https://arxiv.org/abs/1512.04202) is a preconditioned optimization algorithm
+    that fits amplitudes of perturbations of preconditioned stochastic gradient to match that of the perturbations of parameters.
+    PSGD with Kronecker-factored Preconditioner (PSGD-Kron-Whiten) is a variant of PSGD that reduces memory and computational complexity.
+    Procrustes step is an algorithm to update the preconditioner which respects a particular geometry.
 
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups
