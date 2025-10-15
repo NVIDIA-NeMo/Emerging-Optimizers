@@ -454,6 +454,39 @@ def update_kronecker_factors(
 
 
 @torch.no_grad()  # type: ignore[misc]
+def update_kronecker_factors_kl_shampoo(
+    kronecker_factor_list: List[torch.Tensor],
+    grad: torch.Tensor,
+    shampoo_beta: float,
+    eigenbasis_list: List[torch.Tensor],
+    eps: float,
+    eigval_exp: float = -1.0,
+) -> None:
+    """Updates the kronecker factor matrices in place using KL-Shampoo correction.
+
+    Args:
+        kronecker_factor_list: List of preconditioner matrices (L and R) to update.
+        grad: Gradient tensor of the parameter being optimized
+        shampoo_beta: Momentum coefficient for updating preconditioners.
+        eigenbasis_list: List of orthonormal eigenbases of the kronecker factor matrices
+        eps: Small offset for numerical stability.
+        eigenval_exp: Exponent of the eigenvalues.
+    """
+    assert grad.dim() == 2, "KL-Shampoo mathematical correction is only supported for 2D tensors"
+
+    # Scale the gradient matrix by the approximate eigenvalues and the eigenbasis
+    # G@Q_R@λ_R^(−1)@Q_R.T@G.T/dim(GG.T) and G.T@Q_L@λ_L^(−1)@Q_L.T@G/dim(G.TG)
+    for idx, (kronecker_factor, eigenbasis) in enumerate(zip(kronecker_factor_list, eigenbasis_list, strict=True)):
+        approx_eigvals = utils.eig.conjugate(kronecker_factor, eigenbasis, diag=True)
+        scale_factor = 1 / grad.shape[idx] * approx_eigvals.clamp_min(eps) ** eigval_exp
+        correction = (eigenbasis * scale_factor[None, :]) @ eigenbasis.T
+
+        maybe_transpose_grad = grad.T if idx == 0 else grad
+        update = utils.eig.conjugate(maybe_transpose_grad, correction)
+        kronecker_factor.lerp_(update, 1 - shampoo_beta)
+
+
+@torch.no_grad()  # type: ignore[misc]
 def update_eigenbasis_and_momentum(
     kronecker_factor_list: List[torch.Tensor],
     eigenbasis_list: List[torch.Tensor],
