@@ -54,12 +54,11 @@ class ProcrustesStepTest(parameterized.TestCase):
 
         self.assertLessEqual(final_obj.item(), initial_obj.item() + 1e-6)
 
-    @parameterized.parameters(
-        (8,),
-        (128,),
-        (1024,),
+    @parameterized.product(
+        size=[8, 128, 1024],
+        order=[2, 3],
     )
-    def test_minimal_change_when_already_orthogonal(self, size: int) -> None:
+    def test_minimal_change_when_already_orthogonal(self, size: int, order: int) -> None:
         """Test that procrustes_step makes minimal changes to an already orthogonal matrix."""
         # Create an orthogonal matrix using QR decomposition
         A = torch.randn(size, size, device=self.device, dtype=torch.float32)
@@ -68,7 +67,7 @@ class ProcrustesStepTest(parameterized.TestCase):
 
         initial_obj = self._procrustes_objective(Q)
 
-        Q = procrustes_step(Q, max_step_size=1 / 16)
+        Q = procrustes_step(Q, max_step_size=1 / 16, order=order)
 
         final_obj = self._procrustes_objective(Q)
 
@@ -94,19 +93,17 @@ class ProcrustesStepTest(parameterized.TestCase):
         self.assertLess(final_obj.item(), 1e-6)
         self.assertLess(final_obj.item(), initial_obj.item() + 1e-6)
 
-    @parameterized.parameters(
-        (0.015625,),
-        (0.03125,),
-        (0.0625,),
-        (0.125,),
+    @parameterized.product(
+        max_step_size=[0.015625, 0.03125, 0.0625, 0.125],
+        order=[2, 3],
     )
-    def test_different_step_sizes_reduces_objective(self, max_step_size: float) -> None:
+    def test_different_step_sizes_reduces_objective(self, max_step_size: float, order: int) -> None:
         """Test procrustes_step improvement with different step sizes."""
         perturbation = 1e-1 * torch.randn(10, 10, device=self.device, dtype=torch.float32) / math.sqrt(10)
         Q = torch.linalg.qr(torch.randn(10, 10, device=self.device, dtype=torch.float32)).Q + perturbation
         initial_obj = self._procrustes_objective(Q)
 
-        Q = procrustes_step(Q, max_step_size=max_step_size)
+        Q = procrustes_step(Q, max_step_size=max_step_size, order=order)
 
         final_obj = self._procrustes_objective(Q)
 
@@ -154,6 +151,102 @@ class ProcrustesStepTest(parameterized.TestCase):
         # Signs should be preserved
         self.assertGreater(initial_det_pos.item() * final_det_pos.item(), 0)
         self.assertGreater(initial_det_neg.item() * final_det_neg.item(), 0)
+
+    @parameterized.parameters(
+        (0.015625,),
+        (0.03125,),
+        (0.0625,),
+        (0.125,),
+    )
+    def test_order3_converges_faster_amplitude_recovery(self, max_step_size: float = 0.0625) -> None:
+        """Test that order 3 converges faster than order 2 in amplitude recovery setting."""
+        # Use amplitude recovery setup to compare convergence speed
+        n = 10
+        Q_init = torch.randn(n, n, device=self.device, dtype=torch.float32)
+        u, s, vh = torch.linalg.svd(Q_init)
+        amplitude = vh.mH @ torch.diag(s) @ vh
+
+        # Start from the same initial point for both orders
+        Q_order2 = torch.clone(Q_init)
+        Q_order3 = torch.clone(Q_init)
+
+        max_steps = 200
+        tolerance = 0.01
+        err_order2_list = []
+        err_order3_list = []
+
+        # Track convergence steps directly
+        steps_to_converge_order2 = max_steps  # Default to max_steps if doesn't converge
+        steps_to_converge_order3 = max_steps
+        step_count = 0
+
+        while step_count < max_steps:
+            Q_order2 = procrustes_step(Q_order2, order=2, max_step_size=max_step_size)
+            Q_order3 = procrustes_step(Q_order3, order=3, max_step_size=max_step_size)
+
+            err_order2 = torch.max(torch.abs(Q_order2 - amplitude)) / torch.max(torch.abs(amplitude))
+            err_order3 = torch.max(torch.abs(Q_order3 - amplitude)) / torch.max(torch.abs(amplitude))
+
+            err_order2_list.append(err_order2.item())
+            err_order3_list.append(err_order3.item())
+            step_count += 1
+
+            # Record convergence step for each order (only record the first time)
+            if err_order2 < tolerance and steps_to_converge_order2 == max_steps:
+                steps_to_converge_order2 = step_count
+            if err_order3 < tolerance and steps_to_converge_order3 == max_steps:
+                steps_to_converge_order3 = step_count
+
+            # Stop if both have converged
+            if err_order2 < tolerance and err_order3 < tolerance:
+                break
+
+        # Order 3 should converge in fewer steps or at least as fast
+        self.assertLessEqual(
+            steps_to_converge_order3,
+            steps_to_converge_order2,
+            f"Order 3 converged in {steps_to_converge_order3} steps, "
+            f"order 2 in {steps_to_converge_order2} steps. Order 3 should be faster.",
+        )
+
+    @parameterized.product(
+        order=[2, 3],
+    )
+    def test_recovers_amplitude_with_sign_ambiguity(self, order: int) -> None:
+        """Test procrustes_step recovers amplitude of real matrix up to sign ambiguity.
+
+        This is the main functional test for procrustes_step. It must recover the amplitude
+        of a real matrix up to a sign ambiguity with probability 1.
+        """
+        for trial in range(10):
+            n = 10
+            Q = torch.randn(n, n, device=self.device, dtype=torch.float32)
+            u, s, vh = torch.linalg.svd(Q)
+            amplitude = vh.mH @ torch.diag(s) @ vh
+            Q1, Q2 = torch.clone(Q), torch.clone(Q)
+            Q2[1] *= -1  # add a reflection to Q2 to get Q2'
+
+            err1, err2 = float("inf"), float("inf")
+            max_iterations = 1000
+            tolerance = 0.01
+            step_count = 0
+
+            while step_count < max_iterations and err1 >= tolerance and err2 >= tolerance:
+                Q1 = procrustes_step(Q1, order=order)
+                Q2 = procrustes_step(Q2, order=order)
+                err1 = torch.max(torch.abs(Q1 - amplitude)) / torch.max(torch.abs(amplitude))
+                err2 = torch.max(torch.abs(Q2 - amplitude)) / torch.max(torch.abs(amplitude))
+                step_count += 1
+
+            # Record convergence information
+            converged = err1 < tolerance or err2 < tolerance
+            final_error = min(err1, err2)
+
+            self.assertTrue(
+                converged,
+                f"Trial {trial} (order={order}): procrustes_step failed to recover amplitude after {step_count} steps. "
+                f"Final errors: err1={err1:.4f}, err2={err2:.4f}, best_error={final_error:.4f}",
+            )
 
 
 if __name__ == "__main__":
