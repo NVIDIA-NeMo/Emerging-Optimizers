@@ -163,35 +163,43 @@ class ProcrustesStepTest(parameterized.TestCase):
         # Use amplitude recovery setup to compare convergence speed
         n = 10
         Q_init = torch.randn(n, n, device=self.device, dtype=torch.float32)
-        U, S, Vh = torch.linalg.svd(Q_init)
-        Amplitude = Vh.mH @ torch.diag(S) @ Vh
+        u, s, vh = torch.linalg.svd(Q_init)
+        amplitude = vh.mH @ torch.diag(s) @ vh
 
         # Start from the same initial point for both orders
         Q_order2 = torch.clone(Q_init)
         Q_order3 = torch.clone(Q_init)
 
         max_steps = 200
+        tolerance = 0.01
         err_order2_list = []
         err_order3_list = []
 
-        # Run procrustes steps and track error
-        for _ in range(max_steps):
+        # Track convergence steps directly
+        steps_to_converge_order2 = max_steps  # Default to max_steps if doesn't converge
+        steps_to_converge_order3 = max_steps
+        step_count = 0
+
+        while step_count < max_steps:
             Q_order2 = procrustes_step(Q_order2, order=2, max_step_size=max_step_size)
             Q_order3 = procrustes_step(Q_order3, order=3, max_step_size=max_step_size)
 
-            err_order2 = torch.max(torch.abs(Q_order2 - Amplitude)) / torch.max(torch.abs(Amplitude))
-            err_order3 = torch.max(torch.abs(Q_order3 - Amplitude)) / torch.max(torch.abs(Amplitude))
+            err_order2 = torch.max(torch.abs(Q_order2 - amplitude)) / torch.max(torch.abs(amplitude))
+            err_order3 = torch.max(torch.abs(Q_order3 - amplitude)) / torch.max(torch.abs(amplitude))
 
             err_order2_list.append(err_order2.item())
             err_order3_list.append(err_order3.item())
+            step_count += 1
+
+            # Record convergence step for each order (only record the first time)
+            if err_order2 < tolerance and steps_to_converge_order2 == max_steps:
+                steps_to_converge_order2 = step_count
+            if err_order3 < tolerance and steps_to_converge_order3 == max_steps:
+                steps_to_converge_order3 = step_count
 
             # Stop if both have converged
-            if err_order2 < 0.01 and err_order3 < 0.01:
+            if err_order2 < tolerance and err_order3 < tolerance:
                 break
-
-        # Count steps to convergence for each order
-        steps_to_converge_order2 = next((i for i, err in enumerate(err_order2_list) if err < 0.01), max_steps)
-        steps_to_converge_order3 = next((i for i, err in enumerate(err_order3_list) if err < 0.01), max_steps)
 
         # Order 3 should converge in fewer steps or at least as fast
         self.assertLessEqual(
@@ -213,23 +221,31 @@ class ProcrustesStepTest(parameterized.TestCase):
         for trial in range(10):
             n = 10
             Q = torch.randn(n, n, device=self.device, dtype=torch.float32)
-            U, S, Vh = torch.linalg.svd(Q)
-            Amplitude = Vh.mH @ torch.diag(S) @ Vh
+            u, s, vh = torch.linalg.svd(Q)
+            amplitude = vh.mH @ torch.diag(s) @ vh
             Q1, Q2 = torch.clone(Q), torch.clone(Q)
-            Q2[1] *= -1  # add a reflection to Q2
+            Q2[1] *= -1  # add a reflection to Q2 to get Q2'
 
             err1, err2 = float("inf"), float("inf")
-            for _ in range(1000):
+            max_iterations = 1000
+            tolerance = 0.01
+            step_count = 0
+
+            while step_count < max_iterations and err1 >= tolerance and err2 >= tolerance:
                 Q1 = procrustes_step(Q1, order=order)
                 Q2 = procrustes_step(Q2, order=order)
-                err1 = torch.max(torch.abs(Q1 - Amplitude)) / torch.max(torch.abs(Amplitude))
-                err2 = torch.max(torch.abs(Q2 - Amplitude)) / torch.max(torch.abs(Amplitude))
-                if err1 < 0.01 or err2 < 0.01:
-                    break
+                err1 = torch.max(torch.abs(Q1 - amplitude)) / torch.max(torch.abs(amplitude))
+                err2 = torch.max(torch.abs(Q2 - amplitude)) / torch.max(torch.abs(amplitude))
+                step_count += 1
+
+            # Record convergence information
+            converged = err1 < tolerance or err2 < tolerance
+            final_error = min(err1, err2)
 
             self.assertTrue(
-                err1 < 0.01 or err2 < 0.01,
-                f"Trial {trial} (order={order}): procrustes_step failed to recover amplitude. err1={err1:.4f}, err2={err2:.4f}",
+                converged,
+                f"Trial {trial} (order={order}): procrustes_step failed to recover amplitude after {step_count} steps. "
+                f"Final errors: err1={err1:.4f}, err2={err2:.4f}, best_error={final_error:.4f}",
             )
 
 
