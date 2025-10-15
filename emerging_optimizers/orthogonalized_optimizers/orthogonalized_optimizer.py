@@ -36,12 +36,6 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
         use_decoupled_weight_decay: Whether to use decoupled weight decay, default to be True.
-        split_fused: Whether to split fused parameters (QKV, GQA, etc.) for preconditioning, default to be False.
-        is_fused_fn: Function to check if a parameter is fused parameters (QKV, GQA, etc.).
-            If multiple types of parameters are fused, the function should return True for all of which needs to be
-            split for preconditioning.
-        split_fn: Function to split the fused parameters (QKV, GQA, etc.) into a list of parameters.
-            It should support all the types of parameters that is_fused_fn returns True for.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
 """
 
@@ -70,8 +64,7 @@ class OrthogonalizedOptimizer(optim.Optimizer):
 
     Args:
         {_args_doc}
-        orthogonalize_fn: Function to orthogonalize the updates.
-        scale_factor_fn: Function to compute the scale factor for the update.
+        scaled_orthogonalize_fn: Function to orthogonalize and scale the updates.
         **kwargs: Arguments passed through to the base optimizer.
 
     Note:
@@ -155,7 +148,8 @@ class OrthogonalizedOptimizer(optim.Optimizer):
                     grad = exp_avg
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    grad = self.orthogonalize(p, grad)
+                    group_kwargs = {k: v for k, v in group.items() if k != "params"}
+                    grad = self.orthogonalize(p, grad, **group_kwargs)
 
                 # perform weight update
                 # scale is applied to have update RMS == 1
@@ -163,13 +157,20 @@ class OrthogonalizedOptimizer(optim.Optimizer):
 
         return loss
 
-    def orthogonalize(self, p: torch.Tensor, grad: torch.Tensor) -> torch.Tensor:
+    def orthogonalize(self, p: torch.Tensor, grad: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Orthogonalize the momentum.
 
+        The default orthogonalize function calls the scaled_orthogonalize_fn with the gradient. Subclass can
+        override this function to implement different orthogonalization logic as well as split fused parameters.
+        For example, a scaled_orthogonalize_fn function can get attributes from p or from kwargs to determine if
+        the parameter is a fused parameter and should be split for preconditioning.
+
         Args:
-            p: The parameter tensor. i is necessary to pass param tensor in addition to momentum because a lot of
-                information is only available in the param tensor, attributes for example.
+            p: The parameter tensor. It is necessary to pass param tensor in addition to momentum because a lot of
+                information is only available in the param tensor, attributes for example. Although not used in
+                this default orthogonalize function.
             grad: The momentum tensor.
+            **kwargs: keyword arguments of the param_group that p was belonged to.
 
         Returns:
             The orthogonalized gradient tensor.
