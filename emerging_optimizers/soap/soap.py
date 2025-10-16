@@ -489,6 +489,8 @@ def update_kronecker_factors_kl_shampoo(
 ) -> None:
     """Updates the kronecker factor matrices in place using KL-Shampoo correction.
 
+    Implement Kullback–Leibler Minimization from https://arxiv.org/pdf/2509.03378
+
     Args:
         kronecker_factor_list: List of preconditioner matrices (L and R) to update.
         grad: Gradient tensor of the parameter being optimized
