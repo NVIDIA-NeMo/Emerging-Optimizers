@@ -81,6 +81,7 @@ class SOAP(optim.Optimizer):
         power_iter_steps: Number of power iteration steps to perform before QR decomposition.
             More steps can lead to better convergence but increased computation time.
         max_update_rms: Clip the update RMS to this value (0 means no clipping).
+        use_kl_shampoo: Whether to use KL-Shampoo correction.
     """
 
     def __init__(
@@ -107,6 +108,7 @@ class SOAP(optim.Optimizer):
         adaptive_update_tolerance: Optional[float] = None,
         power_iter_steps: int = 1,
         max_update_rms: float = 0.0,
+        use_kl_shampoo: bool = False,
     ) -> None:
         # Check for betas.
         if betas is None:
@@ -159,6 +161,7 @@ class SOAP(optim.Optimizer):
             "adaptive_update_tolerance": adaptive_update_tolerance,
             "power_iter_steps": power_iter_steps,
             "max_update_rms": max_update_rms,
+            "use_kl_shampoo": use_kl_shampoo,
         }
         super().__init__(params, defaults)
 
@@ -201,15 +204,28 @@ class SOAP(optim.Optimizer):
                         precondition_1d=group["precondition_1d"],
                     )
 
+                    assert "Q" not in state, "Q should not be initialized  yet"
+                    state["Q"] = [torch.eye(shape) for shape in grad.shape]
+
                     # Update preconditioner matrices with gradient statistics,
                     # do not use shampoo_beta for EMA at first step
                     with utils.fp32_matmul_precision(group["fp32_matmul_prec"]):
-                        update_kronecker_factors(
+                        kronecker_factor_update_kwargs = dict(
                             kronecker_factor_list=state["GG"],
                             grad=grad,
                             shampoo_beta=0.0,
-                            precondition_1d=group["precondition_1d"],
                         )
+                        if group["use_kl_shampoo"]:
+                            update_kronecker_factors_kl_shampoo(
+                                **kronecker_factor_update_kwargs,
+                                eigenbasis_list=state["Q"],
+                                eps=group["eps"],
+                            )
+                        else:
+                            update_kronecker_factors(
+                                **kronecker_factor_update_kwargs,
+                                precondition_1d=group["precondition_1d"],
+                            )
 
                 # Increment step counter
                 state["step"] += 1
@@ -228,7 +244,7 @@ class SOAP(optim.Optimizer):
                 with utils.fp32_matmul_precision(group["fp32_matmul_prec"]):
                     grad_projected = precondition(
                         grad=grad,
-                        eigenbasis_list=state.get("Q"),
+                        eigenbasis_list=state["Q"],
                         dims=[[0], [0]],
                     )
                 torch.cuda.nvtx.range_pop()
@@ -255,7 +271,7 @@ class SOAP(optim.Optimizer):
                 with utils.fp32_matmul_precision(group["fp32_matmul_prec"]):
                     norm_precond_grad = precondition(
                         grad=adam_update,
-                        eigenbasis_list=state.get("Q"),
+                        eigenbasis_list=state["Q"],
                         dims=[[0], [1]],
                     )
                 torch.cuda.nvtx.range_pop()
@@ -283,12 +299,21 @@ class SOAP(optim.Optimizer):
 
                 torch.cuda.nvtx.range_push("update_kronecker_factors")
                 with utils.fp32_matmul_precision(group["fp32_matmul_prec"]):
-                    update_kronecker_factors(
-                        kronecker_factor_list=state["GG"],
-                        grad=grad,
-                        shampoo_beta=shampoo_beta,
-                        precondition_1d=group["precondition_1d"],
-                    )
+                    if group["use_kl_shampoo"]:
+                        update_kronecker_factors_kl_shampoo(
+                            kronecker_factor_list=state["GG"],
+                            grad=grad,
+                            shampoo_beta=shampoo_beta,
+                            eigenbasis_list=state["Q"],
+                            eps=group["eps"],
+                        )
+                    else:
+                        update_kronecker_factors(
+                            kronecker_factor_list=state["GG"],
+                            grad=grad,
+                            shampoo_beta=shampoo_beta,
+                            precondition_1d=group["precondition_1d"],
+                        )
                 torch.cuda.nvtx.range_pop()
 
                 # If current step is the last step to skip preconditioning, initialize eigenbases and
