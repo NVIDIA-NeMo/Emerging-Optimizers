@@ -64,7 +64,7 @@ class Muon(OrthogonalizedOptimizer):
         params: ParamsT,
         lr: float = 3e-4,
         momentum_beta: float = 0.95,
-        use_nesterov: bool = True,
+        use_nesterov: bool = False,
         weight_decay: float = 0.01,
         use_decoupled_weight_decay: bool = True,
         fp32_matmul_prec: str = "medium",
