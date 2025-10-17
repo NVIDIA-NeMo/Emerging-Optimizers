@@ -132,12 +132,11 @@ class PSGDPro(torch.optim.Optimizer):
 
                 # Get hyperparameters for preconditioner update
                 damping_noise_scale = group["damping_noise_scale"]
-                beta_lip = group["beta_lip"]
                 precond_lr = _get_precond_lr(
                     group["precond_lr"], state["step"], group["min_precond_lr"], group["warmup_steps"]
                 )
-                beta_lip = group["beta_lip"]
 
+                beta_lip = group["beta_lip"]
                 # Preconditioner update
                 state["Q"], state["L"] = _update_precond_procrustes(
                     state["Q"], state["L"], exp_avg, damping_noise_scale, precond_lr, beta_lip
