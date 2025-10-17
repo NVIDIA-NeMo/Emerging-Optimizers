@@ -36,10 +36,6 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
         use_decoupled_weight_decay: Whether to use decoupled weight decay, default to be True.
-        split_qkv: Whether parameter is fused attention parameters (QKV, GQA, etc.), default to be False.
-        is_qkv_fn: Function to check if a parameter is fused attention parameters (QKV, GQA, etc.).
-        qkv_split_shapes: For grouped attention parameters (QKV, GQA, etc.), specify the shapes as a tuple of 3 integers
-            representing the sizes of Q, K, V components along the first dimension.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
 """
 
@@ -48,7 +44,8 @@ class OrthogonalizedOptimizer(optim.Optimizer):
     """Base class for orthogonalized optimizers.
 
     This class is a wrapper around a base optimizer that performs orthogonalization on the updates.
-    The theoretical foundation of orthogonalization for stochastic gradient descent was developed by the following papers:
+    The theoretical foundation of orthogonalization for stochastic gradient descent was developed by the
+    following papers:
 
     - Carlson, D., Cevher, V., and Carin, L. *Stochastic spectral descent for Restricted Boltzmann Machines.*
       In International Conference on Artificial Intelligence and Statistics (2015a).
@@ -62,15 +59,33 @@ class OrthogonalizedOptimizer(optim.Optimizer):
       arXiv preprint arXiv:1708.00523 (2017). [`arXiv:1708.00523 <https://arxiv.org/abs/1708.00523>`_]
 
     Note:
-        Orthogonalizing QKV sperately when they are fused is supported but with limitations. User must provide
-        a function to check if a weight tensor is fused attention parameters (QKV, GQA, etc.) as well as the
-        leading dimension of Q, K, V components. Only one split size is supported, i.e. all attention layers across
-        the network must have the same size.
+        OrthogonalizedOptimizer as base class doesn't directly support orthogonalizing fused parameters separately.
+        Subclass can override the orthogonalize function to support this, see example below.
+
+    .. code-block:: python
+       :caption: Split QKV example
+
+       class SplitQkvOrthogonalizedOptimizer(OrthogonalizedOptimizer):
+           def __init__(..., split_qkv_shapes):
+               super().__init__(...)
+               self.qkv_split_shapes = split_qkv_shapes
+
+           def orthogonalize(self, p: torch.Tensor, grad: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+
+               # Alternative is passing "is_qkv" to scaled_orthogonalize_fn and split inside the
+               # scaled_orthogonalize_fn.
+               if getattr(p, "is_qkv", False) or kwargs.get("is_qkv", False):
+                   qkv_grads = torch.split(grad, self.qkv_split_shapes, dim=0)
+                   qkv_orthogonalized = [self.scaled_orthogonalize_fn(g) for g in qkv_grads]
+                   grad = torch.cat([orthogonalized for orthogonalized in qkv_orthogonalized])
+               else:
+                   grad = self.scaled_orthogonalize_fn(grad)
+
+               return grad
 
     Args:
         {_args_doc}
-        orthogonalize_fn: Function to orthogonalize the updates.
-        scale_factor_fn: Function to compute the scale factor for the update.
+        scaled_orthogonalize_fn: Function to orthogonalize and scale the updates.
         **kwargs: Arguments passed through to the base optimizer.
 
     Note:
@@ -85,40 +100,13 @@ class OrthogonalizedOptimizer(optim.Optimizer):
         use_nesterov: bool,
         weight_decay: float,
         use_decoupled_weight_decay: bool,
-        split_qkv: bool,
-        is_qkv_fn: Callable[[torch.Tensor], bool] | None,
-        qkv_split_shapes: tuple[int, int, int] | None,
         fp32_matmul_prec: str,
-        orthogonalize_fn: Callable | None = None,
-        scale_factor_fn: Callable | None = None,
+        scaled_orthogonalize_fn: Callable | None = None,
         **kwargs: Any,
     ):
-        if orthogonalize_fn is None:
-            logging.warning("orthogonalize_fn not provided. Using noop")
-            orthogonalize_fn = torch.nn.Identity()
-
-        if scale_factor_fn is None:
-            logging.warning("scale_factor_fn not provided. Using default scale_factor_fn.")
-
-            def return_one(*args, **kwargs):  # type: ignore[no-untyped-def]
-                return 1.0
-
-            scale_factor_fn = return_one
-
-        if split_qkv:
-            assert is_qkv_fn is not None, "is_qkv_fn must be provided when split_qkv is True"
-            assert qkv_split_shapes is not None, "qkv_split_shapes must be provided when split_qkv is True"
-            if len(qkv_split_shapes) != 3:
-                raise ValueError(
-                    f"qkv_split_shapes must be a tuple of 3 integers, got {len(qkv_split_shapes)} elements"
-                )
-            if not all(isinstance(s, int) for s in qkv_split_shapes):
-                raise ValueError(f"All elements in qkv_split_shapes must be integers, got {qkv_split_shapes}")
-            if any(s <= 0 for s in qkv_split_shapes):
-                raise ValueError(f"All elements in qkv_split_shapes must be positive, got {qkv_split_shapes}")
-        self.split_qkv = split_qkv
-        self.is_qkv_fn = is_qkv_fn
-        self.qkv_split_shapes = qkv_split_shapes
+        if scaled_orthogonalize_fn is None:
+            logging.warning("scaled_orthogonalize_fn not provided. Using noop")
+            scaled_orthogonalize_fn = torch.nn.Identity()
 
         self.fp32_matmul_prec = fp32_matmul_prec
         default_args_dict = dict(
@@ -131,8 +119,7 @@ class OrthogonalizedOptimizer(optim.Optimizer):
         )
 
         super().__init__(params, default_args_dict)
-        self.orthogonalize_fn = orthogonalize_fn
-        self.scale_factor_fn = scale_factor_fn
+        self.scaled_orthogonalize_fn = scaled_orthogonalize_fn
 
     @torch.no_grad()  # type: ignore[misc]
     @override
@@ -182,7 +169,8 @@ class OrthogonalizedOptimizer(optim.Optimizer):
                     grad = exp_avg
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    grad = self.orthogonalize(p, grad)
+                    group_kwargs = {k: v for k, v in group.items() if k != "params"}
+                    grad = self.orthogonalize(p, grad, **group_kwargs)
 
                 # perform weight update
                 # scale is applied to have update RMS == 1
@@ -190,28 +178,25 @@ class OrthogonalizedOptimizer(optim.Optimizer):
 
         return loss
 
-    def orthogonalize(self, p: torch.Tensor, grad: torch.Tensor) -> torch.Tensor:
+    def orthogonalize(self, p: torch.Tensor, grad: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Orthogonalize the momentum.
 
+        The default orthogonalize function calls the scaled_orthogonalize_fn with the gradient. Subclass can
+        override this function to implement different orthogonalization logic as well as split fused parameters.
+        For example, a scaled_orthogonalize_fn function can get attributes from p or from kwargs to determine if
+        the parameter is a fused parameter and should be split for preconditioning.
+
         Args:
-            p: The parameter tensor. i is necessary to pass param tensor in addition to momentum because a lot of
-                information is only available in the param tensor, attributes for example.
+            p: The parameter tensor. It is necessary to pass param tensor in addition to momentum because a lot of
+                information is only available in the param tensor, attributes for example. Although not used in
+                this default orthogonalize function.
             grad: The momentum tensor.
+            **kwargs: keyword arguments of the param_group that p was belonged to.
 
         Returns:
             The orthogonalized gradient tensor.
         """
-        if self.split_qkv and self.is_qkv_fn(p):  # type: ignore[misc]
-            logging.log_first_n(logging.INFO, f"split qkv with {p.shape} to {self.qkv_split_shapes}", 1)
-            # split grouped attention parameters (e.g., QKV, GQA, etc.)
-            qkv_grads = torch.split(grad, self.qkv_split_shapes, dim=0)
-            # Apply Newton-Schulz to each component
-            qkv_whitened = [self.orthogonalize_fn(g) for g in qkv_grads]
-            qkv_scales = [self.scale_factor_fn(g.size(0), g.size(1)) for g in qkv_grads]
-            # Apply individual scales to each component and concatenate
-            grad = torch.cat([whitened * scale for whitened, scale in zip(qkv_whitened, qkv_scales)])
-        else:
-            grad = self.orthogonalize_fn(grad) * self.scale_factor_fn(grad.size(0), grad.size(1))
+        grad = self.scaled_orthogonalize_fn(grad)
         return grad
 
 
