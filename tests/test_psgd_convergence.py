@@ -74,7 +74,7 @@ class PSGDConvergenceTest(parameterized.TestCase):
         x = torch.nn.Parameter(torch.zeros(3, device=self.device))
 
         # Create PSGD optimizer
-        optimizer = PSGDPro([x], lr=0.1, precond_lr=0.1, betaL=0.9, damping_noise_scale=0.1)
+        optimizer = PSGDPro([x], lr=0.1, precond_lr=0.1, beta_lip=0.9, damping_noise_scale=0.1)
 
         initial_loss = None
         final_loss = None
