@@ -47,6 +47,19 @@ class SoapTest(parameterized.TestCase):
             optimizer.step()
             param.grad = None
 
+    def test_with_kl_shampoo_10steps_smoke(self):
+        param = torch.randn(5, 3, requires_grad=True, device="cuda")
+        optimizer = soap.SOAP(
+            [param],
+            **self.default_config,
+            use_kl_shampoo=True,
+        )
+
+        for _ in range(10):
+            param.grad = torch.randn_like(param)
+            optimizer.step()
+            param.grad = None
+
 
 if __name__ == "__main__":
     absltest.main()

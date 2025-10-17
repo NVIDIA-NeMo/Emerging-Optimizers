@@ -503,14 +503,18 @@ def update_kronecker_factors_kl_shampoo(
 
     # Scale the gradient matrix by the approximate eigenvalues and the eigenbasis
     # G@Q_R@λ_R^(−1)@Q_R.T@G.T/dim(GG.T) and G.T@Q_L@λ_L^(−1)@Q_L.T@G/dim(G.TG)
+    updates = []
     for idx, (kronecker_factor, eigenbasis) in enumerate(zip(kronecker_factor_list, eigenbasis_list, strict=True)):
         approx_eigvals = utils.eig.conjugate(kronecker_factor, eigenbasis, diag=True)
         scale_factor = 1 / grad.shape[idx] * approx_eigvals.clamp_min(eps) ** eigval_exp
 
         correction = (eigenbasis * scale_factor[None, :]) @ eigenbasis.T
 
-        maybe_transpose_grad = grad.T if idx == 0 else grad
-        update = utils.eig.conjugate(correction, maybe_transpose_grad)
+        maybe_transpose_grad = grad.T if idx == 1 else grad
+        updates.append(utils.eig.conjugate(correction, maybe_transpose_grad))
+
+    # Note that updates caculated in previous loop are in reverse order of the kronecker factor list they apply to
+    for kronecker_factor, update in zip(kronecker_factor_list, updates[::-1], strict=True):
         kronecker_factor.lerp_(update, 1 - shampoo_beta)
 
 
