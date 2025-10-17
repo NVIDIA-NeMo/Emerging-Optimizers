@@ -44,7 +44,8 @@ class OrthogonalizedOptimizer(optim.Optimizer):
     """Base class for orthogonalized optimizers.
 
     This class is a wrapper around a base optimizer that performs orthogonalization on the updates.
-    The theoretical foundation of orthogonalization for stochastic gradient descent was developed by the following papers:
+    The theoretical foundation of orthogonalization for stochastic gradient descent was developed by the
+    following papers:
 
     - Carlson, D., Cevher, V., and Carin, L. *Stochastic spectral descent for Restricted Boltzmann Machines.*
       In International Conference on Artificial Intelligence and Statistics (2015a).
@@ -58,9 +59,29 @@ class OrthogonalizedOptimizer(optim.Optimizer):
       arXiv preprint arXiv:1708.00523 (2017). [`arXiv:1708.00523 <https://arxiv.org/abs/1708.00523>`_]
 
     Note:
-        Orthogonalizing fused parameters separately is supported but with limitations. User must provide
-        a function to check if a weight tensor is fused parameters (QKV, GQA, etc.) as well as the
-        split function to split the fused parameters into a list of parameters.
+        OrthogonalizedOptimizer as base class doesn't directly support orthogonalizing fused parameters separately.
+        Subclass can override the orthogonalize function to support this, see example below.
+
+    .. code-block:: python
+       :caption: Split QKV example
+
+       class SplitQkvOrthogonalizedOptimizer(OrthogonalizedOptimizer):
+           def __init__(..., split_qkv_shapes):
+               super().__init__(...)
+               self.qkv_split_shapes = split_qkv_shapes
+
+           def orthogonalize(self, p: torch.Tensor, grad: torch.Tensor, **kwargs: Any) -> torch.Tensor:
+
+               # Alternative is passing "is_qkv" to scaled_orthogonalize_fn and split inside the
+               # scaled_orthogonalize_fn.
+               if getattr(p, "is_qkv", False) or kwargs.get("is_qkv", False):
+                   qkv_grads = torch.split(grad, self.qkv_split_shapes, dim=0)
+                   qkv_orthogonalized = [self.scaled_orthogonalize_fn(g) for g in qkv_grads]
+                   grad = torch.cat([orthogonalized for orthogonalized in qkv_orthogonalized])
+               else:
+                   grad = self.scaled_orthogonalize_fn(grad)
+
+               return grad
 
     Args:
         {_args_doc}
