@@ -19,7 +19,7 @@ python tests/test_muon_utils.py || error=1
 python tests/test_orthogonalized_optimizer.py || error=1
 python tests/test_soap_functions.py || error=1
 python tests/test_soap_utils.py || error=1
-python tests/soap_smoke_test.py || error=1
+python tests/test_soap.py || error=1
 python tests/test_scalar_optimizers.py --device=cuda || error=1
 python tests/test_spectral_clipping_utils.py || error=1
 python tests/test_triton_kernels.py || error=1

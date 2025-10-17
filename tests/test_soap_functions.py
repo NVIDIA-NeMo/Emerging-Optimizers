@@ -49,7 +49,7 @@ class SoapFunctionsTest(parameterized.TestCase):
     def test_adam_warmup_steps(self, adam_warmup_steps: int) -> None:
         """Tests that adam_warmup_steps causes state["Q"] to be None until the specified steps are completed."""
 
-        param = torch.randn(5, 3, requires_grad=True)
+        param = torch.randn(5, 3, requires_grad=True, device="cuda")
 
         optimizer = SOAP(
             [param],
@@ -59,20 +59,21 @@ class SoapFunctionsTest(parameterized.TestCase):
             precondition_frequency=1,
         )
 
+        dummy_Q = [torch.eye(shape, device=param.device) for shape in param.shape]
         for step in range(adam_warmup_steps - 1):
             param.grad = torch.randn_like(param)
             optimizer.step()
             state = optimizer.state[param]
 
-            self.assertNotIn("Q", state, f"Q should not exist at step {step}")
+            torch.testing.assert_close(
+                state["Q"], dummy_Q, atol=0, rtol=0, msg=f"Q should stay identity at step {step}"
+            )
 
         for step in range(adam_warmup_steps - 1, adam_warmup_steps + 3):
             param.grad = torch.randn_like(param)
             optimizer.step()
             state = optimizer.state[param]
 
-            self.assertIn("Q", state, f"Q should exist at step {step}")
-            self.assertIsNotNone(state["Q"], f"Q should not be None at step {step}")
             # Verify Q has the right shape (a list with tensors for each dim)
             self.assertIsInstance(state["Q"], list)
             self.assertEqual(len(state["Q"]), param.dim())
