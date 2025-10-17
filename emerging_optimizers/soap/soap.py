@@ -205,7 +205,7 @@ class SOAP(optim.Optimizer):
                     )
 
                     assert "Q" not in state, "Q should not be initialized  yet"
-                    state["Q"] = [torch.eye(shape) for shape in grad.shape]
+                    state["Q"] = [torch.eye(shape, device=grad.device) for shape in grad.shape]
 
                     # Update preconditioner matrices with gradient statistics,
                     # do not use shampoo_beta for EMA at first step

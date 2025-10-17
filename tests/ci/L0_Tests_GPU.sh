@@ -20,7 +20,7 @@ coverage run -p --source=emerging_optimizers tests/test_muon_utils.py || error=1
 coverage run -p --source=emerging_optimizers tests/test_orthogonalized_optimizer.py || error=1
 coverage run -p --source=emerging_optimizers tests/test_soap_functions.py || error=1
 coverage run -p --source=emerging_optimizers tests/test_soap_utils.py || error=1
-coverage run -p --source=emerging_optimizers tests/soap_smoke_test.py || error=1
+coverage run -p --source=emerging_optimizers tests/test_soap.py || error=1
 coverage run -p --source=emerging_optimizers tests/soap_mnist_test.py || error=1
 coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=cuda || error=1
 coverage run -p --source=emerging_optimizers tests/test_spectral_clipping_utils.py || error=1
