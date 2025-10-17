@@ -165,18 +165,18 @@ def _init_psgd_kron_states(
         precond_init_scale: Scale of preconditioner initialization.
 
     Returns:
-        Q: List of Kronecker factors.
-        L: List of Lipschitz constants for the Kronecker factors.
+        q_list: List of Kronecker factors.
+        lip_const_list: List of Lipschitz constants for the Kronecker factors.
     """
-    Q: List[torch.Tensor] = []
-    L: List[torch.Tensor] = []
+    q_list: List[torch.Tensor] = []
+    lip_const_list: List[torch.Tensor] = []
 
     # Create identity matrices scaled by precond_init_scale for each dimension
     for size in grad.shape:
-        Q.append(torch.eye(size, device=grad.device) * precond_init_scale)
-        L.append(torch.tensor(1.0, device=grad.device))
+        q_list.append(torch.eye(size, device=grad.device) * precond_init_scale)
+        lip_const_list.append(torch.ones((), device=grad.device))
 
-    return Q, L
+    return q_list, lip_const_list
 
 
 def _update_precond_procrustes(
