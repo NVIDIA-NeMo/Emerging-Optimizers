@@ -13,10 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import Callable, Iterable, List, Tuple, override
+from typing import Callable, List, Tuple, override
 
 import torch
-from absl import logging
+from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers.psgd.procrustes_step import procrustes_step
 from emerging_optimizers.psgd.psgd_kron_contractions import apply_preconditioner, partial_contraction
@@ -45,7 +45,7 @@ class PSGDPro(torch.optim.Optimizer):
         use_decoupled_weight_decay: Whether to use decoupled weight decay, see Decoupled Weight Decay Regularization:
             https://arxiv.org/abs/1711.05101.
         momentum: Momentum coefficient for exponential moving average of gradient.
-        betaL: Inner learning rate for the Lipschitz constants.
+        beta_lip: EMA beta for the Lipschitz constants.
         precond_lr: Inner learning rate for the preconditioner.
         precond_init_scale: scale of initial preconditioner values.
         min_precond_lr: Minimum learning rate for preconditioner learning rate schedule.
@@ -56,12 +56,12 @@ class PSGDPro(torch.optim.Optimizer):
 
     def __init__(
         self,
-        params: Iterable[torch.nn.parameter.Parameter],
+        params: ParamsT,
         lr: float = 3e-3,
         weight_decay: float = 0.01,
         use_decoupled_weight_decay: bool = True,
         momentum: float = 0.9,
-        betaL: float = 0.9,
+        beta_lip: float = 0.9,
         precond_lr: float = 0.1,
         precond_init_scale: float = 1.0,
         damping_noise_scale: float = 0.1,
@@ -69,19 +69,9 @@ class PSGDPro(torch.optim.Optimizer):
         warmup_steps: int = 10000,
         max_update_rms: float = 0.0,
     ) -> None:
-        if betaL is None:
-            betaL = 0.9
-            logging.debug(f"betaL not provided. Setting betaL equal to betaL = {betaL} by default.")
-
-        if precond_lr is None:
-            precond_lr = 0.95
-            logging.debug(
-                f"precond_lr not provided. Setting precond_lr equal to precond_lr = {precond_lr} by default."
-            )
-
         defaults = {
             "lr": lr,
-            "betaL": betaL,
+            "beta_lip": beta_lip,
             "weight_decay": weight_decay,
             "use_decoupled_weight_decay": use_decoupled_weight_decay,
             "momentum": momentum,
@@ -142,15 +132,15 @@ class PSGDPro(torch.optim.Optimizer):
 
                 # Get hyperparameters for preconditioner update
                 damping_noise_scale = group["damping_noise_scale"]
-                betaL = group["betaL"]
+                beta_lip = group["beta_lip"]
                 precond_lr = _get_precond_lr(
                     group["precond_lr"], state["step"], group["min_precond_lr"], group["warmup_steps"]
                 )
-                betaL = group["betaL"]
+                beta_lip = group["beta_lip"]
 
                 # Preconditioner update
                 state["Q"], state["L"] = _update_precond_procrustes(
-                    state["Q"], state["L"], exp_avg, damping_noise_scale, precond_lr, betaL
+                    state["Q"], state["L"], exp_avg, damping_noise_scale, precond_lr, beta_lip
                 )
                 uniformize_q_in_place(state["Q"])
 
@@ -190,103 +180,107 @@ def _init_psgd_kron_states(
 
 
 def _update_precond_procrustes(
-    Q: List[torch.Tensor],
-    L: List[torch.Tensor],
+    q_list: List[torch.Tensor],
+    lip_const_list: List[torch.Tensor],
     exp_avg: torch.Tensor,
     damping_noise_scale: float,
     precond_lr: float = 0.1,
-    betaL: float = 0.9,
+    beta_lip: float = 0.9,
 ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
     r"""Update the Kron preconditioner Q using procrustes step and uniformization.
 
     Args:
-        Q: List of Kronecker factors.
-        L: List of Lipschitz constants for the Kronecker factors.
+        q_list: List of Kronecker factors.
+        lip_const_list: List of Lipschitz constants for the Kronecker factors.
         exp_avg: Exponential moving average of gradient.
         damping_noise_scale: Scale of noise added to gradient.
         precond_lr: Learning rate.
-        betaL: Beta for the lower bound.
+        beta_lip: EMA beta for the Lipschitz constant.
 
     Returns:
-        Q: List of Kronecker factors.
-        L: List of Lipschitz constants for the Kronecker factors.
+        q_list: List of Kronecker factors.
+        lip_const_list: List of Lipschitz constants for the Kronecker factors.
     """
-    Pg = apply_preconditioner(Q, _dampen_tensor(exp_avg, damping_noise_scale))
-    total_numel = Pg.numel()
-    updated_Q: List[torch.Tensor] = []
-    updated_L: List[torch.Tensor] = []
-    for dim, q in enumerate(Q):
+    pg = apply_preconditioner(q_list, torch.add(exp_avg, torch.randn_like(exp_avg) * damping_noise_scale, alpha=1.0))
+    total_numel = pg.numel()
+    updated_q_list: List[torch.Tensor] = []
+    updated_lip_const_list: List[torch.Tensor] = []
+    for dim, q in enumerate(q_list):
         # compute gradient covariance
-        precond_grad_cov = partial_contraction(Pg, Pg, dim)
+        precond_grad_cov = partial_contraction(pg, pg, dim)
         if q.dim() < 2:
             # diagonal or scalar-structured preconditioner
-            q, l_updated = _update_1d_preconditioner(q, L[dim], precond_grad_cov, total_numel, precond_lr, betaL)
+            q, updated_lip_const = _update_1d_preconditioner(
+                q, lip_const_list[dim], precond_grad_cov, total_numel, precond_lr, beta_lip
+            )
         else:
             # matrix-structured preconditioner
-            q, l_updated = _update_matrix_preconditioner(q, L[dim], precond_grad_cov, total_numel, precond_lr, betaL)
-        updated_Q.append(q)
-        updated_L.append(l_updated)
+            q, updated_lip_const = _update_matrix_preconditioner(
+                q, lip_const_list[dim], precond_grad_cov, total_numel, precond_lr, beta_lip
+            )
+        updated_q_list.append(q)
+        updated_lip_const_list.append(updated_lip_const)
 
-    return updated_Q, updated_L
+    return updated_q_list, updated_lip_const_list
 
 
 def _update_matrix_preconditioner(
     q: torch.Tensor,
-    L: torch.Tensor,
+    lip_const: torch.Tensor,
     precond_grad_cov: torch.Tensor,
     total_numel: int,
     precond_lr: float,
-    betaL: float,
+    beta_lip: float,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     r"""Update matrix-structured preconditioner with adaptive Lipschitz constant.
 
     Args:
         q: Kronecker factor matrix for this dimension to update.
-        L: Lipschitz constant for this dimension.
+        lip_const: Lipschitz constant for this dimension.
         precond_grad_cov: Gradient covariance.
         total_numel: Total number of elements in the gradient.
         precond_lr: Learning rate.
-        betaL: Beta for the Lipschitz constant exponential moving average.
+        beta_lip: EMA beta for the Lipschitz constant.
 
     Returns:
         q: Updated Kronecker factor matrix for this dimension.
-        L: Updated Lipschitz constant for this dimension.
+        lip_const: Updated Lipschitz constant for this dimension.
     """
     normalization = total_numel / q.shape[0]
     ell = norm_lower_bound_spd(precond_grad_cov) + normalization
-    L = torch.max(betaL * L + (1 - betaL) * ell, ell)
-    q = q - precond_lr / L * (precond_grad_cov @ q - normalization * q)
+    lip_const = torch.max(beta_lip * lip_const + (1 - beta_lip) * ell, ell)
+    q = q - precond_lr / lip_const * (precond_grad_cov @ q - normalization * q)
     q = procrustes_step(q)
-    return q, L
+    return q, lip_const
 
 
 def _update_1d_preconditioner(
     q: torch.Tensor,
-    L: torch.Tensor,
+    lip_const: torch.Tensor,
     precond_grad_cov: torch.Tensor,
     total_numel: int,
     precond_lr: float,
-    betaL: float,
+    beta_lip: float,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     r"""Update 1D preconditioner with adaptive Lipschitz constant.
 
     Args:
         q: Kronecker factor 1D tensor for this dimension to update.
-        L: Lipschitz constant for this dimension.
+        lip_const: Lipschitz constant for this dimension.
         precond_grad_cov: Gradient covariance.
         total_numel: Total number of elements in the gradient.
         precond_lr: Learning rate.
-        betaL: Beta for the Lipschitz constant exponential moving average.
+        beta_lip: EMA beta for the Lipschitz constant.
 
     Returns:
         q: Updated Kronecker factor 1D tensor for this dimension.
-        L: Updated Lipschitz constant for this dimension.
+        lip_const: Updated Lipschitz constant for this dimension.
     """
     normalization = total_numel / q.numel()
-    ell = torch.max(torch.real(precond_grad_cov)) + normalization
-    L = torch.max(betaL * L + (1 - betaL) * ell, ell)
-    q = q * (1 - precond_lr / L * (precond_grad_cov - normalization))
-    return q, L
+    ell = torch.max(precond_grad_cov) + normalization
+    lip_const = torch.max(beta_lip * lip_const + (1 - beta_lip) * ell, ell)
+    q = q * (1 - precond_lr / lip_const * (precond_grad_cov - normalization))
+    return q, lip_const
 
 
 def _get_precond_lr(precond_lr: float, step: int, min_precond_lr: float = 0.3, warmup_steps: int = 10000) -> float:
@@ -306,13 +300,3 @@ def _get_precond_lr(precond_lr: float, step: int, min_precond_lr: float = 0.3, w
 
     scheduled_lr = precond_lr / math.sqrt(1.0 + step / warmup_steps)
     return max(scheduled_lr, min_precond_lr)
-
-
-def _dampen_tensor(x: torch.Tensor, scale: float) -> torch.Tensor:
-    """Helper function to dampen the tensor by adding noise.
-
-    Args:
-        x: The tensor to dampen.
-        scale: The scale of the noise.
-    """
-    return torch.add(x, torch.randn_like(x) * scale, alpha=1.0)
