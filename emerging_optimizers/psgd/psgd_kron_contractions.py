@@ -24,7 +24,6 @@ __all__ = [
 ]
 
 
-@torch.compile  # type: ignore[misc]
 def partial_contraction(G1: torch.Tensor, G2: torch.Tensor, axis: int) -> torch.Tensor:
     """Compute the partial contraction of G1 and G2 along axis `axis`.
     This is the contraction of the two tensors, but with all axes except `axis` contracted.
@@ -38,10 +37,9 @@ def partial_contraction(G1: torch.Tensor, G2: torch.Tensor, axis: int) -> torch.
         Tensor of shape (d_{axis}, d_{axis})
     """
     # dims_to_contract = all dims except `axis`
-    dims = list(range(G1.dim()))
-    dims.pop(axis)
+    dims_to_contract = [i for i in range(G1.dim()) if i != axis]
     # contraction is symmetric and has shape (d_{axis}, d_{axis})
-    return torch.tensordot(G1, G2, dims=(dims, dims))
+    return torch.tensordot(G1, G2, dims=(dims_to_contract, dims_to_contract))
 
 
 @torch.compile  # type: ignore[misc]

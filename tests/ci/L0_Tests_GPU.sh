@@ -29,5 +29,6 @@ coverage run -p --source=emerging_optimizers tests/test_normalized_optimizer.py 
 coverage run -p --source=emerging_optimizers tests/normalized_optimizer_convergence_test.py --device=cuda || error=1
 coverage run -p --source=emerging_optimizers tests/test_psgd_contractions.py --device=cuda || error=1
 coverage run -p --source=emerging_optimizers tests/test_psgd_utils.py --device=cuda || error=1
+coverage run -p --source=emerging_optimizers tests/test_psgd_convergence.py --device=cuda || error=1
 
 exit "${error}"
