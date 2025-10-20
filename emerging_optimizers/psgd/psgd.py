@@ -65,7 +65,7 @@ class PSGDPro(torch.optim.Optimizer):
         precond_lr: float = 0.1,
         precond_init_scale: float = 1.0,
         damping_noise_scale: float = 0.1,
-        min_precond_lr: float = 0.3,
+        min_precond_lr: float = 0.01,
         warmup_steps: int = 10000,
         max_update_rms: float = 0.0,
     ) -> None:
@@ -182,7 +182,7 @@ def _update_precond_procrustes(
     q_list: List[torch.Tensor],
     lip_const_list: List[torch.Tensor],
     exp_avg: torch.Tensor,
-    damping_noise_scale: float,
+    damping_noise_scale: float = 1e-9,
     precond_lr: float = 0.1,
     beta_lip: float = 0.9,
 ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
@@ -200,7 +200,10 @@ def _update_precond_procrustes(
         q_list: List of Kronecker factors.
         lip_const_list: List of Lipschitz constants for the Kronecker factors.
     """
-    pg = apply_preconditioner(q_list, torch.add(exp_avg, torch.randn_like(exp_avg) * damping_noise_scale, alpha=1.0))
+    dampened_momentum = exp_avg + (
+        damping_noise_scale + torch.finfo(exp_avg.dtype).eps * exp_avg.abs()
+    ) * torch.randn_like(exp_avg)
+    pg = apply_preconditioner(q_list, dampened_momentum)
     total_numel = pg.numel()
     updated_q_list: List[torch.Tensor] = []
     updated_lip_const_list: List[torch.Tensor] = []
@@ -282,7 +285,7 @@ def _update_1d_preconditioner(
     return q, lip_const
 
 
-def _get_precond_lr(precond_lr: float, step: int, min_precond_lr: float = 0.3, warmup_steps: int = 10000) -> float:
+def _get_precond_lr(precond_lr: float, step: int, min_precond_lr: float = 0.01, warmup_steps: int = 10000) -> float:
     r"""Helper function to get preconditioner learning rate for this optimization step based on a square root schedule.
 
     Decaying from a higher lr down to min_precond_lr improves accuracy.
