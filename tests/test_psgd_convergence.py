@@ -105,7 +105,7 @@ class PSGDConvergenceTest(parameterized.TestCase):
         # Create target matrix and parameter matrix
         target = torch.randn(4, 6, device=self.device)
         A = torch.nn.Parameter(torch.randn(4, 6, device=self.device))
-
+        per_element_eps = 1e-3
         # Create PSGD optimizer
         optimizer = PSGDPro([A], lr=0.05)
 
@@ -126,9 +126,13 @@ class PSGDConvergenceTest(parameterized.TestCase):
             optimizer.step()
             final_loss = loss.item()
 
-        # Check convergence
-        self.assertLess(final_loss, initial_loss, "Loss should decrease during optimization")
-        self.assertLess(final_loss, 0.1, "Should converge reasonably close to minimum")
+        # Check per-element MSE for convergence
+        per_element_mse = final_loss / A.numel()
+        self.assertLess(
+            per_element_mse,
+            per_element_eps,
+            f"Per-element MSE should be < {per_element_eps}, got {per_element_mse:.6f}",
+        )
 
     def _create_synthetic_mnist_data(self, num_samples: int = 1000) -> TensorDataset:
         """Create synthetic MNIST-like data for testing."""
