@@ -200,9 +200,7 @@ def _update_precond_procrustes(
         q_list: List of Kronecker factors.
         lip_const_list: List of Lipschitz constants for the Kronecker factors.
     """
-    dampened_momentum = exp_avg + (
-        damping_noise_scale + torch.finfo(exp_avg.dtype).eps * exp_avg.abs()
-    ) * torch.randn_like(exp_avg)
+    dampened_momentum = exp_avg + (damping_noise_scale + 1e-7 * exp_avg.abs()) * torch.randn_like(exp_avg)
     pg = apply_preconditioner(q_list, dampened_momentum)
     total_numel = pg.numel()
     updated_q_list: List[torch.Tensor] = []
