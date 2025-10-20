@@ -70,7 +70,7 @@ def uniformize_q_in_place(Q_list: List[torch.Tensor]) -> None:
 
 
 @torch.compile  # type: ignore[misc]
-def norm_lower_bound_spd(A: torch.Tensor, k: int = 4, half_iters: int = 2, eps: float = 1e-8) -> torch.Tensor:
+def norm_lower_bound_spd(A: torch.Tensor, k: int = 32, half_iters: int = 2, eps: float = 1e-8) -> torch.Tensor:
     r"""A cheap lower bound for the spectral norm of a symmetric positive definite matrix.
 
 
