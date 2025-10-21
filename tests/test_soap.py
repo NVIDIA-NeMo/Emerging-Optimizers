@@ -13,21 +13,56 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import Any
+from functools import partial
+from typing import Any, List
 
 import torch
 from absl.testing import absltest, parameterized
 
+from emerging_optimizers.soap import soap
 from emerging_optimizers.soap.soap import (
-    SOAP,
     _clip_update_rms_in_place,
     _get_precondition_frequency,
     _is_eigenbasis_update_step,
-    init_kronecker_factors,
-    precondition,
-    update_kronecker_factors,
 )
 from emerging_optimizers.utils.precondition_schedules import LinearSchedule
+
+
+def kl_shampoo_update_ref(
+    kronecker_factor_list: List[torch.Tensor],
+    grad: torch.Tensor,
+    eigenbasis_list: List[torch.Tensor],
+    shampoo_beta: float,
+    eps: float,
+    eigval_exp: float = -1.0,
+) -> None:
+    """Reference implementation of KL-Shampoo update.
+
+    Using same functionality implemented by different people as testing reference. The chance of two
+    independent implementations having the same bug is very low.
+
+    """
+    if grad.dim() != 2:
+        raise ValueError("KL-Shampoo mathematical correction is only supported for 2D tensors")
+    # scale the gradient matrix by the approximate eigenvalues and the eigenbasis
+    # G@Q_R@λ_R^(−1)@Q_R.T@G.T/dim(GG.T) and G.T@Q_L@λ_L^(−1)@Q_L.T@G/dim(G.TG)
+    scale_factors = [
+        1
+        / grad.shape[idx]
+        * (torch.diag(eigenbasis_list[idx].T @ kronecker_factor_list[idx] @ eigenbasis_list[idx]) + eps) ** eigval_exp
+        for idx in range(len(kronecker_factor_list))
+    ]
+    print(scale_factors)
+    kronecker_product_corrections = [
+        (eigenbasis_list[idx] * scale_factors[idx][None, :]) @ eigenbasis_list[idx].T
+        for idx in range(len(kronecker_factor_list))
+    ]
+    kronecker_product_updates = [
+        grad @ kronecker_product_corrections[1] @ grad.T,
+        grad.T @ kronecker_product_corrections[0] @ grad,
+    ]
+    for idx in range(len(kronecker_factor_list)):
+        kronecker_factor_list[idx].lerp_(kronecker_product_updates[idx], 1 - shampoo_beta)
 
 
 class SoapFunctionsTest(parameterized.TestCase):
@@ -35,7 +70,7 @@ class SoapFunctionsTest(parameterized.TestCase):
         """Tests init_preconditioner with a multi-dimensional tensor."""
         grad = torch.randn(3, 4, 5)
         state: dict[str, Any] = {}
-        state["GG"] = init_kronecker_factors(grad, precondition_1d=False)
+        state["GG"] = soap.init_kronecker_factors(grad, precondition_1d=False)
         self.assertEqual(len(state["GG"]), grad.dim())
         self.assertEqual(state["GG"][0].shape, (3, 3))
         self.assertEqual(state["GG"][1].shape, (4, 4))
@@ -49,9 +84,9 @@ class SoapFunctionsTest(parameterized.TestCase):
     def test_adam_warmup_steps(self, adam_warmup_steps: int) -> None:
         """Tests that adam_warmup_steps causes state["Q"] to be None until the specified steps are completed."""
 
-        param = torch.randn(5, 3, requires_grad=True)
+        param = torch.randn(5, 3, requires_grad=True, device="cuda")
 
-        optimizer = SOAP(
+        optimizer = soap.SOAP(
             [param],
             lr=0.001,
             weight_decay=0.01,
@@ -59,20 +94,21 @@ class SoapFunctionsTest(parameterized.TestCase):
             precondition_frequency=1,
         )
 
+        dummy_Q = [torch.eye(shape, device=param.device) for shape in param.shape]
         for step in range(adam_warmup_steps - 1):
             param.grad = torch.randn_like(param)
             optimizer.step()
             state = optimizer.state[param]
 
-            self.assertNotIn("Q", state, f"Q should not exist at step {step}")
+            torch.testing.assert_close(
+                state["Q"], dummy_Q, atol=0, rtol=0, msg=f"Q should stay identity at step {step}"
+            )
 
         for step in range(adam_warmup_steps - 1, adam_warmup_steps + 3):
             param.grad = torch.randn_like(param)
             optimizer.step()
             state = optimizer.state[param]
 
-            self.assertIn("Q", state, f"Q should exist at step {step}")
-            self.assertIsNotNone(state["Q"], f"Q should not be None at step {step}")
             # Verify Q has the right shape (a list with tensors for each dim)
             self.assertIsInstance(state["Q"], list)
             self.assertEqual(len(state["Q"]), param.dim())
@@ -87,11 +123,11 @@ class SoapFunctionsTest(parameterized.TestCase):
         grad = torch.randn(dim0, dim1, dim2)
 
         # Initialize factors
-        initial_factors = init_kronecker_factors(grad, precondition_1d=False)
+        initial_factors = soap.init_kronecker_factors(grad, precondition_1d=False)
 
         kronecker_factors = [f.clone() for f in initial_factors]
 
-        update_kronecker_factors(
+        soap.update_kronecker_factors(
             kronecker_factor_list=kronecker_factors,
             grad=grad,
             shampoo_beta=shampoo_beta,
@@ -161,12 +197,12 @@ class SoapFunctionsTest(parameterized.TestCase):
         Q_R = torch.linalg.qr(torch.randn(N, N))[0]
         orthonormal_matrix_list = [Q_L, Q_R]
 
-        projected = precondition(
+        projected = soap.precondition(
             grad=grad,
             eigenbasis_list=orthonormal_matrix_list,
             dims=[[0], [0]],
         )
-        recov = precondition(
+        recov = soap.precondition(
             grad=projected,
             eigenbasis_list=orthonormal_matrix_list,
             dims=[[0], [1]],
@@ -203,14 +239,14 @@ class SoapFunctionsTest(parameterized.TestCase):
     def test_soap_optimizer_fixed_frequency(self) -> None:
         """Test that SOAP optimizer can be created with fixed precondition frequency (default case)."""
         param = torch.randn(10, 5, requires_grad=True)
-        optimizer = SOAP([param], lr=1e-3, precondition_frequency=10)
+        optimizer = soap.SOAP([param], lr=1e-3, precondition_frequency=10)
         self.assertEqual(optimizer.param_groups[0]["precondition_frequency"], 10)
 
     def test_soap_optimizer_class_based_schedule(self) -> None:
         """Test that SOAP optimizer can be created with class-based precondition frequency schedule."""
         param = torch.randn(10, 5, requires_grad=True)
         schedule = LinearSchedule(min_freq=2, max_freq=10, transition_steps=100)
-        optimizer = SOAP([param], lr=1e-3, precondition_frequency=schedule)
+        optimizer = soap.SOAP([param], lr=1e-3, precondition_frequency=schedule)
         self.assertTrue((optimizer.param_groups[0]["precondition_frequency"]) == schedule)
 
         self.assertEqual(schedule(0), 2)
@@ -247,6 +283,77 @@ class SoapFunctionsTest(parameterized.TestCase):
                 self.assertTrue(torch.linalg.norm(u_clipped) == torch.linalg.norm(u))
             else:
                 self.assertTrue(torch.linalg.norm(u_clipped) / math.sqrt(u.numel()) <= max_rms)
+
+    @parameterized.parameters(
+        (4, 5),
+        (3, 3),
+        (5, 4),
+    )
+    def test_kl_shampoo_update(self, m, n):
+        rand_exp_fn = partial(torch.randint, low=-4, high=-1, dtype=torch.float32, device="cuda")
+        kronecker_factor_list = [
+            2 ** rand_exp_fn(size=(m, m)),
+            2 ** rand_exp_fn(size=(n, n)),
+        ]
+        kronecker_factor_list_ref = [f.clone() for f in kronecker_factor_list]
+
+        test_grad = 2 ** rand_exp_fn(size=(m, n))
+        eigenbasis_list = [2 ** rand_exp_fn(size=(m, m)), 2 ** rand_exp_fn(size=(n, n))]
+        kwargs = dict(
+            grad=test_grad,
+            shampoo_beta=0.5,
+            eps=1e-8,
+            eigval_exp=-1.0,
+            eigenbasis_list=eigenbasis_list,
+        )
+        kl_shampoo_update_ref(kronecker_factor_list_ref, **kwargs)
+        soap.update_kronecker_factors_kl_shampoo(kronecker_factor_list, **kwargs)
+
+        torch.testing.assert_close(kronecker_factor_list[0], kronecker_factor_list_ref[0], atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(kronecker_factor_list[1], kronecker_factor_list_ref[1], atol=1e-6, rtol=1e-6)
+
+
+class SoapTest(parameterized.TestCase):
+    def setUp(self):
+        self.default_config = {
+            "lr": 0.001,
+            "weight_decay": 0.01,
+            "betas": (0.9, 0.95),
+            "eps": 1e-8,
+            "precondition_frequency": 1,
+            "shampoo_beta": 0.95,
+            "precondition_1d": False,
+            "adam_warmup_steps": 1,
+            "fp32_matmul_prec": "highest",
+            "use_adaptive_criteria": False,
+            "trace_normalization": False,
+            "power_iter_steps": 1,
+        }
+
+    def test_10steps_smoke(self):
+        param = torch.randn(5, 3, requires_grad=True, device="cuda")
+        optimizer = soap.SOAP(
+            [param],
+            **self.default_config,
+        )
+
+        for _ in range(10):
+            param.grad = torch.randn_like(param)
+            optimizer.step()
+            param.grad = None
+
+    def test_with_kl_shampoo_10steps_smoke(self):
+        param = torch.randn(5, 3, requires_grad=True, device="cuda")
+        optimizer = soap.SOAP(
+            [param],
+            **self.default_config,
+            use_kl_shampoo=True,
+        )
+
+        for _ in range(10):
+            param.grad = torch.randn_like(param)
+            optimizer.step()
+            param.grad = None
 
 
 if __name__ == "__main__":
