@@ -13,7 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import Any
+from functools import partial
+from typing import Any, List
 
 import torch
 from absl.testing import absltest, parameterized
@@ -25,6 +26,43 @@ from emerging_optimizers.soap.soap import (
     _is_eigenbasis_update_step,
 )
 from emerging_optimizers.utils.precondition_schedules import LinearSchedule
+
+
+def kl_shampoo_update_ref(
+    kronecker_factor_list: List[torch.Tensor],
+    grad: torch.Tensor,
+    eigenbasis_list: List[torch.Tensor],
+    shampoo_beta: float,
+    eps: float,
+    eigval_exp: float = -1.0,
+) -> None:
+    """Reference implementation of KL-Shampoo update.
+
+    Using same functionality implemented by different people as testing reference. The chance of two
+    independent implementations having the same bug is very low.
+
+    """
+    if grad.dim() != 2:
+        raise ValueError("KL-Shampoo mathematical correction is only supported for 2D tensors")
+    # scale the gradient matrix by the approximate eigenvalues and the eigenbasis
+    # G@Q_R@λ_R^(−1)@Q_R.T@G.T/dim(GG.T) and G.T@Q_L@λ_L^(−1)@Q_L.T@G/dim(G.TG)
+    scale_factors = [
+        1
+        / grad.shape[idx]
+        * (torch.diag(eigenbasis_list[idx].T @ kronecker_factor_list[idx] @ eigenbasis_list[idx]) + eps) ** eigval_exp
+        for idx in range(len(kronecker_factor_list))
+    ]
+    print(scale_factors)
+    kronecker_product_corrections = [
+        (eigenbasis_list[idx] * scale_factors[idx][None, :]) @ eigenbasis_list[idx].T
+        for idx in range(len(kronecker_factor_list))
+    ]
+    kronecker_product_updates = [
+        grad @ kronecker_product_corrections[1] @ grad.T,
+        grad.T @ kronecker_product_corrections[0] @ grad,
+    ]
+    for idx in range(len(kronecker_factor_list)):
+        kronecker_factor_list[idx].lerp_(kronecker_product_updates[idx], 1 - shampoo_beta)
 
 
 class SoapFunctionsTest(parameterized.TestCase):
@@ -245,6 +283,34 @@ class SoapFunctionsTest(parameterized.TestCase):
                 self.assertTrue(torch.linalg.norm(u_clipped) == torch.linalg.norm(u))
             else:
                 self.assertTrue(torch.linalg.norm(u_clipped) / math.sqrt(u.numel()) <= max_rms)
+
+    @parameterized.parameters(
+        (4, 5),
+        (3, 3),
+        (5, 4),
+    )
+    def test_kl_shampoo_update(self, m, n):
+        rand_exp_fn = partial(torch.randint, low=-4, high=-1, dtype=torch.float32, device="cuda")
+        kronecker_factor_list = [
+            2 ** rand_exp_fn(size=(m, m)),
+            2 ** rand_exp_fn(size=(n, n)),
+        ]
+        kronecker_factor_list_ref = [f.clone() for f in kronecker_factor_list]
+
+        test_grad = 2 ** rand_exp_fn(size=(m, n))
+        eigenbasis_list = [2 ** rand_exp_fn(size=(m, m)), 2 ** rand_exp_fn(size=(n, n))]
+        kwargs = dict(
+            grad=test_grad,
+            shampoo_beta=0.5,
+            eps=1e-8,
+            eigval_exp=-1.0,
+            eigenbasis_list=eigenbasis_list,
+        )
+        kl_shampoo_update_ref(kronecker_factor_list_ref, **kwargs)
+        soap.update_kronecker_factors_kl_shampoo(kronecker_factor_list, **kwargs)
+
+        torch.testing.assert_close(kronecker_factor_list[0], kronecker_factor_list_ref[0], atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(kronecker_factor_list[1], kronecker_factor_list_ref[1], atol=1e-6, rtol=1e-6)
 
 
 class SoapTest(parameterized.TestCase):
