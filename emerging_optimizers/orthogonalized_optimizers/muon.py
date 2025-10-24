@@ -67,6 +67,7 @@ class Muon(OrthogonalizedOptimizer):
         use_nesterov: bool = False,
         weight_decay: float = 0.01,
         use_decoupled_weight_decay: bool = True,
+        use_independent_weight_decay: bool = False,
         fp32_matmul_prec: str = "medium",
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
@@ -107,6 +108,7 @@ class Muon(OrthogonalizedOptimizer):
             use_nesterov,
             weight_decay,
             use_decoupled_weight_decay,
+            use_independent_weight_decay,
             fp32_matmul_prec,
             scaled_orthogonalize_fn,
         )

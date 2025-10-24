@@ -43,6 +43,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             use_nesterov=False,
             weight_decay=0.5,
             use_decoupled_weight_decay=True,
+            use_independent_weight_decay=False,
             fp32_matmul_prec="highest",
         )
 
@@ -84,6 +85,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             use_nesterov=False,
             weight_decay=0.0,
             use_decoupled_weight_decay=False,
+            use_independent_weight_decay=False,
             fp32_matmul_prec="highest",
         )
 
@@ -134,6 +136,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             use_nesterov=False,
             weight_decay=0.0,
             use_decoupled_weight_decay=False,
+            use_independent_weight_decay=False,
             fp32_matmul_prec="highest",
             scaled_orthogonalize_fn=dummy_interleaved_split_orth_fn,
         )
