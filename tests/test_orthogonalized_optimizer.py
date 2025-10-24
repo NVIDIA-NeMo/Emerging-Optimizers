@@ -188,6 +188,36 @@ class MuonTest(parameterized.TestCase):
             ref_param.data,
         )
 
+    def test_use_independent_weight_decay(self) -> None:
+        """Test that use_independent_weight_decay properly decouples weight decay from learning rate."""
+        shape = (32, 32)
+        weight_decay = 0.1
+
+        # Test with independent weight decay: with lr=0, weight decay should still be applied
+        # With lr=0, no gradient update occurs, so param should be exactly (1-wd)*param
+        indep_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
+        indep_param_initial = indep_param.data.clone()
+        indep_param.grad = torch.randint_like(indep_param, -5, 5)
+
+        muon_opt_indep = muon.Muon(
+            [indep_param],
+            lr=0.0,  # Zero learning rate
+            weight_decay=weight_decay,
+            use_independent_weight_decay=True,
+            momentum_beta=0.0,
+        )
+        muon_opt_indep.step()
+
+        # With independent weight decay and lr=0, param should be exactly (1-wd)*param
+        expected_param = (1 - weight_decay) * indep_param_initial
+        torch.testing.assert_close(
+            indep_param.data,
+            expected_param,
+            atol=0,
+            rtol=0,
+            msg=f"Expected param to be exactly (1-{weight_decay})*original_param with independent weight decay and lr=0",
+        )
+
 
 if __name__ == "__main__":
     absltest.main()

@@ -117,8 +117,8 @@ class OrthogonalizedOptimizer(optim.Optimizer):
             momentum_beta=momentum_beta,
             use_nesterov=use_nesterov,
             weight_decay=weight_decay,
-            use_decoupled_weight_decay=use_decoupled_weight_decay,
-            use_independent_weight_decay=use_independent_weight_decay,
+            use_decoupled_wd=use_decoupled_weight_decay,
+            use_independent_wd=use_independent_weight_decay,
             **kwargs,
         )
 
@@ -156,10 +156,10 @@ class OrthogonalizedOptimizer(optim.Optimizer):
 
                 # Apply weight decay
                 if group["weight_decay"] > 0.0:
-                    if group["use_decoupled_weight_decay"]:
-                        # Apply decoupled weight decay
-                        if group["use_independent_weight_decay"]:
-                            # use independent weight decay
+                    if group["use_decoupled_wd"]:
+                        # Apply weight decay directly to params without changing gradients
+                        if group["use_independent_wd"]:
+                            # do not tie weight decay and learning rate
                             weight_decay_scale = group["weight_decay"]
                         else:
                             weight_decay_scale = group["weight_decay"] * group["lr"]
