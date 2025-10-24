@@ -191,7 +191,7 @@ class MuonTest(parameterized.TestCase):
     def test_use_independent_wd(self) -> None:
         """Test that use_independent_wd properly decouples weight decay from learning rate."""
         shape = (32, 32)
-        weight_decay = 0.1
+        weight_decay = 0.25
 
         # Test with independent weight decay: with lr=0, weight decay should still be applied
         # With lr=0, no gradient update occurs, so param should be exactly (1-wd)*param
@@ -215,7 +215,6 @@ class MuonTest(parameterized.TestCase):
             expected_param,
             atol=0,
             rtol=0,
-            msg=f"Expected param to be exactly (1-{weight_decay})*original_param with independent weight decay and lr=0",
         )
 
 
