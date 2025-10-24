@@ -35,7 +35,9 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
         use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
-        use_decoupled_weight_decay: Whether to use decoupled weight decay, default to be True.
+        use_decoupled_wd: Whether to use decoupled weight decay, default to be True.
+        use_independent_wd: Whether to use independent weight decay (https://arxiv.org/abs/2510.19093),
+            default to be False.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
 """
 
@@ -99,7 +101,8 @@ class OrthogonalizedOptimizer(optim.Optimizer):
         momentum_beta: float,
         use_nesterov: bool,
         weight_decay: float,
-        use_decoupled_weight_decay: bool,
+        use_decoupled_wd: bool,
+        use_independent_wd: bool,
         fp32_matmul_prec: str,
         scaled_orthogonalize_fn: Callable | None = None,
         **kwargs: Any,
@@ -114,7 +117,8 @@ class OrthogonalizedOptimizer(optim.Optimizer):
             momentum_beta=momentum_beta,
             use_nesterov=use_nesterov,
             weight_decay=weight_decay,
-            use_decoupled_weight_decay=use_decoupled_weight_decay,
+            use_decoupled_wd=use_decoupled_wd,
+            use_independent_wd=use_independent_wd,
             **kwargs,
         )
 
@@ -152,9 +156,14 @@ class OrthogonalizedOptimizer(optim.Optimizer):
 
                 # Apply weight decay
                 if group["weight_decay"] > 0.0:
-                    if group["use_decoupled_weight_decay"]:
-                        # Apply decoupled weight decay
-                        p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
+                    if group["use_decoupled_wd"]:
+                        # Apply weight decay directly to params without changing gradients
+                        if group["use_independent_wd"]:
+                            # do not tie weight decay and learning rate
+                            weight_decay_scale = group["weight_decay"]
+                        else:
+                            weight_decay_scale = group["weight_decay"] * group["lr"]
+                        p.add_(p, alpha=(-weight_decay_scale))
                     else:
                         # add l2 regularization before preconditioning (i.e. adding a squared loss term)
                         grad += group["weight_decay"] * p
