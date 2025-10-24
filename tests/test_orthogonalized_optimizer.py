@@ -42,8 +42,8 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             momentum_beta=0,
             use_nesterov=False,
             weight_decay=0.5,
-            use_decoupled_weight_decay=True,
-            use_independent_weight_decay=False,
+            use_decoupled_wd=True,
+            use_independent_wd=False,
             fp32_matmul_prec="highest",
         )
 
@@ -84,8 +84,8 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             momentum_beta=0.5,
             use_nesterov=False,
             weight_decay=0.0,
-            use_decoupled_weight_decay=False,
-            use_independent_weight_decay=False,
+            use_decoupled_wd=False,
+            use_independent_wd=False,
             fp32_matmul_prec="highest",
         )
 
@@ -135,8 +135,8 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             momentum_beta=0,
             use_nesterov=False,
             weight_decay=0.0,
-            use_decoupled_weight_decay=False,
-            use_independent_weight_decay=False,
+            use_decoupled_wd=False,
+            use_independent_wd=False,
             fp32_matmul_prec="highest",
             scaled_orthogonalize_fn=dummy_interleaved_split_orth_fn,
         )
@@ -188,8 +188,8 @@ class MuonTest(parameterized.TestCase):
             ref_param.data,
         )
 
-    def test_use_independent_weight_decay(self) -> None:
-        """Test that use_independent_weight_decay properly decouples weight decay from learning rate."""
+    def test_use_independent_wd(self) -> None:
+        """Test that use_independent_wd properly decouples weight decay from learning rate."""
         shape = (32, 32)
         weight_decay = 0.1
 
@@ -203,7 +203,7 @@ class MuonTest(parameterized.TestCase):
             [indep_param],
             lr=0.0,  # Zero learning rate
             weight_decay=weight_decay,
-            use_independent_weight_decay=True,
+            use_independent_wd=True,
             momentum_beta=0.0,
         )
         muon_opt_indep.step()
