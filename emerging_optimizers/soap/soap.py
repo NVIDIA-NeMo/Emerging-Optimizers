@@ -60,13 +60,12 @@ class SOAP(optim.Optimizer):
             instead of betas[1] if >= 0
         eps: Inner Adam's epsilon for numerical stability
         weight_decay: Weight decay coefficient
-        use_decoupled_weight_decay: Whether to use decoupled weight decay, see Decoupled Weight Decay Regularization:
+        use_decoupled_wd: Whether to use decoupled weight decay, see Decoupled Weight Decay Regularization:
             https://arxiv.org/abs/1711.05101.
         use_nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf,
             https://openreview.net/forum?id=OM0jvwB8jIp57ZJjtNEZ)
         precondition_frequency: How often to update the preconditioner. Can be an integer for fixed frequency
             or a callable function that takes the current step as input and returns the frequency.
-        precondition_warmup_steps: How many steps to warm up the preconditioner (i.e. update every step)
         adam_warmup_steps: How many steps to skip preconditioning in the beginning (i.e. use standard AdamW updates)
         precondition_1d: Whether to precondition 1D gradients (like biases).
         trace_normalization: Whether to normalize update by the trace of the kronecker factor matrix
@@ -89,14 +88,13 @@ class SOAP(optim.Optimizer):
         self,
         params: Iterable[torch.nn.parameter.Parameter],
         lr: float = 3e-3,
-        betas: Optional[Tuple[float, float]] = None,
-        shampoo_beta: float = -1,
+        betas: Tuple[float, float] = (0.95, 0.95),
+        shampoo_beta: float = 0.95,
         eps: float = 1e-8,
         weight_decay: float = 0.01,
-        use_decoupled_weight_decay: bool = True,
+        use_decoupled_wd: bool = True,
         use_nesterov: bool = False,
-        precondition_frequency: Union[int, Callable[[int], int]] = 10,
-        precondition_warmup_steps: int = 0,
+        precondition_frequency: Union[int, Callable[[int], int]] = 1,
         adam_warmup_steps: int = 1,
         precondition_1d: bool = False,
         trace_normalization: bool = False,
@@ -106,39 +104,27 @@ class SOAP(optim.Optimizer):
         use_eigh: bool = False,
         qr_fp32_matmul_prec: str = "high",
         use_adaptive_criteria: bool = False,
-        adaptive_update_tolerance: Optional[float] = None,
+        adaptive_update_tolerance: float = 1e-7,
         power_iter_steps: int = 1,
         max_update_rms: float = 0.0,
         use_kl_shampoo: bool = False,
     ) -> None:
-        # Check for betas.
-        if betas is None:
-            betas = (0.95, 0.95)
-            logging.debug(f"betas not provided. Setting betas equal to betas = {betas} by default.")
-
-        # Check for update criteria
-        if use_adaptive_criteria:
-            if adaptive_update_tolerance is None:
-                adaptive_update_tolerance = 1e-7
-                logging.info(
-                    "adaptive_update_tolerance not provided. Setting adaptive_update_tolerance equal to "
-                    f"eps = {adaptive_update_tolerance} by default."
-                )
-
-        # Check for adam_warmup_steps since <1 will cause key errors in update_eigenbasis_and_momentum step
-        if adam_warmup_steps < 1:
-            adam_warmup_steps = 1
-            logging.info("adam_warmup_steps is less than 1. Setting adam_warmup_steps to 1 by default.")
-
-        # Check for precondition warmup steps and adam warmup steps
-        if adam_warmup_steps >= precondition_warmup_steps and precondition_warmup_steps > 0:
-            original_adam_warmup_steps = adam_warmup_steps
-            adam_warmup_steps = max(1, precondition_warmup_steps - 1)
-            logging.info(
-                f"adam_warmup_steps ({original_adam_warmup_steps}) should be less "
-                f"than precondition_warmup_steps ({precondition_warmup_steps}). "
-                f"Setting adam_warmup_steps to {adam_warmup_steps} by default."
-            )
+        self.precondition_frequency = precondition_frequency
+        self.adam_warmup_steps = adam_warmup_steps
+        self.precondition_1d = precondition_1d
+        self.trace_normalization = trace_normalization
+        self.normalize_preconditioned_grads = normalize_preconditioned_grads
+        self.use_nesterov = use_nesterov
+        self.correct_bias = correct_bias
+        self.use_decoupled_wd = use_decoupled_wd
+        self.fp32_matmul_prec = fp32_matmul_prec
+        self.use_eigh = use_eigh
+        self.qr_fp32_matmul_prec = qr_fp32_matmul_prec
+        self.use_adaptive_criteria = use_adaptive_criteria
+        self.adaptive_update_tolerance = adaptive_update_tolerance
+        self.power_iter_steps = power_iter_steps
+        self.max_update_rms = max_update_rms
+        self.use_kl_shampoo = use_kl_shampoo
 
         defaults = {
             "lr": lr,
@@ -146,23 +132,6 @@ class SOAP(optim.Optimizer):
             "shampoo_beta": shampoo_beta,
             "eps": eps,
             "weight_decay": weight_decay,
-            "precondition_frequency": precondition_frequency,
-            "precondition_warmup_steps": precondition_warmup_steps,
-            "adam_warmup_steps": adam_warmup_steps,
-            "precondition_1d": precondition_1d,
-            "trace_normalization": trace_normalization,
-            "normalize_preconditioned_grads": normalize_preconditioned_grads,
-            "use_nesterov": use_nesterov,
-            "correct_bias": correct_bias,
-            "use_decoupled_weight_decay": use_decoupled_weight_decay,
-            "fp32_matmul_prec": fp32_matmul_prec,
-            "use_eigh": use_eigh,
-            "qr_fp32_matmul_prec": qr_fp32_matmul_prec,
-            "use_adaptive_criteria": use_adaptive_criteria,
-            "adaptive_update_tolerance": adaptive_update_tolerance,
-            "power_iter_steps": power_iter_steps,
-            "max_update_rms": max_update_rms,
-            "use_kl_shampoo": use_kl_shampoo,
         }
         super().__init__(params, defaults)
 
@@ -203,10 +172,8 @@ class SOAP(optim.Optimizer):
 
                 # Define kronecker_factor_update_fn based on whether to use KL-Shampoo here
                 # because it needs access to state and group
-                kronecker_factor_update_fn = partial(
-                    update_kronecker_factors, precondition_1d=group["precondition_1d"]
-                )
-                if group["use_kl_shampoo"]:
+                kronecker_factor_update_fn = partial(update_kronecker_factors, precondition_1d=self.precondition_1d)
+                if self.use_kl_shampoo:
                     kronecker_factor_update_fn = partial(
                         update_kronecker_factors_kl_shampoo,
                         eigenbasis_list=state["Q"],
@@ -217,12 +184,12 @@ class SOAP(optim.Optimizer):
                 if "GG" not in state:
                     state["GG"] = init_kronecker_factors(
                         grad,
-                        precondition_1d=group["precondition_1d"],
+                        precondition_1d=self.precondition_1d,
                     )
 
                     # Update preconditioner matrices with gradient statistics,
                     # do not use shampoo_beta for EMA at first step
-                    with utils.fp32_matmul_precision(group["fp32_matmul_prec"]):
+                    with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         kronecker_factor_update_fn(
                             kronecker_factor_list=state["GG"], grad=grad, shampoo_beta=group["shampoo_beta"]
                         )
@@ -232,7 +199,7 @@ class SOAP(optim.Optimizer):
 
                 # Apply weight decay
                 if group["weight_decay"] > 0.0:
-                    if group["use_decoupled_weight_decay"]:
+                    if self.use_decoupled_wd:
                         # Apply decoupled weight decay
                         p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
                     else:
@@ -241,7 +208,7 @@ class SOAP(optim.Optimizer):
 
                 # Projecting gradients to the eigenbases of Shampoo's preconditioner
                 torch.cuda.nvtx.range_push("precondition")
-                with utils.fp32_matmul_precision(group["fp32_matmul_prec"]):
+                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     grad_projected = precondition(
                         grad=grad,
                         eigenbasis_list=state["Q"],
@@ -258,8 +225,8 @@ class SOAP(optim.Optimizer):
                     exp_avg,
                     exp_avg_sq,
                     group["betas"],
-                    group["correct_bias"],
-                    group["use_nesterov"],
+                    self.correct_bias,
+                    self.use_nesterov,
                     state["step"],
                     group["eps"],
                 )
@@ -268,7 +235,7 @@ class SOAP(optim.Optimizer):
 
                 # Projecting back the preconditioned (by ADAM) exponential moving average of gradients
                 torch.cuda.nvtx.range_push("precondition")
-                with utils.fp32_matmul_precision(group["fp32_matmul_prec"]):
+                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     norm_precond_grad = precondition(
                         grad=adam_update,
                         eigenbasis_list=state["Q"],
@@ -276,16 +243,16 @@ class SOAP(optim.Optimizer):
                     )
                 torch.cuda.nvtx.range_pop()
 
-                if group["trace_normalization"]:
+                if self.trace_normalization:
                     if state["GG"][0].numel() > 0:
                         trace_normalization = 1 / torch.sqrt(torch.trace(state["GG"][0]))
                         norm_precond_grad = norm_precond_grad / trace_normalization
 
-                if group["normalize_preconditioned_grads"]:
+                if self.normalize_preconditioned_grads:
                     norm_precond_grad = norm_precond_grad / (1e-30 + torch.mean(norm_precond_grad**2) ** 0.5)
 
                 # Clip the update RMS to a maximum value
-                _clip_update_rms_in_place(norm_precond_grad, group["max_update_rms"])
+                _clip_update_rms_in_place(norm_precond_grad, self.max_update_rms)
 
                 torch.cuda.nvtx.range_push("weight update")
                 p.add_(norm_precond_grad, alpha=-step_size)
@@ -293,12 +260,12 @@ class SOAP(optim.Optimizer):
 
                 # Update kronecker factor matrices with gradient statistics
                 shampoo_beta = group["shampoo_beta"] if group["shampoo_beta"] >= 0 else group["betas"][1]
-                if group["correct_bias"]:
+                if self.correct_bias:
                     # step size correction for shampoo kronecker factors EMA
                     shampoo_beta = 1 - (1 - shampoo_beta) / (1 - shampoo_beta ** (state["step"] + 1))
 
                 torch.cuda.nvtx.range_push("update_kronecker_factors")
-                with utils.fp32_matmul_precision(group["fp32_matmul_prec"]):
+                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     kronecker_factor_update_fn(
                         kronecker_factor_list=state["GG"],
                         grad=grad,
@@ -308,11 +275,11 @@ class SOAP(optim.Optimizer):
 
                 # If current step is the last step to skip preconditioning, initialize eigenbases and
                 # end first order warmup
-                if state["step"] == group["adam_warmup_steps"]:
+                if state["step"] == self.adam_warmup_steps:
                     # Obtain kronecker factor eigenbases from kronecker factor matrices using eigendecomposition
                     state["Q"] = get_eigenbasis_eigh(state["GG"])
                     # rotate momentum to the new eigenbasis
-                    with utils.fp32_matmul_precision(group["fp32_matmul_prec"]):
+                    with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         state["exp_avg"] = precondition(
                             grad=state["exp_avg"],
                             eigenbasis_list=state["Q"],
@@ -320,25 +287,24 @@ class SOAP(optim.Optimizer):
                         )
                     continue
 
-                # Update eigenbases at precondition_frequency steps or until precondition_warmup_steps is done,
-                # but only after the adam_warmup_steps are completed.
+                # After the adam_warmup_steps are completed.
+                # Update eigenbases at precondition_frequency steps
                 torch.cuda.nvtx.range_push("Update eigen basis")
                 if _is_eigenbasis_update_step(
                     state["step"],
-                    group["adam_warmup_steps"],
-                    group["precondition_warmup_steps"],
-                    group["precondition_frequency"],
+                    self.adam_warmup_steps,
+                    self.precondition_frequency,
                 ):
-                    with utils.fp32_matmul_precision(group["qr_fp32_matmul_prec"]):
+                    with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
                         state["Q"], state["exp_avg"], state["exp_avg_sq"] = update_eigenbasis_and_momentum(
                             kronecker_factor_list=state["GG"],
                             eigenbasis_list=state["Q"],
                             exp_avg_sq=state["exp_avg_sq"],
                             momentum=state["exp_avg"],
-                            use_eigh=group["use_eigh"],
-                            use_adaptive_criteria=group["use_adaptive_criteria"],
-                            adaptive_update_tolerance=group["adaptive_update_tolerance"],
-                            power_iter_steps=group["power_iter_steps"],
+                            use_eigh=self.use_eigh,
+                            use_adaptive_criteria=self.use_adaptive_criteria,
+                            adaptive_update_tolerance=self.adaptive_update_tolerance,
+                            power_iter_steps=self.power_iter_steps,
                         )
                 torch.cuda.nvtx.range_pop()
 
@@ -662,26 +628,9 @@ def precondition(
     return grad
 
 
-def _get_precondition_frequency(precondition_frequency: Union[int, Callable[[int], int]], step: int) -> int:
-    """Get the current precondition frequency based on the schedule or fixed value.
-
-    Args:
-        precondition_frequency: Either an integer for fixed frequency or a callable that takes step and returns frequency
-        step: Current optimization step
-
-    Returns:
-        The precondition frequency for the current step
-    """
-    if callable(precondition_frequency):
-        return precondition_frequency(step)
-    else:
-        return precondition_frequency
-
-
 def _is_eigenbasis_update_step(
     step: int,
     adam_warmup_steps: int,
-    precondition_warmup_steps: int,
     precondition_frequency: Union[int, Callable[[int], int]],
 ) -> bool:
     """Checks if amortized computation of the eigenbasis should be recomputed.
@@ -689,19 +638,16 @@ def _is_eigenbasis_update_step(
     Args:
         step: Current step of the optimizer
         adam_warmup_steps: Number of steps to skip preconditioning in the beginning (i.e. use standard AdamW updates)
-        precondition_warmup_steps: How many steps to warm up the preconditioner (i.e. update every step)
         precondition_frequency: How often to update the preconditioner. Can be an integer for fixed frequency
             or a callable function that takes the current step as input and returns the frequency.
     """
-    if step <= adam_warmup_steps:
+    if step < adam_warmup_steps:
         return False
 
-    # During warmup period, update every step
-    if step <= precondition_warmup_steps:
-        return True
+    current_frequency = (
+        precondition_frequency if not callable(precondition_frequency) else precondition_frequency(step)
+    )
 
-    # After warmup, use the scheduled frequency
-    current_frequency = _get_precondition_frequency(precondition_frequency, step)
     return step % current_frequency == 0
 
 
