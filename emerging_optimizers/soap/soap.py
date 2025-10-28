@@ -14,7 +14,7 @@
 # limitations under the License.
 from functools import partial
 from itertools import chain
-from typing import Callable, Iterable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 
 # TODO(@boxiangw): remove this once bump to python 3.12
@@ -26,6 +26,7 @@ except ImportError:
 import torch
 import torch.optim as optim
 from absl import logging
+from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import utils
 from emerging_optimizers.scalar_optimizers import calculate_adam_update
@@ -86,7 +87,7 @@ class SOAP(optim.Optimizer):
 
     def __init__(
         self,
-        params: Iterable[torch.nn.parameter.Parameter],
+        params: ParamsT,
         lr: float = 3e-3,
         betas: Tuple[float, float] = (0.95, 0.95),
         shampoo_beta: float = 0.95,
