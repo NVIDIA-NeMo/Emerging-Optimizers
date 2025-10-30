@@ -112,13 +112,14 @@ class OrthogonalizedOptimizer(optim.Optimizer):
             scaled_orthogonalize_fn = torch.nn.Identity()
 
         self.fp32_matmul_prec = fp32_matmul_prec
+        self.use_nesterov = use_nesterov
+        self.use_decoupled_wd = use_decoupled_wd
+        self.use_independent_wd = use_independent_wd
+
         default_args_dict = dict(
             lr=lr,
             momentum_beta=momentum_beta,
-            use_nesterov=use_nesterov,
             weight_decay=weight_decay,
-            use_decoupled_wd=use_decoupled_wd,
-            use_independent_wd=use_independent_wd,
             **kwargs,
         )
 
@@ -156,9 +157,9 @@ class OrthogonalizedOptimizer(optim.Optimizer):
 
                 # Apply weight decay
                 if group["weight_decay"] > 0.0:
-                    if group["use_decoupled_wd"]:
+                    if self.use_decoupled_wd:
                         # Apply weight decay directly to params without changing gradients
-                        if group["use_independent_wd"]:
+                        if self.use_independent_wd:
                             # do not tie weight decay and learning rate
                             weight_decay_scale = group["weight_decay"]
                         else:
@@ -172,7 +173,7 @@ class OrthogonalizedOptimizer(optim.Optimizer):
                 exp_avg.lerp_(grad, 1 - group["momentum_beta"])
 
                 # include nesterov momentum
-                if group["use_nesterov"]:
+                if self.use_nesterov:
                     grad = grad.lerp(exp_avg, group["momentum_beta"])
                 else:
                     grad = exp_avg

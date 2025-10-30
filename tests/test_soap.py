@@ -22,7 +22,6 @@ from absl.testing import absltest, parameterized
 from emerging_optimizers.soap import soap
 from emerging_optimizers.soap.soap import (
     _clip_update_rms_in_place,
-    _get_precondition_frequency,
     _is_eigenbasis_update_step,
 )
 from emerging_optimizers.utils.precondition_schedules import LinearSchedule
@@ -216,52 +215,46 @@ class SoapFunctionsTest(parameterized.TestCase):
             msg="Project and project_back did not recover the original tensor.",
         )
 
-    def test_get_precondition_frequency_fixed(self) -> None:
-        """Test that _get_precondition_frequency works with fixed frequency (default case)."""
-        freq = _get_precondition_frequency(10, 100)
-        self.assertEqual(freq, 10)
-
     @parameterized.parameters(
-        (5, 10, 20, 10, False),
-        (15, 10, 20, 10, True),
-        (20, 10, 15, 10, True),
-        (21, 10, 15, 10, False),
-        (30, 10, 15, 10, True),
-        (31, 10, 15, 10, False),
+        (5, 10, 10, False),
+        (15, 10, 5, True),
+        (20, 10, 10, True),
+        (21, 10, 10, False),
+        (30, 10, 10, True),
+        (31, 10, 10, False),
     )
     def test_is_eigenbasis_update_step_fixed_frequency(
-        self, step: int, adam_warmup_steps: int, precondition_warmup: int, precondition_frequency: int, expected: bool
+        self, step: int, adam_warmup_steps: int, precondition_frequency: int, expected: bool
     ) -> None:
         """Test _is_eigenbasis_update_step with fixed frequency."""
-        result = _is_eigenbasis_update_step(step, adam_warmup_steps, precondition_warmup, precondition_frequency)
+        result = _is_eigenbasis_update_step(step, adam_warmup_steps, precondition_frequency)
         self.assertEqual(result, expected)
 
     def test_soap_optimizer_fixed_frequency(self) -> None:
         """Test that SOAP optimizer can be created with fixed precondition frequency (default case)."""
         param = torch.randn(10, 5, requires_grad=True)
         optimizer = soap.SOAP([param], lr=1e-3, precondition_frequency=10)
-        self.assertEqual(optimizer.param_groups[0]["precondition_frequency"], 10)
+        self.assertEqual(optimizer.precondition_frequency, 10)
 
     def test_soap_optimizer_class_based_schedule(self) -> None:
         """Test that SOAP optimizer can be created with class-based precondition frequency schedule."""
         param = torch.randn(10, 5, requires_grad=True)
         schedule = LinearSchedule(min_freq=2, max_freq=10, transition_steps=100)
         optimizer = soap.SOAP([param], lr=1e-3, precondition_frequency=schedule)
-        self.assertTrue((optimizer.param_groups[0]["precondition_frequency"]) == schedule)
+        self.assertTrue(optimizer.precondition_frequency == schedule)
 
         self.assertEqual(schedule(0), 2)
         self.assertEqual(schedule(50), 6)
         self.assertEqual(schedule(100), 10)
 
         adam_warmup = 1
-        precondition_warmup = 0
 
-        self.assertTrue(_is_eigenbasis_update_step(10, adam_warmup, precondition_warmup, schedule))
-        self.assertFalse(_is_eigenbasis_update_step(11, adam_warmup, precondition_warmup, schedule))
-        self.assertTrue(_is_eigenbasis_update_step(60, adam_warmup, precondition_warmup, schedule))
-        self.assertFalse(_is_eigenbasis_update_step(61, adam_warmup, precondition_warmup, schedule))
-        self.assertTrue(_is_eigenbasis_update_step(120, adam_warmup, precondition_warmup, schedule))
-        self.assertFalse(_is_eigenbasis_update_step(121, adam_warmup, precondition_warmup, schedule))
+        self.assertTrue(_is_eigenbasis_update_step(10, adam_warmup, schedule))
+        self.assertFalse(_is_eigenbasis_update_step(11, adam_warmup, schedule))
+        self.assertTrue(_is_eigenbasis_update_step(60, adam_warmup, schedule))
+        self.assertFalse(_is_eigenbasis_update_step(61, adam_warmup, schedule))
+        self.assertTrue(_is_eigenbasis_update_step(120, adam_warmup, schedule))
+        self.assertFalse(_is_eigenbasis_update_step(121, adam_warmup, schedule))
 
     @parameterized.parameters(
         (1.0,),
