@@ -98,8 +98,6 @@ class SOAP(optim.Optimizer):
         precondition_frequency: Union[int, Callable[[int], int]] = 1,
         adam_warmup_steps: int = 1,
         precondition_1d: bool = False,
-        trace_normalization: bool = False,
-        normalize_preconditioned_grads: bool = False,
         correct_bias: bool = True,
         fp32_matmul_prec: str = "high",
         use_eigh: bool = False,
@@ -113,8 +111,6 @@ class SOAP(optim.Optimizer):
         self.precondition_frequency = precondition_frequency
         self.adam_warmup_steps = adam_warmup_steps
         self.precondition_1d = precondition_1d
-        self.trace_normalization = trace_normalization
-        self.normalize_preconditioned_grads = normalize_preconditioned_grads
         self.use_nesterov = use_nesterov
         self.correct_bias = correct_bias
         self.use_decoupled_wd = use_decoupled_wd
@@ -244,14 +240,6 @@ class SOAP(optim.Optimizer):
                     )
                 torch.cuda.nvtx.range_pop()
 
-                if self.trace_normalization:
-                    if state["GG"][0].numel() > 0:
-                        trace_normalization = 1 / torch.sqrt(torch.trace(state["GG"][0]))
-                        norm_precond_grad = norm_precond_grad / trace_normalization
-
-                if self.normalize_preconditioned_grads:
-                    norm_precond_grad = norm_precond_grad / (1e-30 + torch.mean(norm_precond_grad**2) ** 0.5)
-
                 # Clip the update RMS to a maximum value
                 _clip_update_rms_in_place(norm_precond_grad, self.max_update_rms)
 
@@ -260,7 +248,7 @@ class SOAP(optim.Optimizer):
                 torch.cuda.nvtx.range_pop()
 
                 # Update kronecker factor matrices with gradient statistics
-                shampoo_beta = group["shampoo_beta"] if group["shampoo_beta"] >= 0 else group["betas"][1]
+                shampoo_beta = group["shampoo_beta"]
                 if self.correct_bias:
                     # step size correction for shampoo kronecker factors EMA
                     shampoo_beta = 1 - (1 - shampoo_beta) / (1 - shampoo_beta ** (state["step"] + 1))

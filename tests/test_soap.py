@@ -319,7 +319,6 @@ class SoapTest(parameterized.TestCase):
             "adam_warmup_steps": 1,
             "fp32_matmul_prec": "highest",
             "use_adaptive_criteria": False,
-            "trace_normalization": False,
             "power_iter_steps": 1,
         }
 
