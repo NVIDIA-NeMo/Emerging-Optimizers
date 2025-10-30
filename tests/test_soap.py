@@ -352,25 +352,24 @@ class SoapTest(parameterized.TestCase):
 class SoapVsReferenceTest(parameterized.TestCase):
     """Tests that compare SOAP implementation against reference implementation."""
 
-    @parameterized.parameters(
-        {"shape": (3, 3), "steps": 3},
-        # {"shape": (10, 10), "steps": 5},
-        # {"shape": (15, 31), "steps": 5},
+    @parameterized.product(
+        shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
+        num_steps=[2, 5, 7],
+        precondition_frequency=[1, 2, 5],
     )
-    @absltest.skip("Skipping this test for now")
-    def test_soap_matches_reference_basic(self, shape: tuple, steps: int):
+    def test_0beta_0wd_matches_reference(self, shape: tuple, num_steps: int, precondition_frequency: int):
         """Test that SOAP optimizer matches reference implementation for basic config."""
         # Create two identical parameters
         param_test = torch.randint(-5, 6, shape, dtype=torch.float32, device="cuda")
         param_ref = param_test.clone()
 
         common_kwargs = dict(
-            lr=0.25,
+            lr=2,
             betas=(0, 0),
             shampoo_beta=0.5,
             eps=1e-8,
-            weight_decay=0,
-            precondition_frequency=2,
+            weight_decay=0.0,
+            precondition_frequency=precondition_frequency,
         )
 
         test_optimizer = soap.SOAP(
@@ -386,9 +385,8 @@ class SoapVsReferenceTest(parameterized.TestCase):
             **common_kwargs,
         )
         # Run optimization steps with identical gradients
-        for i in range(steps):
+        for step in range(num_steps):
             grad = torch.randint_like(param_test, -5, 6)
-            # print(grad)
 
             # Apply same gradient to both
             param_test.grad = grad.clone()
@@ -398,24 +396,23 @@ class SoapVsReferenceTest(parameterized.TestCase):
             test_optimizer.step()
             ref_optimizer.step()
 
-            # Clear gradients
-            param_test.grad = None
-            param_ref.grad = None
-
             torch.testing.assert_close(
                 param_test,
                 param_ref,
                 atol=1e-4,
                 rtol=1e-4,
-                msg=lambda msg: f"Parameter mismatch at step {i}:\n{msg}",
+                msg=lambda msg: f"Parameter mismatch at step {step}:\n{msg}",
             )
+
+            param_test.grad = None
+            param_ref.grad = None
 
     @parameterized.product(
         shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
         num_steps=[2, 5, 7],
         precondition_frequency=[1, 2, 5],
     )
-    def test_soap_state_matches_reference(self, shape: tuple, num_steps: int, precondition_frequency: int):
+    def test_eigenbasis_matches_reference(self, shape: tuple, num_steps: int, precondition_frequency: int):
         param_soap = torch.randint(-5, 6, shape, dtype=torch.float32, device="cuda")
         param_ref = param_soap.clone()
 
@@ -423,7 +420,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
         common_kwargs = dict(
             lr=0,
             betas=(0, 0),
-            shampoo_beta=0.5,
+            shampoo_beta=0.75,
             eps=1e-8,
             weight_decay=0,
             precondition_frequency=precondition_frequency,

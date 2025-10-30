@@ -96,7 +96,7 @@ class SOAP(optim.Optimizer):
         use_decoupled_wd: bool = True,
         use_nesterov: bool = False,
         precondition_frequency: Union[int, Callable[[int], int]] = 1,
-        adam_warmup_steps: int = 1,
+        adam_warmup_steps: int = 0,
         precondition_1d: bool = False,
         correct_bias: bool = True,
         fp32_matmul_prec: str = "high",
@@ -566,7 +566,7 @@ def update_eigenbasis_and_momentum(
 @torch.compile  # type: ignore[misc]
 def precondition(
     grad: torch.Tensor,
-    eigenbasis_list: Optional[List[torch.Tensor]],
+    eigenbasis_list: Optional[List[torch.Tensor]] = None,
     dims: Optional[List[List[int]]] = None,
 ) -> torch.Tensor:
     """Projects the gradient to and from the eigenbases of the kronecker factor matrices.
@@ -592,7 +592,7 @@ def precondition(
         # Pick contraction dims to project to the eigenbasis
         dims = [[0], [0]]
 
-    if not eigenbasis_list:
+    if eigenbasis_list is None:
         # If eigenbases are not provided, return the gradient without any preconditioning
         return grad
 
@@ -638,7 +638,7 @@ def _is_eigenbasis_update_step(
 
 
 @torch.compile  # type: ignore[misc]
-def _clip_update_rms_in_place(u: torch.Tensor, max_rms: float = 1.0, eps: float = 1e-12) -> None:
+def _clip_update_rms_in_place(u: torch.Tensor, max_rms: float, eps: float = 1e-7) -> None:
     """Clip the update root mean square (RMS) to a maximum value, in place.
 
     Do not clip if max_rms is 0.
