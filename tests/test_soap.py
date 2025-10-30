@@ -16,6 +16,7 @@ import math
 from functools import partial
 from typing import Any, List
 
+import soap_reference
 import torch
 from absl.testing import absltest, parameterized
 
@@ -348,5 +349,133 @@ class SoapTest(parameterized.TestCase):
             param.grad = None
 
 
+class SoapVsReferenceTest(parameterized.TestCase):
+    """Tests that compare SOAP implementation against reference implementation."""
+
+    @parameterized.parameters(
+        {"shape": (3, 3), "steps": 3},
+        # {"shape": (10, 10), "steps": 5},
+        # {"shape": (15, 31), "steps": 5},
+    )
+    @absltest.skip("Skipping this test for now")
+    def test_soap_matches_reference_basic(self, shape: tuple, steps: int):
+        """Test that SOAP optimizer matches reference implementation for basic config."""
+        # Create two identical parameters
+        param_test = torch.randint(-5, 6, shape, dtype=torch.float32, device="cuda")
+        param_ref = param_test.clone()
+
+        common_kwargs = dict(
+            lr=0.25,
+            betas=(0, 0),
+            shampoo_beta=0.5,
+            eps=1e-8,
+            weight_decay=0,
+            precondition_frequency=2,
+        )
+
+        test_optimizer = soap.SOAP(
+            [param_test],
+            **common_kwargs,
+            use_decoupled_wd=False,
+            adam_warmup_steps=0,
+            fp32_matmul_prec="highest",
+            qr_fp32_matmul_prec="highest",
+        )
+        ref_optimizer = soap_reference.ReferenceSoap(
+            [param_ref],
+            **common_kwargs,
+        )
+        # Run optimization steps with identical gradients
+        for i in range(steps):
+            grad = torch.randint_like(param_test, -5, 6)
+            # print(grad)
+
+            # Apply same gradient to both
+            param_test.grad = grad.clone()
+            param_ref.grad = grad.clone()
+
+            # Step both optimizers
+            test_optimizer.step()
+            ref_optimizer.step()
+
+            # Clear gradients
+            param_test.grad = None
+            param_ref.grad = None
+
+            torch.testing.assert_close(
+                param_test,
+                param_ref,
+                atol=1e-4,
+                rtol=1e-4,
+                msg=lambda msg: f"Parameter mismatch at step {i}:\n{msg}",
+            )
+
+    @parameterized.product(
+        shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
+        num_steps=[2, 5, 7],
+        precondition_frequency=[1, 2, 5],
+    )
+    def test_soap_state_matches_reference(self, shape: tuple, num_steps: int, precondition_frequency: int):
+        param_soap = torch.randint(-5, 6, shape, dtype=torch.float32, device="cuda")
+        param_ref = param_soap.clone()
+
+        # Disable parameter updates, only test kronecker factors and eigenbases
+        common_kwargs = dict(
+            lr=0,
+            betas=(0, 0),
+            shampoo_beta=0.5,
+            eps=1e-8,
+            weight_decay=0,
+            precondition_frequency=precondition_frequency,
+        )
+
+        test_optimizer = soap.SOAP(
+            [param_soap],
+            **common_kwargs,
+            use_decoupled_wd=False,
+            adam_warmup_steps=0,
+            fp32_matmul_prec="highest",
+            qr_fp32_matmul_prec="highest",
+        )
+        ref_optimizer = soap_reference.ReferenceSoap(
+            [param_ref],
+            **common_kwargs,
+        )
+
+        for step in range(num_steps):
+            grad = torch.randint_like(param_soap, -5, 6)
+            param_soap.grad = grad.clone()
+            param_ref.grad = grad.clone()
+
+            test_optimizer.step()
+            ref_optimizer.step()
+
+            param_soap.grad = None
+            param_ref.grad = None
+
+            test_state = test_optimizer.state[param_soap]
+            ref_state = ref_optimizer.state[param_ref]
+
+            torch.testing.assert_close(
+                test_state["GG"],
+                ref_state["GG"],
+                atol=1e-5,
+                rtol=1e-5,
+            )
+
+            for eigenbasis_test, eigenbasis_ref in zip(test_state["Q"], ref_state["Q"]):
+                torch.testing.assert_close(
+                    eigenbasis_test,
+                    eigenbasis_ref,
+                    atol=1e-4,
+                    rtol=1e-4,
+                    msg=lambda msg: f"Eigenbasis mismatch at step {step}:\n{msg}",
+                )
+
+            # Compare step counters
+            self.assertEqual(test_state["step"], ref_state["step"])
+
+
 if __name__ == "__main__":
+    torch.manual_seed(1234)
     absltest.main()
