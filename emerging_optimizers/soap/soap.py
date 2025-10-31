@@ -89,7 +89,7 @@ class SOAP(optim.Optimizer):
         self,
         params: ParamsT,
         lr: float,
-        betas: Tuple[float, float] = (0.95, 0.9),
+        betas: Tuple[float, float] = (0.9, 0.95),
         shampoo_beta: float = 0.95,
         eps: float = 1e-8,
         weight_decay: float = 0.01,
