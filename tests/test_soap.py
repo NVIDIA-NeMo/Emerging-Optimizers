@@ -353,7 +353,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
         shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
         num_steps=[2, 5, 7],
         precondition_frequency=[1, 2, 5],
-        correct_bias=[True, False],
+        correct_bias=[False, True],
     )
     def test_update_matches_reference(
         self, shape: tuple, num_steps: int, precondition_frequency: int, correct_bias: bool
@@ -369,7 +369,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
             self.skipTest("Skipping large tensor test with correct_bias.")
         common_kwargs = dict(
             lr=2,
-            betas=(0.75, 0.5),
+            betas=(0.75, 0.75),
             shampoo_beta=0.5,
             eps=1e-15,
             weight_decay=0.125,
@@ -384,6 +384,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
             adam_warmup_steps=0,
             fp32_matmul_prec="highest",
             qr_fp32_matmul_prec="highest",
+            correct_shampoo_beta_bias=False,
         )
         ref_optimizer = soap_reference.ReferenceSoap(
             [param_ref],
@@ -404,7 +405,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
             torch.testing.assert_close(
                 param_test,
                 param_ref,
-                atol=1e-3,
+                atol=1e-4,
                 rtol=1e-4,
                 msg=lambda msg: f"Parameter mismatch at step {step}:\n{msg}",
             )
@@ -429,6 +430,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
             eps=1e-8,
             weight_decay=0,
             precondition_frequency=precondition_frequency,
+            correct_bias=False,
         )
 
         test_optimizer = soap.SOAP(
@@ -479,5 +481,5 @@ class SoapVsReferenceTest(parameterized.TestCase):
 
 
 if __name__ == "__main__":
-    torch.manual_seed(13)
+    torch.manual_seed(17)
     absltest.main()

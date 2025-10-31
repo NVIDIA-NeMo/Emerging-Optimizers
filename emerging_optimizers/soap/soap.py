@@ -83,6 +83,8 @@ class SOAP(optim.Optimizer):
             More steps can lead to better convergence but increased computation time.
         max_update_rms: Clip the update RMS to this value (0 means no clipping).
         use_kl_shampoo: Whether to use KL-Shampoo correction.
+        correct_shampoo_beta_bias: Whether to correct shampoo beta bias. Decoupled it from correct_bias for
+            testability because reference implementation of Soap doesn't bias correct shampoo beta.
     """
 
     def __init__(
@@ -107,6 +109,7 @@ class SOAP(optim.Optimizer):
         power_iter_steps: int = 1,
         max_update_rms: float = 0.0,
         use_kl_shampoo: bool = False,
+        correct_shampoo_beta_bias: bool | None = None,
     ) -> None:
         self.precondition_frequency = precondition_frequency
         self.adam_warmup_steps = adam_warmup_steps
@@ -122,6 +125,10 @@ class SOAP(optim.Optimizer):
         self.power_iter_steps = power_iter_steps
         self.max_update_rms = max_update_rms
         self.use_kl_shampoo = use_kl_shampoo
+        if correct_shampoo_beta_bias is not None:
+            self.correct_shampoo_beta_bias = correct_shampoo_beta_bias
+        else:
+            self.correct_shampoo_beta_bias = correct_bias
 
         defaults = {
             "lr": lr,
@@ -156,18 +163,35 @@ class SOAP(optim.Optimizer):
                 if "step" not in state:
                     state["step"] = 0
 
+                # NOTE: The upstream PyTorch implementations increment the step counter in the middle of the loop
+                # to be used in bias correction. But this is confusing and error prone if anything else needs to use
+                # the step counter.
+                # We decided to follow Python and C convention to increment the step counter at the end of the loop.
+                # An explicitly named 1-based iteration/step counter is created for bias correction and other terms
+                # in the math equation that needs 1-based iteration count.
+                curr_iter_1_based = state["step"] + 1
+
                 # State initialization
-                # (TODO @mkhona): Better way to check state initialization - use state initializer?
-                if "exp_avg" not in state:
+                # TODO(mkhona): Better way to check state initialization - use state initializer?
+                if state["step"] == 0:
                     # Exponential moving average of gradient values
                     state["exp_avg"] = torch.zeros_like(grad)
                     # Exponential moving average of squared gradient values
                     state["exp_avg_sq"] = torch.zeros_like(grad)
+                    # Initialize kronecker factor matrices
+                    state["GG"] = init_kronecker_factors(
+                        grad,
+                        precondition_1d=self.precondition_1d,
+                    )
 
                 # Define kronecker_factor_update_fn based on whether to use KL-Shampoo here
                 # because it needs access to state and group
-                kronecker_factor_update_fn = partial(update_kronecker_factors, precondition_1d=self.precondition_1d)
-                if self.use_kl_shampoo:
+                if not self.use_kl_shampoo:
+                    kronecker_factor_update_fn = partial(
+                        update_kronecker_factors,
+                        precondition_1d=self.precondition_1d,
+                    )
+                else:
                     if "Q" not in state:
                         state["Q"] = [torch.eye(shape, device=grad.device) for shape in grad.shape]
                     kronecker_factor_update_fn = partial(
@@ -176,35 +200,54 @@ class SOAP(optim.Optimizer):
                         eps=group["eps"],
                     )
 
-                # Initialize kronecker factor matrices
-                if "GG" not in state:
-                    state["GG"] = init_kronecker_factors(
-                        grad,
-                        precondition_1d=self.precondition_1d,
-                    )
-
-                    # Update preconditioner matrices with gradient statistics,
-                    # do not use shampoo_beta for EMA at first step
-                    with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                        kronecker_factor_update_fn(
-                            kronecker_factor_list=state["GG"], grad=grad, shampoo_beta=group["shampoo_beta"]
-                        )
+                shampoo_beta = group["shampoo_beta"]
+                if self.correct_shampoo_beta_bias:
+                    shampoo_beta = 1 - (1 - shampoo_beta) / (1 - shampoo_beta**curr_iter_1_based)
+                torch.cuda.nvtx.range_push("update_kronecker_factors")
+                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                    kronecker_factor_update_fn(kronecker_factor_list=state["GG"], grad=grad, shampoo_beta=shampoo_beta)
+                torch.cuda.nvtx.range_pop()
 
                 # If current step is the last step to skip preconditioning, initialize eigenbases and
                 # end first order warmup
                 if state["step"] == self.adam_warmup_steps:
-                    # Obtain kronecker factor eigenbases from kronecker factor matrices using eigendecomposition
+                    # Obtain kronecker factor eigenbases from kronecker factor matrices using eigen decomposition
                     state["Q"] = get_eigenbasis_eigh(state["GG"])
-                    # rotate momentum to the new eigenbasis
+
+                # After the adam_warmup_steps are completed.
+                # Update eigenbases at precondition_frequency steps
+                torch.cuda.nvtx.range_push("Update eigen basis")
+                if _is_eigenbasis_update_step(
+                    state["step"],
+                    self.adam_warmup_steps,
+                    self.precondition_frequency,
+                ):
+                    # Always use eigh for the first eigenbasis
+                    use_eigh = self.use_eigh if state["step"] != self.adam_warmup_steps else True
+                    with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
+                        state["Q"], state["exp_avg"], state["exp_avg_sq"] = update_eigenbasis_and_momentum(
+                            kronecker_factor_list=state["GG"],
+                            eigenbasis_list=state["Q"],
+                            exp_avg_sq=state["exp_avg_sq"],
+                            momentum=state["exp_avg"],
+                            use_eigh=use_eigh,
+                            use_adaptive_criteria=self.use_adaptive_criteria,
+                            adaptive_update_tolerance=self.adaptive_update_tolerance,
+                            power_iter_steps=self.power_iter_steps,
+                        )
+                torch.cuda.nvtx.range_pop()
+
+                grad_projected = grad
+                if state["step"] >= self.adam_warmup_steps:
+                    # Projecting gradients to the eigenbases of Shampoo's preconditioner
+                    torch.cuda.nvtx.range_push("precondition")
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                        state["exp_avg"] = precondition(
-                            grad=state["exp_avg"],
+                        grad_projected = precondition(
+                            grad=grad,
                             eigenbasis_list=state["Q"],
                             dims=[[0], [0]],
                         )
-                    # continue
-
-                state["step"] += 1
+                    torch.cuda.nvtx.range_pop()
 
                 # Apply weight decay
                 if group["weight_decay"] > 0.0:
@@ -215,28 +258,16 @@ class SOAP(optim.Optimizer):
                         # add l2 regularization before preconditioning (i.e. like adding a squared loss term)
                         grad += group["weight_decay"] * p
 
-                # Projecting gradients to the eigenbases of Shampoo's preconditioner
-                torch.cuda.nvtx.range_push("precondition")
-                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    grad_projected = precondition(
-                        grad=grad,
-                        eigenbasis_list=state.get("Q", None),
-                        dims=[[0], [0]],
-                    )
-                torch.cuda.nvtx.range_pop()
-
-                exp_avg, exp_avg_sq = state["exp_avg"], state["exp_avg_sq"]
-
                 # Calculate the Adam update for the projected gradient tensor
                 torch.cuda.nvtx.range_push("calculate_adam_update")
                 adam_update = calculate_adam_update(
                     grad_projected,
-                    exp_avg,
-                    exp_avg_sq,
+                    state["exp_avg"],
+                    state["exp_avg_sq"],
                     group["betas"],
                     self.correct_bias,
                     self.use_nesterov,
-                    state["step"],
+                    curr_iter_1_based,  # 1-based iteration index is used for bias correction
                     group["eps"],
                 )
                 torch.cuda.nvtx.range_pop()
@@ -258,41 +289,7 @@ class SOAP(optim.Optimizer):
                 p.add_(norm_precond_grad, alpha=-group["lr"])
                 torch.cuda.nvtx.range_pop()
 
-                # Update kronecker factor matrices with gradient statistics
-                shampoo_beta = group["shampoo_beta"]
-                # if self.correct_bias:
-                #     # step size correction for shampoo kronecker factors EMA
-                #     shampoo_beta = 1 - (1 - shampoo_beta) / (1 - shampoo_beta ** state["step"])
-
-                torch.cuda.nvtx.range_push("update_kronecker_factors")
-                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    kronecker_factor_update_fn(
-                        kronecker_factor_list=state["GG"],
-                        grad=grad,
-                        shampoo_beta=shampoo_beta,
-                    )
-                torch.cuda.nvtx.range_pop()
-
-                # After the adam_warmup_steps are completed.
-                # Update eigenbases at precondition_frequency steps
-                torch.cuda.nvtx.range_push("Update eigen basis")
-                if _is_eigenbasis_update_step(
-                    state["step"] - 1,
-                    self.adam_warmup_steps,
-                    self.precondition_frequency,
-                ):
-                    with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
-                        state["Q"], state["exp_avg"], state["exp_avg_sq"] = update_eigenbasis_and_momentum(
-                            kronecker_factor_list=state["GG"],
-                            eigenbasis_list=state["Q"],
-                            exp_avg_sq=state["exp_avg_sq"],
-                            momentum=state["exp_avg"],
-                            use_eigh=self.use_eigh,
-                            use_adaptive_criteria=self.use_adaptive_criteria,
-                            adaptive_update_tolerance=self.adaptive_update_tolerance,
-                            power_iter_steps=self.power_iter_steps,
-                        )
-                torch.cuda.nvtx.range_pop()
+                state["step"] += 1
 
         return loss
 
@@ -627,7 +624,7 @@ def _is_eigenbasis_update_step(
         precondition_frequency: How often to update the preconditioner. Can be an integer for fixed frequency
             or a callable function that takes the current step as input and returns the frequency.
     """
-    if step == 0 or step < adam_warmup_steps:
+    if step < adam_warmup_steps:
         return False
 
     current_frequency = (
