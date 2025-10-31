@@ -44,9 +44,12 @@ import torch.optim as optim
 
 
 class ReferenceSoap(optim.Optimizer):
-    """
-    Implements SOAP algorithm (https://arxiv.org/abs/2409.11321).
+    """Reference implementation of SOAP algorithm
 
+    https://arxiv.org/abs/2409.11321.
+
+    Note:
+        Order of operations are slightly changed from original code to match our algorithmic choices.
     """
 
     def __init__(
@@ -58,7 +61,7 @@ class ReferenceSoap(optim.Optimizer):
         eps: float,
         weight_decay: float,
         precondition_frequency: int,
-        max_precond_dim: int = 10000,  #
+        max_precond_dim: int = 10000,
         merge_dims: bool = False,
         precondition_1d: bool = False,
         data_format: str = "channels_first",
@@ -147,10 +150,6 @@ class ReferenceSoap(optim.Optimizer):
 
                 denom = exp_avg_sq.sqrt().add_(group["eps"])
 
-                # Projecting the exponential moving average of gradients to the eigenbases of Shampoo's preconditioner
-                # i.e. projecting to the eigenbases of matrices in state['GG']
-                # exp_avg_projected = self.project(exp_avg, state, merge_dims=group["merge_dims"],
-                #                                  max_precond_dim=group['max_precond_dim'])
                 exp_avg_projected = exp_avg
 
                 step_size = group["lr"]
@@ -168,14 +167,7 @@ class ReferenceSoap(optim.Optimizer):
                     max_precond_dim=group["max_precond_dim"],
                 )
 
-                # From AdamW code: Just adding the square of the weights to the loss function is *not*
-                # the correct way of using L2 regularization/weight decay with Adam,
-                # since that will interact with the m and v parameters in strange ways.
-                #
-                # Instead we want to decay the weights in a manner that doesn't interact
-                # with the m/v parameters. This is equivalent to adding the square
-                # of the weights to the loss with plain (non-momentum) SGD.
-                # Add weight decay at the end (fixed version)
+                # NOTE: Weigth decay is moved before parameter update
                 if group["weight_decay"] > 0.0:
                     p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
 
