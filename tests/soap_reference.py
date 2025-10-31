@@ -231,8 +231,6 @@ class ReferenceSoap(optim.Optimizer):
                 if group["normalize_grads"]:
                     norm_grad = norm_grad / (1e-30 + torch.mean(norm_grad**2) ** 0.5)
 
-                p.add_(norm_grad, alpha=-step_size)
-
                 # From AdamW code: Just adding the square of the weights to the loss function is *not*
                 # the correct way of using L2 regularization/weight decay with Adam,
                 # since that will interact with the m and v parameters in strange ways.
@@ -243,6 +241,8 @@ class ReferenceSoap(optim.Optimizer):
                 # Add weight decay at the end (fixed version)
                 if group["weight_decay"] > 0.0:
                     p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
+
+                p.add_(norm_grad, alpha=-step_size)
 
                 # Update is done after the gradient step to avoid using current gradients in the projection.
                 self.update_preconditioner(

@@ -220,7 +220,7 @@ class SOAP(optim.Optimizer):
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     grad_projected = precondition(
                         grad=grad,
-                        eigenbasis_list=state["Q"],
+                        eigenbasis_list=state.get("Q", None),
                         dims=[[0], [0]],
                     )
                 torch.cuda.nvtx.range_pop()
@@ -246,7 +246,7 @@ class SOAP(optim.Optimizer):
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     norm_precond_grad = precondition(
                         grad=adam_update,
-                        eigenbasis_list=state["Q"],
+                        eigenbasis_list=state.get("Q", None),
                         dims=[[0], [1]],
                     )
                 torch.cuda.nvtx.range_pop()
