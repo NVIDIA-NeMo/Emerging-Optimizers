@@ -66,6 +66,10 @@ def kl_shampoo_update_ref(
 
 
 class SoapFunctionsTest(parameterized.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        torch.manual_seed(13)
+
     def test_init_preconditioner_multidim_tensor_shapes(self) -> None:
         """Tests init_preconditioner with a multi-dimensional tensor."""
         grad = torch.randn(3, 4, 5)
@@ -305,6 +309,10 @@ class SoapFunctionsTest(parameterized.TestCase):
 
 
 class SoapTest(parameterized.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        torch.manual_seed(15)
+
     def setUp(self):
         self.default_config = {
             "lr": 0.001,
@@ -348,6 +356,10 @@ class SoapTest(parameterized.TestCase):
 
 class SoapVsReferenceTest(parameterized.TestCase):
     """Tests that compare SOAP implementation against reference implementation."""
+
+    @classmethod
+    def setUpClass(cls):
+        torch.manual_seed(17)
 
     @parameterized.product(
         shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
@@ -481,5 +493,4 @@ class SoapVsReferenceTest(parameterized.TestCase):
 
 
 if __name__ == "__main__":
-    torch.manual_seed(17)
     absltest.main()
