@@ -47,14 +47,10 @@ config = {
     "eps": 1e-8,
     "precondition_1d": True,  # Enable preconditioning for bias vectors
     "precondition_frequency": 1,  # Update preconditioner every step for testing
-    "trace_normalization": True,
-    "shampoo_beta": 0.9,  # Slightly more aggressive moving average
     "fp32_matmul_prec": "high",
     "qr_fp32_matmul_prec": "high",
     "use_adaptive_criteria": False,
     "power_iter_steps": 1,
-    "use_nesterov": True,
-    "skip_preconditioning_steps": 0,
 }
 
 
@@ -106,15 +102,12 @@ def main() -> None:
     # Initialize optimizers
     optimizer_soap = SOAP(
         model_soap.parameters(),
-        lr=9.0 * config["lr"],
+        lr=2.05 * config["lr"],
         weight_decay=config["weight_decay"],
         betas=(config["adam_beta1"], config["adam_beta2"]),
         eps=config["eps"],
         precondition_frequency=config["precondition_frequency"],
-        trace_normalization=config["trace_normalization"],
-        shampoo_beta=config["shampoo_beta"],
         precondition_1d=config["precondition_1d"],
-        use_nesterov=config["use_nesterov"],
         fp32_matmul_prec=config["fp32_matmul_prec"],
         qr_fp32_matmul_prec=config["qr_fp32_matmul_prec"],
         use_adaptive_criteria=config["use_adaptive_criteria"],

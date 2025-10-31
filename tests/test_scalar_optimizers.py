@@ -43,15 +43,14 @@ class ScalarOptimizerTest(parameterized.TestCase):
         # Set up device based on flags
         self.device = FLAGS.device
 
-    def test_calculate_adam_update_simple(self) -> None:
-        exp_avg_initial = torch.tensor([[1.0]], device=self.device)
-        exp_avg_sq_initial = torch.tensor([[2.0]], device=self.device)
-        grad = torch.tensor([[0.5]], device=self.device)
-
-        # Move tensors to the test device
-        exp_avg_initial = exp_avg_initial.to(self.device)
-        exp_avg_sq_initial = exp_avg_sq_initial.to(self.device)
-        grad = grad.to(self.device)
+    @parameterized.parameters(
+        {"shape": (3, 3)},
+        {"shape": (15, 31)},
+    )
+    def test_calculate_adam_update_simple(self, shape) -> None:
+        exp_avg_initial = torch.full(shape, 1.0, device=self.device)
+        exp_avg_sq_initial = torch.full(shape, 2.0, device=self.device)
+        grad = torch.full(shape, 0.5, device=self.device)
 
         betas = (0.9, 0.99)
         eps = 1e-8
@@ -73,7 +72,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
             eps=eps,
         )
 
-        initial_param_val_tensor = torch.tensor([[10.0]]).to(self.device)
+        initial_param_val_tensor = torch.full(shape, 10.0, device=self.device)
         param = torch.nn.Parameter(initial_param_val_tensor.clone())
         param.grad = grad.clone()
 
@@ -105,8 +104,6 @@ class ScalarOptimizerTest(parameterized.TestCase):
         # With lr=lr, new_param = old_param - lr * manual_update_value
         expected_param_val_after_step = initial_param_val_tensor - lr * manual_update_value
         torch.testing.assert_close(param.data, expected_param_val_after_step, atol=1e-6, rtol=1e-6)
-
-        self.assertEqual(manual_update_value.shape, (1, 1))
 
     def test_calculate_laprop_update_with_zero_momentum_equals_rmsprop(self) -> None:
         # LaProp with momentum (beta1) = 0 should be equivalent to RMSProp.

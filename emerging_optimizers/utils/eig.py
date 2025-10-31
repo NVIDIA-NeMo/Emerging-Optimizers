@@ -72,7 +72,7 @@ def eigh_with_fallback(
 
     # Add small identity for numerical stability
     eye = torch.eye(
-        x.shape[-1],
+        x.shape[0],
         device=x.device,
         dtype=x.dtype,
     )
