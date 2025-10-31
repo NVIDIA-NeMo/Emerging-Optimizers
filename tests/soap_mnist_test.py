@@ -47,7 +47,6 @@ config = {
     "eps": 1e-8,
     "precondition_1d": True,  # Enable preconditioning for bias vectors
     "precondition_frequency": 1,  # Update preconditioner every step for testing
-    "trace_normalization": True,
     "shampoo_beta": 0.9,  # Slightly more aggressive moving average
     "fp32_matmul_prec": "high",
     "qr_fp32_matmul_prec": "high",
@@ -111,7 +110,6 @@ def main() -> None:
         betas=(config["adam_beta1"], config["adam_beta2"]),
         eps=config["eps"],
         precondition_frequency=config["precondition_frequency"],
-        trace_normalization=config["trace_normalization"],
         shampoo_beta=config["shampoo_beta"],
         precondition_1d=config["precondition_1d"],
         use_nesterov=config["use_nesterov"],
