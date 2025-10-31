@@ -102,7 +102,7 @@ def main() -> None:
     # Initialize optimizers
     optimizer_soap = SOAP(
         model_soap.parameters(),
-        lr=2.1 * config["lr"],
+        lr=2.05 * config["lr"],
         weight_decay=config["weight_decay"],
         betas=(config["adam_beta1"], config["adam_beta2"]),
         eps=config["eps"],
