@@ -198,12 +198,29 @@ def newton_schulz_tp(
     """
     if partition_dim is None:
         # Fallback path for non TP params.
+        # Handle 3D conv1d case
+        if x.dim() == 3:
+            original_3d_shape = x.shape
+            x = x.reshape(-1, x.size(-1))
+            output = newton_schulz(x, steps, coefficient_type)
+            return output.reshape(original_3d_shape)
         return newton_schulz(x, steps, coefficient_type)
 
     kwargs: Any = {
         "steps": steps,
         "coefficient_type": coefficient_type,
     }
+
+    if x.dim() == 3:
+        is_3d_conv1d = True
+    else:
+        is_3d_conv1d = False
+
+    original_3d_shape = None
+    if is_3d_conv1d:
+        # merge all input channels into the last dimension
+        original_3d_shape = x.shape
+        x = x.reshape(-1, x.size(-1))
 
     if mode == "duplicated":
         x_shards = [torch.empty_like(x) for _ in range(tp_group.size())]
@@ -222,6 +239,10 @@ def newton_schulz_tp(
         output = newton_schulz(x, **kwargs, transpose=transpose, tp_group=tp_group)
     else:
         raise ValueError(f"Invalid mode: {mode}")
+
+    if is_3d_conv1d:
+        # reshape back to the original 3D shape, separate orthogonalized channels
+        output = output.reshape(original_3d_shape)
 
     return output
 
