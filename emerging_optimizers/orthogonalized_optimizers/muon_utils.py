@@ -196,6 +196,10 @@ def newton_schulz_tp(
         tp_group: The process group for communication if input is distributed.
         mode: The mode to use for the Newton-Schulz iteration.
     """
+
+    # Placeholder for 3D conv1d case
+    original_3d_shape = None
+
     if partition_dim is None:
         # Fallback path for non TP params.
         # Handle 3D conv1d case
@@ -216,7 +220,6 @@ def newton_schulz_tp(
     else:
         is_3d_conv1d = False
 
-    original_3d_shape = None
     if is_3d_conv1d:
         # merge all input channels into the last dimension
         original_3d_shape = x.shape
