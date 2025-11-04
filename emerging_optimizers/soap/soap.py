@@ -170,6 +170,10 @@ class SOAP(optim.Optimizer):
                 curr_iter_1_based = state["step"] + 1
 
                 if state["step"] == 0:
+                    assert all(x not in state for x in ["exp_avg", "exp_avg_sq", "GG"]), (
+                        "exp_avg and exp_avg_sq and GG should not be initialized at step 0. "
+                        "Some mismatch has been created likely in checkpointing"
+                    )
                     # Exponential moving average of gradient values
                     state["exp_avg"] = torch.zeros_like(grad)
                     # Exponential moving average of squared gradient values
@@ -189,6 +193,10 @@ class SOAP(optim.Optimizer):
                     )
                 else:
                     if "Q" not in state:
+                        assert state["step"] == 0, (
+                            f"Q should already be initialized at step {state['step']}, Some mismatch has been created "
+                            "likely in checkpointing"
+                        )
                         state["Q"] = [torch.eye(shape, device=grad.device) for shape in grad.shape]
                     kronecker_factor_update_fn = partial(
                         update_kronecker_factors_kl_shampoo,
@@ -228,6 +236,12 @@ class SOAP(optim.Optimizer):
                         )
                 torch.cuda.nvtx.range_pop()
 
+                if group["weight_decay"] > 0.0:
+                    if self.use_decoupled_wd:
+                        p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
+                    else:
+                        grad += group["weight_decay"] * p
+
                 grad_projected = grad
                 # Project gradients to the eigenbases of Shampoo's preconditioner
                 torch.cuda.nvtx.range_push("precondition")
@@ -239,12 +253,6 @@ class SOAP(optim.Optimizer):
                             dims=[[0], [0]],
                         )
                 torch.cuda.nvtx.range_pop()
-
-                if group["weight_decay"] > 0.0:
-                    if self.use_decoupled_wd:
-                        p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
-                    else:
-                        grad += group["weight_decay"] * p
 
                 # Calculate the Adam update for the projected gradient tensor
                 adam_update = calculate_adam_update(
