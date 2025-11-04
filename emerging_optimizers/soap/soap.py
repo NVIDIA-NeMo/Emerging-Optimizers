@@ -169,8 +169,11 @@ class SOAP(optim.Optimizer):
                 # in the math equation that needs 1-based iteration count.
                 curr_iter_1_based = state["step"] + 1
 
+                # TODO(Mkhona): Improve initialization handling.
+                # - More protective checks can be added to avoid potential issues with checkpointing.
+                # - Initializing zero buffers can also be avoided.
                 if state["step"] == 0:
-                    assert all(x not in state for x in ["exp_avg", "exp_avg_sq", "GG"]), (
+                    assert all(key not in state for key in ["exp_avg", "exp_avg_sq", "GG"]), (
                         "exp_avg and exp_avg_sq and GG should not be initialized at step 0. "
                         "Some mismatch has been created likely in checkpointing"
                     )
