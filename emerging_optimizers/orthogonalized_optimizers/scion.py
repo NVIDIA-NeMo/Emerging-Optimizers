@@ -40,14 +40,14 @@ class Scion(OrthogonalizedOptimizer):
     Warning:
         - This optimizer requires that all parameters passed in are 2D.
         - It should not be used for the embedding layer, the final fully connected layer, or any 1-D
-          parameters; those should all be optimized by a standard method (e.g., AdamW).
+          parameters; those should all be optimized by the appropriate LMO for that layer. For example,
+          for 1d params, it is scaled by the `ell_inf` radius.
 
     Args:
         {_args_doc}
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration. Can be one of
             ["simple", "quintic", "polar_express"].
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
-        scale_mode: The type of scale factor to use for the update. Defaults to "spectral" style scaling.
         spectral_radius: The spectral radius to use for the update, we are scaling the LMO by this spectral radius.
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
     """
@@ -64,7 +64,6 @@ class Scion(OrthogonalizedOptimizer):
         fp32_matmul_prec: str = "medium",
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
-        scale_mode: str = "spectral",
         spectral_radius: float = 1.0,
         use_syrk: bool = False,
     ) -> None:
