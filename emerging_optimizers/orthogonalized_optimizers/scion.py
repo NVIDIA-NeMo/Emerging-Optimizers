@@ -58,9 +58,6 @@ class Scion(OrthogonalizedOptimizer):
         lr: float = 3e-4,
         momentum_beta: float = 0.95,
         use_nesterov: bool = False,
-        weight_decay: float = 1,
-        use_decoupled_wd: bool = True,
-        use_independent_wd: bool = False,
         fp32_matmul_prec: str = "medium",
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
@@ -85,19 +82,14 @@ class Scion(OrthogonalizedOptimizer):
                 use_syrk = False
 
         # Add checks for weight decay arguments to enable Franke-Wolfe step.
-        if weight_decay != 1:
-            logging.warning("Scion does not use weight decay. Setting weight_decay to 1.")
-            weight_decay = 1
+        logging.warning("Scion does not use weight decay. Setting weight_decay to 1.")
+        weight_decay = 1
 
-        if not use_decoupled_wd:
-            logging.warning("Scion does not use weight decay. Setting use_decoupled_wd to True to allow Franke-Wolfe.")
-            use_decoupled_wd = True
+        logging.warning("Scion does not use weight decay. Setting use_decoupled_wd to True to allow Franke-Wolfe.")
+        use_decoupled_wd = True
 
-        if use_independent_wd:
-            logging.warning(
-                "Scion does not use weight decay. Setting use_independent_wd to False to allow Franke-Wolfe."
-            )
-            use_independent_wd = False
+        logging.warning("Scion does not use weight decay. Setting use_independent_wd to False to allow Franke-Wolfe.")
+        use_independent_wd = False
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
@@ -117,7 +109,6 @@ class Scion(OrthogonalizedOptimizer):
             use_independent_wd,
             fp32_matmul_prec,
             scaled_orthogonalize_fn,
-            spectral_radius=spectral_radius,
         )
 
 
