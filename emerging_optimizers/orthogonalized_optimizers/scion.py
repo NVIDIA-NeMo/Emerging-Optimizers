@@ -23,7 +23,7 @@ from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer impo
 
 
 class Scion(OrthogonalizedOptimizer):
-    """Scion: Stochastic CondItional descent Orthogonalized by Newton-schulz
+    """Scion: Stochastic CondItional descent with Operator Norms
 
     Scion runs standard SGD-momentum and then performs an orthogonalization
     post-processing step, in which each 2D parameter's update is replaced with the nearest orthogonal
