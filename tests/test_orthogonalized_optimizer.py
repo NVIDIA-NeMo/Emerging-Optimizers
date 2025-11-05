@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.orthogonalized_optimizers import muon
+from emerging_optimizers.orthogonalized_optimizers import muon, scion
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
 
@@ -216,6 +216,20 @@ class MuonTest(parameterized.TestCase):
             atol=0,
             rtol=0,
         )
+
+
+class ScionTest(parameterized.TestCase):
+    @parameterized.parameters(
+        {"shape": (5, 7)},
+        {"shape": (33, 65)},
+        {"shape": (127, 257)},
+    )
+    def test_smoke(self, shape) -> None:
+        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
+        test_param.grad = torch.randint_like(test_param, -5, 5)
+
+        scion_opt = scion.Scion([test_param])
+        scion_opt.step()
 
 
 if __name__ == "__main__":
