@@ -19,7 +19,14 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schulz
-from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
+from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
+
+
+_args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
+        lr: The learning rate used by the internal SGD.
+        momentum_beta: The momentum used by the internal SGD.
+        spectral_radius: The spectral radius to use for the update, we are scaling the LMO by this spectral radius.
+"""
 
 
 class Scion(OrthogonalizedOptimizer):
