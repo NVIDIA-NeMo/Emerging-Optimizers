@@ -273,17 +273,17 @@ class SOAP(optim.Optimizer):
                 torch.cuda.nvtx.range_push("precondition")
                 if state["step"] >= self.adam_warmup_steps:
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                        norm_precond_update = precondition(
+                        precond_update = precondition(
                             grad=adam_update,
                             eigenbasis_list=state.get("Q", None),
                             dims=[[0], [1]],
                         )
                 else:
-                    norm_precond_update = adam_update
+                    precond_update = adam_update
                 torch.cuda.nvtx.range_pop()
 
-                _clip_update_rms_in_place(norm_precond_update, self.max_update_rms)
-                p.add_(norm_precond_update, alpha=-group["lr"])
+                _clip_update_rms_in_place(precond_update, self.max_update_rms)
+                p.add_(precond_update, alpha=-group["lr"])
 
                 state["step"] += 1
 
