@@ -18,6 +18,7 @@ from absl import logging
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import triton_kernels
+from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schulz
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
 
@@ -99,7 +100,7 @@ class Scion(OrthogonalizedOptimizer):
                 f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, spectral_radius={spectral_radius}"
             )
             orth_grad = newton_schulz(grad, steps=num_ns_steps, coefficient_type=coefficient_type, use_syrk=use_syrk)
-            width_factor = (grad.size(-2) / grad.size(-1)) ** 0.5
+            width_factor = get_muon_scale_factor(grad.size(-2), grad.size(-1), mode="unit_rms_norm")
             return orth_grad * width_factor * spectral_radius
 
         super().__init__(
