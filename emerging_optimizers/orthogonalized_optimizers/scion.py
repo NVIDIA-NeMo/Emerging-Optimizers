@@ -22,13 +22,6 @@ from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schu
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
 
-_args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
-        lr: The learning rate used by the internal SGD.
-        momentum_beta: The momentum used by the internal SGD.
-        spectral_radius: The spectral radius to use for the update, we are scaling the LMO by this spectral radius.
-"""
-
-
 class Scion(OrthogonalizedOptimizer):
     """Scion: Stochastic CondItional descent with Operator Norms
 
@@ -50,8 +43,12 @@ class Scion(OrthogonalizedOptimizer):
           parameters; those should all be optimized by the appropriate LMO for that layer. For example,
           for 1d params, it is scaled by the `ell_inf` radius.
 
+
     Args:
-        {_args_doc}
+        params: Iterable of parameters to optimize or dicts defining parameter groups
+        lr: The learning rate used by the internal SGD.
+        momentum_beta: The momentum used by the internal SGD.
+        fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration. Can be one of
             ["simple", "quintic", "polar_express"].
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
@@ -81,7 +78,6 @@ class Scion(OrthogonalizedOptimizer):
         logging.info("Scion does not use weight decay. Setting use_independent_wd to False to allow Franke-Wolfe.")
         use_independent_wd = False
 
-        # Scion does not use Nesterov momentum.
         logging.info("Scion does not use Nesterov momentum. Setting use_nesterov to False.")
         use_nesterov = False
 
@@ -104,6 +100,3 @@ class Scion(OrthogonalizedOptimizer):
             fp32_matmul_prec,
             scaled_orthogonalize_fn,
         )
-
-
-Scion.__doc__ = Scion.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
