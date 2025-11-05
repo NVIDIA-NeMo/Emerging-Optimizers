@@ -32,9 +32,9 @@ from emerging_optimizers import utils
 _args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate used by the internal SGD.
         momentum_beta: The momentum used by the internal SGD.
-        use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
+        use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
         use_decoupled_wd: Whether to use decoupled weight decay, default to be True.
         use_independent_wd: Whether to use independent weight decay (https://arxiv.org/abs/2510.19093),
             default to be False.
@@ -99,8 +99,9 @@ class OrthogonalizedOptimizer(optim.Optimizer):
         params: ParamsT,
         lr: float,
         momentum_beta: float,
-        use_nesterov: bool,
         weight_decay: float,
+        *,
+        use_nesterov: bool,
         use_decoupled_wd: bool,
         use_independent_wd: bool,
         fp32_matmul_prec: str,
