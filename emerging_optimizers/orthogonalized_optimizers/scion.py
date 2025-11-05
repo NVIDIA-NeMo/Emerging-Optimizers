@@ -17,7 +17,6 @@ import torch
 from absl import logging
 from torch.optim.optimizer import ParamsT
 
-from emerging_optimizers import triton_kernels
 from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schulz
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
@@ -50,7 +49,6 @@ class Scion(OrthogonalizedOptimizer):
             ["simple", "quintic", "polar_express"].
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
         spectral_radius: The spectral radius to use for the update, we are scaling the LMO by this spectral radius.
-        use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
     """
 
     def __init__(
@@ -62,24 +60,9 @@ class Scion(OrthogonalizedOptimizer):
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
         spectral_radius: float = 1.0,
-        use_syrk: bool = False,
     ) -> None:
         if num_ns_steps < 1:
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
-
-        if use_syrk:
-            if torch.cuda.is_available():
-                sm_version = torch.cuda.get_device_capability()
-            else:
-                sm_version = (0, 0)
-            if not triton_kernels.HAS_TRITON_340:  # type: ignore[attr-defined]
-                logging.error("Triton 3.4.0 or higher is required for use_syrk to be True.")
-                use_syrk = False
-            elif sm_version not in ((8, 0), (9, 0), (10, 0), (10, 3)):
-                logging.error(
-                    f"Correctness of Triton kernel on SM {sm_version} cannot be guaranteed. Setting use_syrk to False."
-                )
-                use_syrk = False
 
         # Add checks for weight decay arguments to enable Franke-Wolfe step.
         logging.warning("Scion does not use weight decay. Setting weight_decay to 1.")
@@ -99,7 +82,7 @@ class Scion(OrthogonalizedOptimizer):
             logging.debug(
                 f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, spectral_radius={spectral_radius}"
             )
-            orth_grad = newton_schulz(grad, steps=num_ns_steps, coefficient_type=coefficient_type, use_syrk=use_syrk)
+            orth_grad = newton_schulz(grad, steps=num_ns_steps, coefficient_type=coefficient_type, use_syrk=False)
             width_factor = get_muon_scale_factor(grad.size(-2), grad.size(-1), mode="unit_rms_norm")
             return orth_grad * width_factor * spectral_radius
 
