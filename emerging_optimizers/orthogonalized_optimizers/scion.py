@@ -30,7 +30,7 @@ class Scion(OrthogonalizedOptimizer):
     matrix. To efficiently orthogonalize each update, Newton-Schulz iteration is used, which has the
     advantage that it may be stably run on tensor cores on GPUs.
 
-    This implementation incorporates `step_size` and `spectral_radius` refer to Scion which views weight decay as constrained
+    This implementation incorporates `step_size` and `spectral_radius`, refer to Scion which views weight decay as constrained
     optimization via Frank-Wolfe.
 
     References:
@@ -57,7 +57,6 @@ class Scion(OrthogonalizedOptimizer):
         params: ParamsT,
         lr: float = 3e-4,
         momentum_beta: float = 0.95,
-        use_nesterov: bool = False,
         fp32_matmul_prec: str = "medium",
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
@@ -90,6 +89,10 @@ class Scion(OrthogonalizedOptimizer):
 
         logging.warning("Scion does not use weight decay. Setting use_independent_wd to False to allow Franke-Wolfe.")
         use_independent_wd = False
+
+        # Scion does not use Nesterov momentum.
+        logging.warning("Scion does not use Nesterov momentum. Setting use_nesterov to False.")
+        use_nesterov = False
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
