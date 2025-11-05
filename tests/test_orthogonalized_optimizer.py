@@ -22,6 +22,29 @@ from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer impo
 
 
 class OrthogonalizedOptimizerTest(parameterized.TestCase):
+    @parameterized.product(
+        use_independent_wd=[True, False],
+        use_decoupled_wd=[True, False],
+        shape=[(5, 7), (33, 65), (127, 257)],
+        use_nesterov=[True, False],
+        fp32_matmul_prec=["highest", "medium", "low"],
+    )
+    def test_smoke(self, use_independent_wd, use_decoupled_wd, shape, use_nesterov, fp32_matmul_prec) -> None:
+        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
+        test_param.grad = torch.randint_like(test_param, -5, 5)
+
+        orthogonalized_opt = OrthogonalizedOptimizer(
+            [test_param],
+            lr=2,
+            momentum_beta=0,
+            weight_decay=0.5,
+            use_nesterov=use_nesterov,
+            use_decoupled_wd=use_decoupled_wd,
+            use_independent_wd=use_independent_wd,
+            fp32_matmul_prec=fp32_matmul_prec,
+        )
+        orthogonalized_opt.step()
+
     @parameterized.parameters(
         {"shape": (5, 7)},
         {"shape": (33, 65)},
@@ -195,12 +218,13 @@ class MuonTest(parameterized.TestCase):
 
         # Test with independent weight decay: with lr=0, weight decay should still be applied
         # With lr=0, no gradient update occurs, so param should be exactly (1-wd)*param
-        indep_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
-        indep_param_initial = indep_param.data.clone()
-        indep_param.grad = torch.randint_like(indep_param, -5, 5)
+        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
+        test_param.grad = torch.randint_like(test_param, -5, 5)
+        # With independent weight decay and lr=0, param should be exactly (1-wd)*param
+        expected_param = (1 - weight_decay) * test_param.data
 
         muon_opt_indep = muon.Muon(
-            [indep_param],
+            [test_param],
             lr=0.0,  # Zero learning rate
             weight_decay=weight_decay,
             use_independent_wd=True,
@@ -208,10 +232,8 @@ class MuonTest(parameterized.TestCase):
         )
         muon_opt_indep.step()
 
-        # With independent weight decay and lr=0, param should be exactly (1-wd)*param
-        expected_param = (1 - weight_decay) * indep_param_initial
         torch.testing.assert_close(
-            indep_param.data,
+            test_param,
             expected_param,
             atol=0,
             rtol=0,
