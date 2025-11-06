@@ -70,9 +70,11 @@ class Scion(OrthogonalizedOptimizer):
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
 
         # Add checks for weight decay arguments to enable Franke-Wolfe step.
-        logging.info("Scion does not use weight decay. Setting weight_decay to 1 and weight_decay_method to l2.")
+        logging.info(
+            "Scion does not use weight decay. Setting weight_decay to 1 and weight_decay_method to decoupled."
+        )
         weight_decay = 1
-        weight_decay_method = "l2"
+        weight_decay_method = "decoupled"
 
         logging.info("Scion does not use Nesterov momentum. Setting use_nesterov to False.")
         use_nesterov = False
