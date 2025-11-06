@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from emerging_optimizers import mixin
 from emerging_optimizers.package_info import (
     __contact_emails__,
     __contact_names__,
