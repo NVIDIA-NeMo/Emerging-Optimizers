@@ -19,9 +19,8 @@ import torch
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
+from emerging_optimizers.psgd import psgd_kron_contractions, psgd_utils
 from emerging_optimizers.psgd.procrustes_step import procrustes_step
-from emerging_optimizers.psgd.psgd_kron_contractions import apply_preconditioner, partial_contraction
-from emerging_optimizers.psgd.psgd_utils import norm_lower_bound_spd, uniformize_q_in_place
 from emerging_optimizers.soap.soap import _clip_update_rms_in_place
 
 
@@ -141,10 +140,10 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
                 state["Q"], state["L"] = _update_precond_procrustes(
                     state["Q"], state["L"], exp_avg, self.damping_noise_scale, precond_lr, beta_lip
                 )
-                uniformize_q_in_place(state["Q"])
+                psgd_utils.uniformize_q_in_place(state["Q"])
 
                 # Get weight update by preconditioning the momentum
-                update = apply_preconditioner(state["Q"], exp_avg)
+                update = psgd_kron_contractions.apply_preconditioner(state["Q"], exp_avg)
                 _clip_update_rms_in_place(update, self.max_update_rms)
 
                 # Apply weight update
@@ -201,13 +200,13 @@ def _update_precond_procrustes(
         lip_const_list: List of Lipschitz constants for the Kronecker factors.
     """
     dampened_momentum = exp_avg + (damping_noise_scale + 1e-7 * exp_avg.abs()) * torch.randn_like(exp_avg)
-    pg = apply_preconditioner(q_list, dampened_momentum)
+    pg = psgd_kron_contractions.apply_preconditioner(q_list, dampened_momentum)
     total_numel = pg.numel()
     updated_q_list: List[torch.Tensor] = []
     updated_lip_const_list: List[torch.Tensor] = []
     for dim, q in enumerate(q_list):
         # compute gradient covariance
-        precond_grad_cov = partial_contraction(pg, pg, dim)
+        precond_grad_cov = psgd_kron_contractions.partial_contraction(pg, pg, dim)
         if q.dim() < 2:
             # diagonal or scalar-structured preconditioner
             q, updated_lip_const = _update_1d_preconditioner(
@@ -247,7 +246,7 @@ def _update_matrix_preconditioner(
         lip_const: Updated Lipschitz constant for this dimension.
     """
     normalization = total_numel / q.shape[0]
-    ell = norm_lower_bound_spd(precond_grad_cov) + normalization
+    ell = psgd_utils.norm_lower_bound_spd(precond_grad_cov) + normalization
     lip_const = torch.max(beta_lip * lip_const + (1 - beta_lip) * ell, ell)
     q = q - precond_lr / lip_const * (precond_grad_cov @ q - normalization * q)
     q = procrustes_step(q)
