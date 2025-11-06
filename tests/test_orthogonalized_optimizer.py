@@ -30,6 +30,8 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         fp32_matmul_prec=["highest", "medium", "low"],
     )
     def test_smoke(self, use_independent_wd, use_decoupled_wd, shape, use_nesterov, fp32_matmul_prec) -> None:
+        if use_independent_wd and use_decoupled_wd:
+            self.skipTest("Skipping wrong combination of arguments")
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
@@ -227,6 +229,7 @@ class MuonTest(parameterized.TestCase):
             [test_param],
             lr=0.0,  # Zero learning rate
             weight_decay=weight_decay,
+            use_decoupled_wd=False,
             use_independent_wd=True,
             momentum_beta=0.0,
         )

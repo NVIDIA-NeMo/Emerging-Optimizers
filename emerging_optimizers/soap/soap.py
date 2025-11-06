@@ -24,16 +24,13 @@ except ImportError:
     from typing_extensions import override
 
 import torch
-import torch.optim as optim
 from absl import logging
+from torch import optim
 from torch.optim.optimizer import ParamsT
 
-from emerging_optimizers import utils
-from emerging_optimizers.scalar_optimizers import calculate_adam_update
-from emerging_optimizers.soap.soap_utils import (
-    get_eigenbasis_eigh,
-    get_eigenbasis_qr,
-)
+from emerging_optimizers import mixin as opt_mixin
+from emerging_optimizers import scalar_optimizers, utils
+from emerging_optimizers.soap import soap_utils
 
 
 __all__ = [
@@ -45,7 +42,7 @@ __all__ = [
 ]
 
 
-class SOAP(optim.Optimizer):
+class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
     """Implements a variant of SOAP (ShampoO with Adam in the Preconditioner eigenbasis) algorithm.
 
     SOAP (https://arxiv.org/abs/2409.11321) is a preconditioned optimizer that combines the benefits of Shampoo's
@@ -94,6 +91,7 @@ class SOAP(optim.Optimizer):
         eps: float = 1e-8,
         weight_decay: float = 0.01,
         use_decoupled_wd: bool = True,
+        use_independent_wd: bool = False,
         use_nesterov: bool = False,
         precondition_frequency: Union[int, Callable[[int], int]] = 1,
         adam_warmup_steps: int = 0,
@@ -115,6 +113,7 @@ class SOAP(optim.Optimizer):
         self.use_nesterov = use_nesterov
         self.correct_bias = correct_bias
         self.use_decoupled_wd = use_decoupled_wd
+        self.use_independent_wd = use_independent_wd
         self.fp32_matmul_prec = fp32_matmul_prec
         self.use_eigh = use_eigh
         self.qr_fp32_matmul_prec = qr_fp32_matmul_prec
@@ -239,11 +238,14 @@ class SOAP(optim.Optimizer):
                         )
                 torch.cuda.nvtx.range_pop()
 
-                if group["weight_decay"] > 0.0:
-                    if self.use_decoupled_wd:
-                        p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
-                    else:
-                        grad += group["weight_decay"] * p
+                self._apply_weight_decay_inplace(
+                    p,
+                    grad,
+                    group["lr"],
+                    group["weight_decay"],
+                    self.use_decoupled_wd,
+                    self.use_independent_wd,
+                )
 
                 grad_projected = grad
                 # Project gradients to the eigenbases of Shampoo's preconditioner
@@ -258,7 +260,7 @@ class SOAP(optim.Optimizer):
                 torch.cuda.nvtx.range_pop()
 
                 # Calculate the Adam update for the projected gradient tensor
-                adam_update = calculate_adam_update(
+                adam_update = scalar_optimizers.calculate_adam_update(
                     grad_projected,
                     state["exp_avg"],
                     state["exp_avg_sq"],
@@ -523,7 +525,7 @@ def update_eigenbasis_and_momentum(
     # Step 2: Update eigenbases
     torch.cuda.nvtx.range_push("eigenbasis update step 2: update Q")
     if use_eigh:
-        updated_eigenbasis_list = get_eigenbasis_eigh(
+        updated_eigenbasis_list = soap_utils.get_eigenbasis_eigh(
             kronecker_factor_list,
             convert_to_float,
             eigenbasis_list,
@@ -532,7 +534,7 @@ def update_eigenbasis_and_momentum(
         )
     else:
         # Use QR decomposition and power iteration (orthogonal iteration)
-        updated_eigenbasis_list, exp_avg_sq = get_eigenbasis_qr(
+        updated_eigenbasis_list, exp_avg_sq = soap_utils.get_eigenbasis_qr(
             kronecker_factor_list,
             eigenbasis_list,
             exp_avg_sq,

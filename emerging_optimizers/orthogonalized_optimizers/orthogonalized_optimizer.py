@@ -26,6 +26,7 @@ import torch.optim as optim
 from absl import logging
 from torch.optim.optimizer import ParamsT
 
+from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import utils
 
 
@@ -42,7 +43,7 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
 """
 
 
-class OrthogonalizedOptimizer(optim.Optimizer):
+class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
     """Base class for orthogonalized optimizers.
 
     This class is a wrapper around a base optimizer that performs orthogonalization on the updates.
@@ -156,19 +157,15 @@ class OrthogonalizedOptimizer(optim.Optimizer):
                 # Subsequent update to exp_avg are all inplace, so it is not assigned back to state.
                 exp_avg = state["momentum_buffer"]
 
-                # Apply weight decay
-                if group["weight_decay"] > 0.0:
-                    if self.use_decoupled_wd:
-                        # Apply weight decay directly to params without changing gradients
-                        if self.use_independent_wd:
-                            # do not tie weight decay and learning rate
-                            weight_decay_scale = group["weight_decay"]
-                        else:
-                            weight_decay_scale = group["weight_decay"] * group["lr"]
-                        p.add_(p, alpha=(-weight_decay_scale))
-                    else:
-                        # add l2 regularization before preconditioning (i.e. adding a squared loss term)
-                        grad += group["weight_decay"] * p
+                # Depends on the weight decay option, p or grad will be updated in place
+                self._apply_weight_decay_inplace(
+                    p,
+                    grad,
+                    group["lr"],
+                    group["weight_decay"],
+                    self.use_decoupled_wd,
+                    self.use_independent_wd,
+                )
 
                 # update momentum buffer with EMA of gradient
                 exp_avg.lerp_(grad, 1 - group["momentum_beta"])
