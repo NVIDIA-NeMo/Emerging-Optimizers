@@ -203,15 +203,18 @@ def tsyrk_ex(
     Returns:
         Output tensor of shape (N, N)
     """
-    assert a.dtype == torch.bfloat16, "Input tensor must be bfloat16"
-    assert a.dim() == 2, "Input tensor must be 2D"
-    assert a.is_contiguous() or a.T.is_contiguous(), "invalid input tensor layout. a or a.T must be contiguous."
+    if a.dtype != torch.bfloat16:
+        raise TypeError("Input tensor must be bfloat16")
+    if a.dim() != 2:
+        raise TypeError("Input tensor must be 2D")
+    if not (a.is_contiguous() or a.T.is_contiguous()):
+        raise TypeError("invalid input tensor layout. a or a.T must be contiguous.")
 
     N, K = a.shape
-    assert (c is None and beta == 0.0) or (c is not None and c.shape == (N, N)), (
-        "if c is provided, c must be of shape (N, N)"
-    )
-    assert c is None or c.is_contiguous() or c.T.is_contiguous(), "if c is provided, c or c.T must be contiguous"
+    if not ((c is None and beta == 0.0) or (c is not None and c.shape == (N, N))):
+        raise RuntimeError("if c is provided, c must be of shape (N, N)")
+    if not (c is None or c.is_contiguous() or c.T.is_contiguous()):
+        raise RuntimeError("if c is provided, c or c.T must be contiguous")
 
     d = torch.empty((N, N), device=a.device, dtype=a.dtype)
 

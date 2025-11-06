@@ -433,7 +433,8 @@ def update_kronecker_factors_kl_shampoo(
         eps: Small offset for numerical stability.
         eigenval_exp: Exponent of the eigenvalues.
     """
-    assert grad.dim() == 2, "KL-Shampoo mathematical correction is only supported for 2D tensors"
+    if grad.dim() != 2:
+        raise TypeError("KL-Shampoo mathematical correction is only supported for 2D tensors")
 
     # Scale the gradient matrix by the approximate eigenvalues and the eigenbasis
     # G@Q_R@λ_R^(−1)@Q_R.T@G.T/dim(GG.T) and G.T@Q_L@λ_L^(−1)@Q_L.T@G/dim(G.TG)
