@@ -43,10 +43,8 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
         params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate to use
         weight_decay: Weight decay coefficient
-        use_decoupled_wd: Whether to use decoupled weight decay, see Decoupled Weight Decay Regularization:
-            https://arxiv.org/abs/1711.05101.
-        use_independent_wd: Whether to use independent weight decay (https://arxiv.org/abs/2510.19093),
-            default to be False.
+        weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
+            for more details.
         momentum: Momentum coefficient for exponential moving average of gradient.
         beta_lip: EMA beta for the Lipschitz constants.
         precond_lr: Inner learning rate for the preconditioner.
@@ -64,7 +62,7 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
         weight_decay: float = 0.01,
         momentum: float = 0.9,
         *,
-        use_decoupled_wd: bool = True,
+        weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         use_independent_wd: bool = False,
         beta_lip: float = 0.9,
         precond_lr: float = 0.1,
@@ -74,8 +72,7 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
         warmup_steps: int = 10000,
         max_update_rms: float = 0.0,
     ) -> None:
-        self.use_decoupled_wd = use_decoupled_wd
-        self.use_independent_wd = use_independent_wd
+        self.weight_decay_method = weight_decay_method
         self.max_update_rms = max_update_rms
         self.precond_init_scale = precond_init_scale
         self.damping_noise_scale = damping_noise_scale
@@ -128,8 +125,6 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
                     grad,
                     group["lr"],
                     group["weight_decay"],
-                    self.use_decoupled_wd,
-                    self.use_independent_wd,
                 )
 
                 # update momentum buffer with EMA of gradient

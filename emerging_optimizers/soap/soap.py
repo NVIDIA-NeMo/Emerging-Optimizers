@@ -58,10 +58,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             instead of betas[1] if >= 0
         eps: Inner Adam's epsilon for numerical stability
         weight_decay: Weight decay coefficient
-        use_decoupled_wd: Whether to use decoupled weight decay, see Decoupled Weight Decay Regularization:
-            https://arxiv.org/abs/1711.05101.
-        use_independent_wd: Whether to use independent weight decay (https://arxiv.org/abs/2510.19093),
-            default to be False.
+        weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
+            for more details.
         use_nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf,
             https://openreview.net/forum?id=OM0jvwB8jIp57ZJjtNEZ)
         precondition_frequency: How often to update the preconditioner. Can be an integer for fixed frequency
@@ -93,8 +91,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         eps: float = 1e-8,
         weight_decay: float = 0.01,
         *,
-        use_decoupled_wd: bool = True,
-        use_independent_wd: bool = False,
+        weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         use_nesterov: bool = False,
         precondition_frequency: Union[int, Callable[[int], int]] = 1,
         adam_warmup_steps: int = 0,
@@ -115,8 +112,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self.precondition_1d = precondition_1d
         self.use_nesterov = use_nesterov
         self.correct_bias = correct_bias
-        self.use_decoupled_wd = use_decoupled_wd
-        self.use_independent_wd = use_independent_wd
+        self.weight_decay_method = weight_decay_method
         self.fp32_matmul_prec = fp32_matmul_prec
         self.use_eigh = use_eigh
         self.qr_fp32_matmul_prec = qr_fp32_matmul_prec
@@ -246,8 +242,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     grad,
                     group["lr"],
                     group["weight_decay"],
-                    self.use_decoupled_wd,
-                    self.use_independent_wd,
                 )
 
                 grad_projected = grad

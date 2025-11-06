@@ -392,7 +392,6 @@ class SoapVsReferenceTest(parameterized.TestCase):
         test_optimizer = soap.SOAP(
             [param_test],
             **common_kwargs,
-            use_decoupled_wd=True,
             adam_warmup_steps=0,
             fp32_matmul_prec="highest",
             qr_fp32_matmul_prec="highest",
@@ -448,7 +447,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
         test_optimizer = soap.SOAP(
             [param_soap],
             **common_kwargs,
-            use_decoupled_wd=False,
+            weight_decay_method="l2",
             adam_warmup_steps=0,
             fp32_matmul_prec="highest",
             qr_fp32_matmul_prec="highest",

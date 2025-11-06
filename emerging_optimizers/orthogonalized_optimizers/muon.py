@@ -18,6 +18,7 @@ from absl import logging
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import triton_kernels
+from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schulz
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
 
@@ -67,8 +68,7 @@ class Muon(OrthogonalizedOptimizer):
         weight_decay: float = 0.01,
         *,
         use_nesterov: bool = False,
-        use_decoupled_wd: bool = True,
-        use_independent_wd: bool = False,
+        weight_decay_method: WeightDecayT = "decoupled",
         fp32_matmul_prec: str = "medium",
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
@@ -108,8 +108,7 @@ class Muon(OrthogonalizedOptimizer):
             momentum_beta,
             use_nesterov=use_nesterov,
             weight_decay=weight_decay,
-            use_decoupled_wd=use_decoupled_wd,
-            use_independent_wd=use_independent_wd,
+            weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
             scaled_orthogonalize_fn=scaled_orthogonalize_fn,
         )

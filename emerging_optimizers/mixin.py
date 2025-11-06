@@ -13,16 +13,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Literal
+
 import torch
+
+
+WeightDecayT = Literal["decoupled", "independent", "l2"]
 
 
 class WeightDecayMixin:
     """Mixin for weight decay
 
     Supports different types of weight decay:
-    - Decoupled weight decay: weight decay is applied directly to params without changing gradients
-    - Independent weight decay: similar as decoupled weight decay, but without tying weight decay and learning rate
-    - Classic weight decay: L2 regularization
+    - "decoupled": weight decay is applied directly to params without changing gradients
+    - "independent": similar as decoupled weight decay, but without tying weight decay and learning rate
+    - "l2": classic L2 regularization
     """
 
     def _apply_weight_decay_inplace(
@@ -31,19 +36,17 @@ class WeightDecayMixin:
         grad: torch.Tensor,
         lr: float,
         weight_decay: float,
-        use_decoupled_wd: bool,
-        use_independent_wd: bool,
     ) -> None:
         """Depends on the weight decay option, p or grad will be updated in place"""
-        assert not (use_decoupled_wd and use_independent_wd), (
-            "use_decoupled_wd and use_independent_wd cannot be True at the same time"
-        )
         if weight_decay == 0.0:
             return
 
-        if use_decoupled_wd:
+        weight_decay_method = getattr(self, "weight_decay_method", "l2")
+        if weight_decay_method == "decoupled":
             p.add_(p, alpha=(-weight_decay * lr))
-        elif use_independent_wd:
+        elif weight_decay_method == "independent":
             p.add_(p, alpha=-weight_decay)
-        else:
+        elif weight_decay_method == "l2":
             grad.add_(p, alpha=weight_decay)
+        else:
+            raise ValueError(f"Invalid weight decay method: {weight_decay_method}")

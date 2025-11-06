@@ -36,9 +36,8 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
         use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
-        use_decoupled_wd: Whether to use decoupled weight decay, default to be True.
-        use_independent_wd: Whether to use independent weight decay (https://arxiv.org/abs/2510.19093),
-            default to be False.
+        weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
+            for more details.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
 """
 
@@ -103,8 +102,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay: float,
         *,
         use_nesterov: bool,
-        use_decoupled_wd: bool,
-        use_independent_wd: bool,
+        weight_decay_method: opt_mixin.WeightDecayT,
         fp32_matmul_prec: str,
         scaled_orthogonalize_fn: Callable | None = None,
         **kwargs: Any,
@@ -115,8 +113,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         self.fp32_matmul_prec = fp32_matmul_prec
         self.use_nesterov = use_nesterov
-        self.use_decoupled_wd = use_decoupled_wd
-        self.use_independent_wd = use_independent_wd
+        self.weight_decay_method = weight_decay_method
 
         default_args_dict = dict(
             lr=lr,
@@ -162,8 +159,6 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     grad,
                     group["lr"],
                     group["weight_decay"],
-                    self.use_decoupled_wd,
-                    self.use_independent_wd,
                 )
 
                 # update momentum buffer with EMA of gradient
