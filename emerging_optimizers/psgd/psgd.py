@@ -62,7 +62,6 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
         momentum: float = 0.9,
         *,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
-        use_independent_wd: bool = False,
         beta_lip: float = 0.9,
         precond_lr: float = 0.1,
         precond_init_scale: float = 1.0,
