@@ -60,6 +60,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay: Weight decay coefficient
         use_decoupled_wd: Whether to use decoupled weight decay, see Decoupled Weight Decay Regularization:
             https://arxiv.org/abs/1711.05101.
+        use_independent_wd: Whether to use independent weight decay (https://arxiv.org/abs/2510.19093),
+            default to be False.
         use_nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf,
             https://openreview.net/forum?id=OM0jvwB8jIp57ZJjtNEZ)
         precondition_frequency: How often to update the preconditioner. Can be an integer for fixed frequency
@@ -90,6 +92,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         shampoo_beta: float = 0.95,
         eps: float = 1e-8,
         weight_decay: float = 0.01,
+        *,
         use_decoupled_wd: bool = True,
         use_independent_wd: bool = False,
         use_nesterov: bool = False,

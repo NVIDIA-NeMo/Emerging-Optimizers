@@ -157,7 +157,6 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # Subsequent update to exp_avg are all inplace, so it is not assigned back to state.
                 exp_avg = state["momentum_buffer"]
 
-                # Depends on the weight decay option, p or grad will be updated in place
                 self._apply_weight_decay_inplace(
                     p,
                     grad,

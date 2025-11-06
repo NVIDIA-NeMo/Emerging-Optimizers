@@ -18,6 +18,7 @@ from typing import Callable, List, Tuple, override
 import torch
 from torch.optim.optimizer import ParamsT
 
+from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers.psgd.procrustes_step import procrustes_step
 from emerging_optimizers.psgd.psgd_kron_contractions import apply_preconditioner, partial_contraction
 from emerging_optimizers.psgd.psgd_utils import norm_lower_bound_spd, uniformize_q_in_place
@@ -29,7 +30,7 @@ __all__ = [
 ]
 
 
-class PSGDPro(torch.optim.Optimizer):
+class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
     """Implements a variant of the PSGD optimization algorithm (PSGD-Kron-Whiten with Procrustes step for preconditioner update).
 
     Preconditioned Stochastic Gradient Descent (PSGD) (https://arxiv.org/abs/1512.04202) is a preconditioned optimization algorithm
@@ -44,6 +45,8 @@ class PSGDPro(torch.optim.Optimizer):
         weight_decay: Weight decay coefficient
         use_decoupled_wd: Whether to use decoupled weight decay, see Decoupled Weight Decay Regularization:
             https://arxiv.org/abs/1711.05101.
+        use_independent_wd: Whether to use independent weight decay (https://arxiv.org/abs/2510.19093),
+            default to be False.
         momentum: Momentum coefficient for exponential moving average of gradient.
         beta_lip: EMA beta for the Lipschitz constants.
         precond_lr: Inner learning rate for the preconditioner.
@@ -62,6 +65,7 @@ class PSGDPro(torch.optim.Optimizer):
         momentum: float = 0.9,
         *,
         use_decoupled_wd: bool = True,
+        use_independent_wd: bool = False,
         beta_lip: float = 0.9,
         precond_lr: float = 0.1,
         precond_init_scale: float = 1.0,
@@ -71,6 +75,7 @@ class PSGDPro(torch.optim.Optimizer):
         max_update_rms: float = 0.0,
     ) -> None:
         self.use_decoupled_wd = use_decoupled_wd
+        self.use_independent_wd = use_independent_wd
         self.max_update_rms = max_update_rms
         self.precond_init_scale = precond_init_scale
         self.damping_noise_scale = damping_noise_scale
@@ -118,14 +123,14 @@ class PSGDPro(torch.optim.Optimizer):
                         precond_init_scale=self.precond_init_scale,
                     )
 
-                # weight decay
-                if group["weight_decay"] > 0.0:
-                    if self.use_decoupled_wd:
-                        # Apply decoupled weight decay
-                        p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
-                    else:
-                        # add l2 regularization before preconditioning (i.e. adding a squared loss term)
-                        grad += group["weight_decay"] * p
+                self._apply_weight_decay_inplace(
+                    p,
+                    grad,
+                    group["lr"],
+                    group["weight_decay"],
+                    self.use_decoupled_wd,
+                    self.use_independent_wd,
+                )
 
                 # update momentum buffer with EMA of gradient
                 exp_avg = state["exp_avg"]
