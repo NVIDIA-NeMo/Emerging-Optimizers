@@ -172,12 +172,12 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
 
 
 class MuonTest(parameterized.TestCase):
-    @parameterized.parameters(
-        {"shape": (5, 7)},
-        {"shape": (33, 65)},
-        {"shape": (127, 257)},
+    @parameterized.product(
+        shape=[(5, 7), (33, 65), (127, 257)],
+        weight_decay_method=["decoupled", "independent", "l2"],
+        use_nesterov=[True, False],
     )
-    def test_smoke(self, shape) -> None:
+    def test_smoke(self, shape, weight_decay_method, use_nesterov) -> None:
         """Smoke test Muon optimizer.
         Most functionality of muon is tested in muon_utils. This test only entures everything run through
         the optimizer class.
@@ -185,7 +185,7 @@ class MuonTest(parameterized.TestCase):
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
-        muon_opt = muon.Muon([test_param])
+        muon_opt = muon.Muon([test_param], weight_decay_method=weight_decay_method, use_nesterov=use_nesterov)
         muon_opt.step()
 
     def test_use_syrk_match_without_syrk(self) -> None:
