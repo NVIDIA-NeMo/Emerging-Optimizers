@@ -24,16 +24,13 @@ except ImportError:
     from typing_extensions import override
 
 import torch
-import torch.optim as optim
 from absl import logging
+from torch import optim
 from torch.optim.optimizer import ParamsT
 
-from emerging_optimizers import utils
-from emerging_optimizers.scalar_optimizers import calculate_adam_update
-from emerging_optimizers.soap.soap_utils import (
-    get_eigenbasis_eigh,
-    get_eigenbasis_qr,
-)
+from emerging_optimizers import mixin as opt_mixin
+from emerging_optimizers import scalar_optimizers, utils
+from emerging_optimizers.soap import soap_utils
 
 
 __all__ = [
@@ -45,7 +42,7 @@ __all__ = [
 ]
 
 
-class SOAP(optim.Optimizer):
+class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
     """Implements a variant of SOAP (ShampoO with Adam in the Preconditioner eigenbasis) algorithm.
 
     SOAP (https://arxiv.org/abs/2409.11321) is a preconditioned optimizer that combines the benefits of Shampoo's
@@ -61,8 +58,8 @@ class SOAP(optim.Optimizer):
             instead of betas[1] if >= 0
         eps: Inner Adam's epsilon for numerical stability
         weight_decay: Weight decay coefficient
-        use_decoupled_wd: Whether to use decoupled weight decay, see Decoupled Weight Decay Regularization:
-            https://arxiv.org/abs/1711.05101.
+        weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
+            for more details.
         use_nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf,
             https://openreview.net/forum?id=OM0jvwB8jIp57ZJjtNEZ)
         precondition_frequency: How often to update the preconditioner. Can be an integer for fixed frequency
@@ -93,7 +90,8 @@ class SOAP(optim.Optimizer):
         shampoo_beta: float = 0.95,
         eps: float = 1e-8,
         weight_decay: float = 0.01,
-        use_decoupled_wd: bool = True,
+        *,
+        weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         use_nesterov: bool = False,
         precondition_frequency: Union[int, Callable[[int], int]] = 1,
         adam_warmup_steps: int = 0,
@@ -114,7 +112,7 @@ class SOAP(optim.Optimizer):
         self.precondition_1d = precondition_1d
         self.use_nesterov = use_nesterov
         self.correct_bias = correct_bias
-        self.use_decoupled_wd = use_decoupled_wd
+        self.weight_decay_method = weight_decay_method
         self.fp32_matmul_prec = fp32_matmul_prec
         self.use_eigh = use_eigh
         self.qr_fp32_matmul_prec = qr_fp32_matmul_prec
@@ -239,11 +237,12 @@ class SOAP(optim.Optimizer):
                         )
                 torch.cuda.nvtx.range_pop()
 
-                if group["weight_decay"] > 0.0:
-                    if self.use_decoupled_wd:
-                        p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
-                    else:
-                        grad += group["weight_decay"] * p
+                self._apply_weight_decay_inplace(
+                    p,
+                    grad,
+                    group["lr"],
+                    group["weight_decay"],
+                )
 
                 grad_projected = grad
                 # Project gradients to the eigenbases of Shampoo's preconditioner
@@ -258,7 +257,7 @@ class SOAP(optim.Optimizer):
                 torch.cuda.nvtx.range_pop()
 
                 # Calculate the Adam update for the projected gradient tensor
-                adam_update = calculate_adam_update(
+                adam_update = scalar_optimizers.calculate_adam_update(
                     grad_projected,
                     state["exp_avg"],
                     state["exp_avg_sq"],
@@ -434,7 +433,8 @@ def update_kronecker_factors_kl_shampoo(
         eps: Small offset for numerical stability.
         eigenval_exp: Exponent of the eigenvalues.
     """
-    assert grad.dim() == 2, "KL-Shampoo mathematical correction is only supported for 2D tensors"
+    if grad.dim() != 2:
+        raise TypeError("KL-Shampoo mathematical correction is only supported for 2D tensors")
 
     # Scale the gradient matrix by the approximate eigenvalues and the eigenbasis
     # G@Q_R@λ_R^(−1)@Q_R.T@G.T/dim(GG.T) and G.T@Q_L@λ_L^(−1)@Q_L.T@G/dim(G.TG)
@@ -523,7 +523,7 @@ def update_eigenbasis_and_momentum(
     # Step 2: Update eigenbases
     torch.cuda.nvtx.range_push("eigenbasis update step 2: update Q")
     if use_eigh:
-        updated_eigenbasis_list = get_eigenbasis_eigh(
+        updated_eigenbasis_list = soap_utils.get_eigenbasis_eigh(
             kronecker_factor_list,
             convert_to_float,
             eigenbasis_list,
@@ -532,7 +532,7 @@ def update_eigenbasis_and_momentum(
         )
     else:
         # Use QR decomposition and power iteration (orthogonal iteration)
-        updated_eigenbasis_list, exp_avg_sq = get_eigenbasis_qr(
+        updated_eigenbasis_list, exp_avg_sq = soap_utils.get_eigenbasis_qr(
             kronecker_factor_list,
             eigenbasis_list,
             exp_avg_sq,

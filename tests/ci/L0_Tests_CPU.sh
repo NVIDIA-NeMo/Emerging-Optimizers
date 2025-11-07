@@ -14,9 +14,9 @@
 export TORCH_COMPILE_DISABLE=1
 
 error=0
-torchrun --nproc_per_node=8 --no-python coverage run -p tests/test_distributed_muon_utils_cpu.py || error=1
-torchrun --nproc_per_node=4 --no-python coverage run -p tests/test_distributed_muon_utils_cpu.py || error=1
-coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=cpu || error=1
-coverage run -p --source=emerging_optimizers tests/test_procrustes_step.py --device=cpu || error=1
+torchrun --nproc_per_node=8 --no-python coverage run -p tests/test_distributed_muon_utils_cpu.py  -v -2  || error=1
+torchrun --nproc_per_node=4 --no-python coverage run -p tests/test_distributed_muon_utils_cpu.py  -v -2 || error=1
+coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=cpu  -v -2 || error=1
+coverage run -p --source=emerging_optimizers tests/test_procrustes_step.py --device=cpu  -v -2 || error=1
 
 exit "${error}"

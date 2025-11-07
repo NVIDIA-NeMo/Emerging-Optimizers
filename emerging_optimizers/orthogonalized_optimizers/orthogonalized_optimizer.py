@@ -26,23 +26,23 @@ import torch.optim as optim
 from absl import logging
 from torch.optim.optimizer import ParamsT
 
+from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import utils
 
 
 _args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate used by the internal SGD.
         momentum_beta: The momentum used by the internal SGD.
-        use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
-        use_decoupled_wd: Whether to use decoupled weight decay, default to be True.
-        use_independent_wd: Whether to use independent weight decay (https://arxiv.org/abs/2510.19093),
-            default to be False.
+        use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
+        weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
+            for more details.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
 """
 
 
-class OrthogonalizedOptimizer(optim.Optimizer):
+class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
     """Base class for orthogonalized optimizers.
 
     This class is a wrapper around a base optimizer that performs orthogonalization on the updates.
@@ -99,10 +99,10 @@ class OrthogonalizedOptimizer(optim.Optimizer):
         params: ParamsT,
         lr: float,
         momentum_beta: float,
-        use_nesterov: bool,
         weight_decay: float,
-        use_decoupled_wd: bool,
-        use_independent_wd: bool,
+        *,
+        use_nesterov: bool,
+        weight_decay_method: opt_mixin.WeightDecayT,
         fp32_matmul_prec: str,
         scaled_orthogonalize_fn: Callable | None = None,
         **kwargs: Any,
@@ -113,8 +113,7 @@ class OrthogonalizedOptimizer(optim.Optimizer):
 
         self.fp32_matmul_prec = fp32_matmul_prec
         self.use_nesterov = use_nesterov
-        self.use_decoupled_wd = use_decoupled_wd
-        self.use_independent_wd = use_independent_wd
+        self.weight_decay_method = weight_decay_method
 
         default_args_dict = dict(
             lr=lr,
@@ -155,19 +154,12 @@ class OrthogonalizedOptimizer(optim.Optimizer):
                 # Subsequent update to exp_avg are all inplace, so it is not assigned back to state.
                 exp_avg = state["momentum_buffer"]
 
-                # Apply weight decay
-                if group["weight_decay"] > 0.0:
-                    if self.use_decoupled_wd:
-                        # Apply weight decay directly to params without changing gradients
-                        if self.use_independent_wd:
-                            # do not tie weight decay and learning rate
-                            weight_decay_scale = group["weight_decay"]
-                        else:
-                            weight_decay_scale = group["weight_decay"] * group["lr"]
-                        p.add_(p, alpha=(-weight_decay_scale))
-                    else:
-                        # add l2 regularization before preconditioning (i.e. adding a squared loss term)
-                        grad += group["weight_decay"] * p
+                self._apply_weight_decay_inplace(
+                    p,
+                    grad,
+                    group["lr"],
+                    group["weight_decay"],
+                )
 
                 # update momentum buffer with EMA of gradient
                 exp_avg.lerp_(grad, 1 - group["momentum_beta"])

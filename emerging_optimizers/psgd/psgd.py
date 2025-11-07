@@ -18,9 +18,9 @@ from typing import Callable, List, Tuple, override
 import torch
 from torch.optim.optimizer import ParamsT
 
+from emerging_optimizers import mixin as opt_mixin
+from emerging_optimizers.psgd import psgd_kron_contractions, psgd_utils
 from emerging_optimizers.psgd.procrustes_step import procrustes_step
-from emerging_optimizers.psgd.psgd_kron_contractions import apply_preconditioner, partial_contraction
-from emerging_optimizers.psgd.psgd_utils import norm_lower_bound_spd, uniformize_q_in_place
 from emerging_optimizers.soap.soap import _clip_update_rms_in_place
 
 
@@ -29,7 +29,7 @@ __all__ = [
 ]
 
 
-class PSGDPro(torch.optim.Optimizer):
+class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
     """Implements a variant of the PSGD optimization algorithm (PSGD-Kron-Whiten with Procrustes step for preconditioner update).
 
     Preconditioned Stochastic Gradient Descent (PSGD) (https://arxiv.org/abs/1512.04202) is a preconditioned optimization algorithm
@@ -42,8 +42,8 @@ class PSGDPro(torch.optim.Optimizer):
         params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate to use
         weight_decay: Weight decay coefficient
-        use_decoupled_wd: Whether to use decoupled weight decay, see Decoupled Weight Decay Regularization:
-            https://arxiv.org/abs/1711.05101.
+        weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
+            for more details.
         momentum: Momentum coefficient for exponential moving average of gradient.
         beta_lip: EMA beta for the Lipschitz constants.
         precond_lr: Inner learning rate for the preconditioner.
@@ -59,8 +59,9 @@ class PSGDPro(torch.optim.Optimizer):
         params: ParamsT,
         lr: float = 3e-3,
         weight_decay: float = 0.01,
-        use_decoupled_wd: bool = True,
         momentum: float = 0.9,
+        *,
+        weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         beta_lip: float = 0.9,
         precond_lr: float = 0.1,
         precond_init_scale: float = 1.0,
@@ -69,7 +70,7 @@ class PSGDPro(torch.optim.Optimizer):
         warmup_steps: int = 10000,
         max_update_rms: float = 0.0,
     ) -> None:
-        self.use_decoupled_wd = use_decoupled_wd
+        self.weight_decay_method = weight_decay_method
         self.max_update_rms = max_update_rms
         self.precond_init_scale = precond_init_scale
         self.damping_noise_scale = damping_noise_scale
@@ -117,14 +118,12 @@ class PSGDPro(torch.optim.Optimizer):
                         precond_init_scale=self.precond_init_scale,
                     )
 
-                # weight decay
-                if group["weight_decay"] > 0.0:
-                    if self.use_decoupled_wd:
-                        # Apply decoupled weight decay
-                        p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
-                    else:
-                        # add l2 regularization before preconditioning (i.e. adding a squared loss term)
-                        grad += group["weight_decay"] * p
+                self._apply_weight_decay_inplace(
+                    p,
+                    grad,
+                    group["lr"],
+                    group["weight_decay"],
+                )
 
                 # update momentum buffer with EMA of gradient
                 exp_avg = state["exp_avg"]
@@ -140,10 +139,10 @@ class PSGDPro(torch.optim.Optimizer):
                 state["Q"], state["L"] = _update_precond_procrustes(
                     state["Q"], state["L"], exp_avg, self.damping_noise_scale, precond_lr, beta_lip
                 )
-                uniformize_q_in_place(state["Q"])
+                psgd_utils.uniformize_q_in_place(state["Q"])
 
                 # Get weight update by preconditioning the momentum
-                update = apply_preconditioner(state["Q"], exp_avg)
+                update = psgd_kron_contractions.apply_preconditioner(state["Q"], exp_avg)
                 _clip_update_rms_in_place(update, self.max_update_rms)
 
                 # Apply weight update
@@ -200,13 +199,13 @@ def _update_precond_procrustes(
         lip_const_list: List of Lipschitz constants for the Kronecker factors.
     """
     dampened_momentum = exp_avg + (damping_noise_scale + 1e-7 * exp_avg.abs()) * torch.randn_like(exp_avg)
-    pg = apply_preconditioner(q_list, dampened_momentum)
+    pg = psgd_kron_contractions.apply_preconditioner(q_list, dampened_momentum)
     total_numel = pg.numel()
     updated_q_list: List[torch.Tensor] = []
     updated_lip_const_list: List[torch.Tensor] = []
     for dim, q in enumerate(q_list):
         # compute gradient covariance
-        precond_grad_cov = partial_contraction(pg, pg, dim)
+        precond_grad_cov = psgd_kron_contractions.partial_contraction(pg, pg, dim)
         if q.dim() < 2:
             # diagonal or scalar-structured preconditioner
             q, updated_lip_const = _update_1d_preconditioner(
@@ -246,7 +245,7 @@ def _update_matrix_preconditioner(
         lip_const: Updated Lipschitz constant for this dimension.
     """
     normalization = total_numel / q.shape[0]
-    ell = norm_lower_bound_spd(precond_grad_cov) + normalization
+    ell = psgd_utils.norm_lower_bound_spd(precond_grad_cov) + normalization
     lip_const = torch.max(beta_lip * lip_const + (1 - beta_lip) * ell, ell)
     q = q - precond_lr / lip_const * (precond_grad_cov @ q - normalization * q)
     q = procrustes_step(q)

@@ -17,11 +17,32 @@ import torch
 import torch.nn as nn
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.orthogonalized_optimizers import muon
+from emerging_optimizers.orthogonalized_optimizers import muon, scion
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
 
 class OrthogonalizedOptimizerTest(parameterized.TestCase):
+    @parameterized.product(
+        weight_decay_method=["decoupled", "independent", "l2"],
+        shape=[(5, 7), (33, 65), (127, 257)],
+        use_nesterov=[True, False],
+        fp32_matmul_prec=["highest", "medium", "low"],
+    )
+    def test_smoke(self, weight_decay_method, shape, use_nesterov, fp32_matmul_prec) -> None:
+        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
+        test_param.grad = torch.randint_like(test_param, -5, 5)
+
+        orthogonalized_opt = OrthogonalizedOptimizer(
+            [test_param],
+            lr=2,
+            momentum_beta=0,
+            weight_decay=0.5,
+            use_nesterov=use_nesterov,
+            weight_decay_method=weight_decay_method,
+            fp32_matmul_prec=fp32_matmul_prec,
+        )
+        orthogonalized_opt.step()
+
     @parameterized.parameters(
         {"shape": (5, 7)},
         {"shape": (33, 65)},
@@ -42,8 +63,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             momentum_beta=0,
             use_nesterov=False,
             weight_decay=0.5,
-            use_decoupled_wd=True,
-            use_independent_wd=False,
+            weight_decay_method="decoupled",
             fp32_matmul_prec="highest",
         )
 
@@ -84,8 +104,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             momentum_beta=0.5,
             use_nesterov=False,
             weight_decay=0.0,
-            use_decoupled_wd=False,
-            use_independent_wd=False,
+            weight_decay_method="l2",
             fp32_matmul_prec="highest",
         )
 
@@ -135,8 +154,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             momentum_beta=0,
             use_nesterov=False,
             weight_decay=0.0,
-            use_decoupled_wd=False,
-            use_independent_wd=False,
+            weight_decay_method="l2",
             fp32_matmul_prec="highest",
             scaled_orthogonalize_fn=dummy_interleaved_split_orth_fn,
         )
@@ -154,12 +172,12 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
 
 
 class MuonTest(parameterized.TestCase):
-    @parameterized.parameters(
-        {"shape": (5, 7)},
-        {"shape": (33, 65)},
-        {"shape": (127, 257)},
+    @parameterized.product(
+        shape=[(5, 7), (33, 65), (127, 257)],
+        weight_decay_method=["decoupled", "independent", "l2"],
+        use_nesterov=[True, False],
     )
-    def test_smoke(self, shape) -> None:
+    def test_smoke(self, shape, weight_decay_method, use_nesterov) -> None:
         """Smoke test Muon optimizer.
         Most functionality of muon is tested in muon_utils. This test only entures everything run through
         the optimizer class.
@@ -167,7 +185,7 @@ class MuonTest(parameterized.TestCase):
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
-        muon_opt = muon.Muon([test_param])
+        muon_opt = muon.Muon([test_param], weight_decay_method=weight_decay_method, use_nesterov=use_nesterov)
         muon_opt.step()
 
     def test_use_syrk_match_without_syrk(self) -> None:
@@ -195,27 +213,40 @@ class MuonTest(parameterized.TestCase):
 
         # Test with independent weight decay: with lr=0, weight decay should still be applied
         # With lr=0, no gradient update occurs, so param should be exactly (1-wd)*param
-        indep_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
-        indep_param_initial = indep_param.data.clone()
-        indep_param.grad = torch.randint_like(indep_param, -5, 5)
+        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
+        test_param.grad = torch.randint_like(test_param, -5, 5)
+        # With independent weight decay and lr=0, param should be exactly (1-wd)*param
+        expected_param = (1 - weight_decay) * test_param.data
 
         muon_opt_indep = muon.Muon(
-            [indep_param],
+            [test_param],
             lr=0.0,  # Zero learning rate
             weight_decay=weight_decay,
-            use_independent_wd=True,
+            weight_decay_method="independent",
             momentum_beta=0.0,
         )
         muon_opt_indep.step()
 
-        # With independent weight decay and lr=0, param should be exactly (1-wd)*param
-        expected_param = (1 - weight_decay) * indep_param_initial
         torch.testing.assert_close(
-            indep_param.data,
+            test_param,
             expected_param,
             atol=0,
             rtol=0,
         )
+
+
+class ScionTest(parameterized.TestCase):
+    @parameterized.parameters(
+        {"shape": (5, 7)},
+        {"shape": (33, 65)},
+        {"shape": (127, 257)},
+    )
+    def test_smoke(self, shape) -> None:
+        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
+        test_param.grad = torch.randint_like(test_param, -5, 5)
+
+        scion_opt = scion.Scion([test_param])
+        scion_opt.step()
 
 
 if __name__ == "__main__":
