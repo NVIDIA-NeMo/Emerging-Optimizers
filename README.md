@@ -60,7 +60,7 @@ Refer to tests for usage of different optimizers, e.g.  [`tests/test_orthogonali
 
 ### Integration with Megatron Core
 
-Integration with Megatron Core is is available in **dev** branch, e.g. [muon.py](https://github.com/NVIDIA/Megatron-LM/blob/dev/megatron/core/optimizer/muon.py)
+Integration with Megatron Core is available in **dev** branch, e.g. [muon.py](https://github.com/NVIDIA/Megatron-LM/blob/dev/megatron/core/optimizer/muon.py)
 
 ## Benchmarks
 
