@@ -6,12 +6,12 @@
 
 <div align="center">
 
-[![Documentation](https://img.shields.io/badge/api-reference-blue.svg)](https://docs.nvidia.com/nemo/emerging-optimizers/latest/index.html)
 <!-- Get the codecov badge with a token direct from https://app.codecov.io/gh/NVIDIA-NeMo -->
 [![codecov](https://codecov.io/gh/NVIDIA-NeMo/Emerging-Optimizers/graph/badge.svg?token=IQ6U7IFYN0)](https://codecov.io/gh/NVIDIA-NeMo/Emerging-Optimizers)
 [![CICD NeMo](https://github.com/NVIDIA-NeMo/Emerging-Optimizers/actions/workflows/cicd-main.yml/badge.svg?branch=main)](https://github.com/NVIDIA-NeMo/Emerging-Optimizers/actions/workflows/cicd-main.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/release/python-3100/)
 ![GitHub Repo stars](https://img.shields.io/github/stars/NVIDIA-NeMo/Emerging-Optimizers)
+[![Documentation](https://img.shields.io/badge/api-reference-blue.svg)](https://docs.nvidia.com/nemo/emerging-optimizers/latest/index.html)
 
 </div>
 
