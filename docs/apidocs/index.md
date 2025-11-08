@@ -6,10 +6,11 @@ NeMo Emerging Optimizers API reference provides comprehensive technical document
 :caption: API Documentation
 :hidden:
 
-utils.md
 orthogonalized-optimizers.md
 soap.md
 riemannian-optimizers.md
 psgd.md
 scalar-optimizers.md
+mixin.md
+utils.md
 ```

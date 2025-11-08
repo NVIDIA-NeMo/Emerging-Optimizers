@@ -5,7 +5,6 @@
 </div>
 
 <div align="center">
-
 <!-- Get the codecov badge with a token direct from https://app.codecov.io/gh/NVIDIA-NeMo -->
 [![codecov](https://codecov.io/gh/NVIDIA-NeMo/Emerging-Optimizers/graph/badge.svg?token=IQ6U7IFYN0)](https://codecov.io/gh/NVIDIA-NeMo/Emerging-Optimizers)
 [![CICD NeMo](https://github.com/NVIDIA-NeMo/Emerging-Optimizers/actions/workflows/cicd-main.yml/badge.svg?branch=main)](https://github.com/NVIDIA-NeMo/Emerging-Optimizers/actions/workflows/cicd-main.yml)
@@ -13,6 +12,10 @@
 ![GitHub Repo stars](https://img.shields.io/github/stars/NVIDIA-NeMo/Emerging-Optimizers)
 
 </div>
+
+| **`Documentation`**                                          |
+| ------------------------------------------------------------ |
+| [![Documentation](https://img.shields.io/badge/api-reference-blue.svg)](https://docs.nvidia.com/nemo/emerging-optimizers/latest/index.html) |
 
 ## Overview
 
@@ -53,15 +56,13 @@ pip install .
 
 ## Usage
 
-### Muon Optimizer
+### Example
 
-Muon (MomentUm Orthogonalized by Newton-schulz) uses orthogonalization for 2D parameters.
-
-For a simple usage example, see [`tests/test_orthogonalized_optimizer.py::MuonTest`](tests/test_orthogonalized_optimizer.py).
+Refer to tests for usage of different optimizers, e.g.  [`tests/test_orthogonalized_optimizer.py::MuonTest`](tests/test_orthogonalized_optimizer.py).
 
 ### Integration with Megatron Core
 
-Integration with Megatron Core is in progress. See the [integration PR](https://github.com/NVIDIA/Megatron-LM/pull/1813) that demonstrates usage with Dense and MoE models.
+Integration with Megatron Core is is available in **dev** branch, e.g. [muon.py](https://github.com/NVIDIA/Megatron-LM/blob/dev/megatron/core/optimizer/muon.py)
 
 ## Benchmarks
 

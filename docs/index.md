@@ -12,7 +12,7 @@ Emerging-Optimizers is under active development. All APIs are experimental and s
 
 ### Prerequisites
 
-- Python 3.12 or higher
+- Python 3.10 or higher, 3.12 is recommended
 - PyTorch 2.0 or higher
 
 ### Install from Source
@@ -33,8 +33,8 @@ Coming soon.
 :caption: 🛠️ Development
 :hidden:
 
-documentation.md
 apidocs/index.md
+documentation.md
 ```
 
 
