@@ -14,4 +14,5 @@
 # limitations under the License.
 from emerging_optimizers.orthogonalized_optimizers.muon import *
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import *
+from emerging_optimizers.orthogonalized_optimizers.scion import *
 from emerging_optimizers.orthogonalized_optimizers.spectral_clipping_utils import *

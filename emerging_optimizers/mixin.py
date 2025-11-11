@@ -25,6 +25,7 @@ class WeightDecayMixin:
     """Mixin for weight decay
 
     Supports different types of weight decay:
+
     - "decoupled": weight decay is applied directly to params without changing gradients
     - "independent": similar as decoupled weight decay, but without tying weight decay and learning rate
     - "l2": classic L2 regularization

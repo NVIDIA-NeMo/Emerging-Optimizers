@@ -21,6 +21,13 @@ emerging_optimizers.orthogonalized_optimizers
     :members:
 
 
+:hidden:`Scion`
+~~~~~~~~~~~~~~~
+
+.. autoclass:: Scion
+    :members:
+
+
 :hidden:`Newton-Schulz`
 ~~~~~~~~~~~~~~~~~~~~~~~~
 .. automodule:: emerging_optimizers.orthogonalized_optimizers.muon_utils
