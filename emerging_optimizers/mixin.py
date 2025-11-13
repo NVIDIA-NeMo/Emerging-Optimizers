@@ -20,6 +20,7 @@ import torch
 
 WeightDecayT = Literal["decoupled", "independent", "l2"]
 SecondMomentT = Literal["adamuon", "normuon"]
+SecondMomentOptionalT = Literal["adamuon", "normuon", None]
 
 
 class WeightDecayMixin:
@@ -102,8 +103,6 @@ class SecondMomentMixin:
         second_moment: torch.Tensor,
         beta2: float,
         eps: float,
-        correct_bias: bool = False,
-        step: int = 1,
     ) -> torch.Tensor:
         """Apply AdamW-style second moment accumulation and normalization.
 
@@ -113,16 +112,13 @@ class SecondMomentMixin:
 
         For both methods:
         1. Updates the second moment as an EMA of squared gradients
-        2. Optionally applies bias correction
-        3. Returns the adaptively scaled gradient
+        2. Returns the adaptively scaled gradient
 
         Args:
             orth_grad: The orthogonalized gradient tensor.
             second_moment: The second moment buffer from state.
             beta2: The exponential decay rate for second moment.
             eps: Small constant for numerical stability.
-            correct_bias: Whether to apply bias correction (default: False).
-            step: Current optimization step (1-based), used for bias correction.
 
         Returns:
             The adaptively scaled weight update tensor.
@@ -135,15 +131,8 @@ class SecondMomentMixin:
             # Update second moment with EMA of squared gradient
             second_moment.lerp_(orth_grad.square(), 1 - beta2)
 
-            # Optional bias correction
-            if correct_bias:
-                bias_correction2 = 1.0 - beta2**step
-                corrected_second_moment = second_moment / bias_correction2
-            else:
-                corrected_second_moment = second_moment
-
             # AdamW-style division: grad / (sqrt(second_moment) + eps)
-            denom = corrected_second_moment.sqrt() + eps
+            denom = second_moment.sqrt() + eps
             return orth_grad / denom
 
         elif second_moment_method == "normuon":
@@ -156,15 +145,8 @@ class SecondMomentMixin:
             # Update second moment with EMA
             second_moment.lerp_(v_mean, 1 - beta2)
 
-            # Optional bias correction
-            if correct_bias:
-                bias_correction2 = 1.0 - beta2**step
-                corrected_second_moment = second_moment / bias_correction2
-            else:
-                corrected_second_moment = second_moment
-
             # NorMuon uses reciprocal square root with clamping
-            step_size = corrected_second_moment.clamp_min(eps).rsqrt_()
+            step_size = second_moment.clamp_min(eps).rsqrt_()
             return orth_grad * step_size
 
         else:
