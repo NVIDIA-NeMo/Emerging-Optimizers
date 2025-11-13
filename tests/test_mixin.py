@@ -54,14 +54,12 @@ class SecondMomentMixinTest(parameterized.TestCase):
         orth_grad = torch.randn(shape, device=self.device)
         second_moment = torch.zeros_like(orth_grad)
 
-        # Apply second moment division
+        # Apply second moment normalization
         result = optimizer._apply_second_moment_normalization(
             orth_grad=orth_grad,
             second_moment=second_moment,
             beta2=beta2,
             eps=eps,
-            correct_bias=False,
-            step=1,
         )
 
         # Check that second moment was updated
@@ -96,14 +94,12 @@ class SecondMomentMixinTest(parameterized.TestCase):
         beta2 = 0.999
         eps = 1e-8
 
-        # Apply second moment division
+        # Apply second moment normalization
         result = optimizer._apply_second_moment_normalization(
             orth_grad=orth_grad,
             second_moment=second_moment,
             beta2=beta2,
             eps=eps,
-            correct_bias=False,
-            step=1,
         )
 
         # Check that second moment was updated with correct shape
