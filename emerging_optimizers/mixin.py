@@ -19,8 +19,7 @@ import torch
 
 
 WeightDecayT = Literal["decoupled", "independent", "l2"]
-SecondMomentT = Literal["adamuon", "normuon"]
-SecondMomentOptionalT = Literal["adamuon", "normuon", None]
+SecondMomentT = Literal["adamuon", "normuon", None]
 
 
 class WeightDecayMixin:
