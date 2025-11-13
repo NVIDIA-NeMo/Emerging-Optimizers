@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
+import torch.nn as nn
 from absl import flags
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers import mixin as opt_mixin
+from emerging_optimizers.orthogonalized_optimizers import AdaptiveOrthogonalizedOptimizer
 
 
 # Define command line flags
@@ -26,15 +27,26 @@ flags.DEFINE_integer("seed", 42, "Random seed for reproducible tests")
 FLAGS = flags.FLAGS
 
 
-# Create a dummy class that uses SecondMomentMixin for testing
-class TestOptimizer(opt_mixin.SecondMomentMixin):
-    """Test optimizer that inherits from SecondMomentMixin."""
+# Create a dummy class for testing second moment methods
+class TestAdaptiveOptimizer(AdaptiveOrthogonalizedOptimizer):
+    """Test optimizer that uses AdaptiveOrthogonalizedOptimizer."""
 
-    def __init__(self, second_moment_method: str = "adamuon"):
-        self.second_moment_method = second_moment_method
+    def __init__(self, params, second_moment_method: str = "adamuon"):
+        super().__init__(
+            params=params,
+            lr=0.001,
+            momentum_beta=0.9,
+            weight_decay=0.0,
+            use_nesterov=False,
+            second_moment_method=second_moment_method,
+            beta2=0.999,
+            eps=1e-8,
+            weight_decay_method="decoupled",
+            fp32_matmul_prec="highest",
+        )
 
 
-class SecondMomentMixinTest(parameterized.TestCase):
+class SecondMomentTest(parameterized.TestCase):
     def setUp(self):
         """Set random seed and device before each test."""
         torch.manual_seed(FLAGS.seed)
@@ -49,7 +61,9 @@ class SecondMomentMixinTest(parameterized.TestCase):
     )
     def test_adamuon_method(self, shape, beta2, eps):
         """Test AdamMuon (elementwise) second moment method."""
-        optimizer = TestOptimizer(second_moment_method="adamuon")
+        # Create a dummy parameter for the optimizer
+        dummy_param = nn.Parameter(torch.randn(shape, device=self.device))
+        optimizer = TestAdaptiveOptimizer([dummy_param], second_moment_method="adamuon")
 
         orth_grad = torch.randn(shape, device=self.device)
         second_moment = torch.zeros_like(orth_grad)
@@ -80,7 +94,9 @@ class SecondMomentMixinTest(parameterized.TestCase):
     )
     def test_normuon_method(self, shape):
         """Test NorMuon (row/column-wise) second moment method."""
-        optimizer = TestOptimizer(second_moment_method="normuon")
+        # Create a dummy parameter for the optimizer
+        dummy_param = nn.Parameter(torch.randn(shape, device=self.device))
+        optimizer = TestAdaptiveOptimizer([dummy_param], second_moment_method="normuon")
 
         orth_grad = torch.randn(shape, device=self.device)
 

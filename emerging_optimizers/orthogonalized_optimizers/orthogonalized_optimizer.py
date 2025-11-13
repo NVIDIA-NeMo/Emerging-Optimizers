@@ -36,28 +36,16 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
         use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
-        second_moment_method: Method to apply second moment, see :class:`~emerging_optimizers.mixin.SecondMomentMixin`
-            for more details. Options: None (disabled), "adamuon" (elementwise like AdamW), "normuon" (row/column-wise).
-        beta2: The exponential decay rate for second moment (like AdamW's beta2). Only used if second_moment_method is not None.
-        eps: Small constant for numerical stability in second moment normalization. Only used if second_moment_method is not None.
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
             for more details.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
 """
 
 
-class OrthogonalizedOptimizer(
-    opt_mixin.SecondMomentMixin,
-    opt_mixin.WeightDecayMixin,
-    optim.Optimizer,
-):
-    """Base class for orthogonalized optimizers with optional adaptive second moment.
+class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
+    """Base class for orthogonalized optimizers.
 
     This class is a wrapper around a base optimizer that performs orthogonalization on the updates.
-    Optionally, it can apply AdamW-style or NorMuon-style second moment accumulation after orthogonalization
-    by setting `second_moment_method` to "adamuon" or "normuon". When `second_moment_method=None` (default),
-    the optimizer behaves as standard Muon without second moment.
-
     The theoretical foundation of orthogonalization for stochastic gradient descent was developed by the
     following papers:
 
@@ -114,10 +102,7 @@ class OrthogonalizedOptimizer(
         weight_decay: float,
         *,
         use_nesterov: bool,
-        second_moment_method: opt_mixin.SecondMomentT = None,
-        beta2: float = 0.999,
-        eps: float = 1e-8,
-        weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
+        weight_decay_method: opt_mixin.WeightDecayT,
         fp32_matmul_prec: str,
         scaled_orthogonalize_fn: Callable | None = None,
         **kwargs: Any,
@@ -128,8 +113,6 @@ class OrthogonalizedOptimizer(
 
         self.fp32_matmul_prec = fp32_matmul_prec
         self.use_nesterov = use_nesterov
-        self.use_second_moment = second_moment_method is not None
-        self.second_moment_method = second_moment_method
         self.weight_decay_method = weight_decay_method
 
         default_args_dict = dict(
@@ -138,11 +121,6 @@ class OrthogonalizedOptimizer(
             weight_decay=weight_decay,
             **kwargs,
         )
-
-        # Only add second moment params if second_moment_method is not None
-        if self.use_second_moment:
-            default_args_dict["beta2"] = beta2
-            default_args_dict["eps"] = eps
 
         super().__init__(params, default_args_dict)
         self.scaled_orthogonalize_fn = scaled_orthogonalize_fn
@@ -172,9 +150,6 @@ class OrthogonalizedOptimizer(
                 # initialize momentum buffer
                 if "momentum_buffer" not in state:
                     state["momentum_buffer"] = torch.zeros_like(grad)
-                    if self.use_second_moment:
-                        # Initialize second moment buffer using mixin
-                        self._initialize_second_moment(state, grad)
 
                 # Subsequent update to exp_avg are all inplace, so it is not assigned back to state.
                 exp_avg = state["momentum_buffer"]
@@ -198,16 +173,6 @@ class OrthogonalizedOptimizer(
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     group_kwargs = {k: v for k, v in group.items() if k != "params"}
                     grad = self.orthogonalize(p, grad, **group_kwargs)
-
-                # Apply second moment normalization if enabled
-                if self.use_second_moment:
-                    # Apply second moment accumulation and normalization
-                    grad = self._apply_second_moment_normalization(
-                        orth_grad=grad,
-                        second_moment=state["second_moment_buffer"],
-                        beta2=group["beta2"],
-                        eps=group["eps"],
-                    )
 
                 # perform weight update
                 # scale is applied to have update RMS == 1
