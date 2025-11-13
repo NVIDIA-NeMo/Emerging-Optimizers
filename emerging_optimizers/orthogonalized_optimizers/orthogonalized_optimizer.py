@@ -114,7 +114,7 @@ class OrthogonalizedOptimizer(
         weight_decay: float,
         *,
         use_nesterov: bool,
-        second_moment_method: opt_mixin.SecondMomentOptionalT = None,
+        second_moment_method: opt_mixin.SecondMomentT = None,
         beta2: float = 0.999,
         eps: float = 1e-8,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
