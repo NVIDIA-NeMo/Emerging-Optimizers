@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Callable, Literal
+from typing import Callable, Literal
 
 
 # TODO(@boxiangw): remove this once bump to python 3.12
@@ -22,10 +22,13 @@ except ImportError:
     from typing_extensions import override
 
 import torch
+from absl import logging
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import utils
+from emerging_optimizers.orthogonalized_optimizers import muon_utils
+from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
 
@@ -73,21 +76,37 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
         eps: float = 1e-8,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         fp32_matmul_prec: str,
-        scaled_orthogonalize_fn: Callable | None = None,
-        **kwargs: Any,
+        coefficient_type: str = "quintic",
+        num_ns_steps: int = 5,
+        scale_mode: str = "spectral",
+        extra_scale_factor: float = 1.0,
+        use_syrk: bool = False,
     ):
         self.second_moment_method = second_moment_method
 
+        def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
+            logging.debug(
+                f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, "
+                f"{scale_mode} scale mode, extra_scale_factor={extra_scale_factor}"
+            )
+            orth_grad = muon_utils.newton_schulz(
+                grad,
+                steps=num_ns_steps,
+                coefficient_type=coefficient_type,
+                use_syrk=use_syrk,
+            )
+            scale_factor = get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
+            return orth_grad * scale_factor * extra_scale_factor
+
         super().__init__(
-            params=params,
-            lr=lr,
-            momentum_beta=momentum_beta,
-            weight_decay=weight_decay,
+            params,
+            lr,
+            momentum_beta,
             use_nesterov=use_nesterov,
+            weight_decay=weight_decay,
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
             scaled_orthogonalize_fn=scaled_orthogonalize_fn,
-            **kwargs,
         )
 
         for group in self.param_groups:
@@ -154,7 +173,7 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
         """
         if self.second_moment_method == "adamuon":
             # AdamMuon: Full elementwise second moment like AdamW
-            # Update second moment with EMA of squared gradient
+            # Update second moment with EMA of squared orthogonalized gradient
             second_moment.lerp_(orth_grad.square(), 1 - beta2)
 
             # AdamW-style division: grad / (sqrt(second_moment) + eps)
@@ -224,8 +243,7 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
                     grad = exp_avg
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    group_kwargs = {k: v for k, v in group.items() if k != "params"}
-                    grad = self.orthogonalize(p, grad, **group_kwargs)
+                    grad = self.scaled_orthogonalize_fn(grad)
 
                 # Apply second moment normalization
                 grad = self._apply_second_moment_normalization(
