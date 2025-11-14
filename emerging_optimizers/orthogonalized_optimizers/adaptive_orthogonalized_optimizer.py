@@ -32,21 +32,6 @@ from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_fa
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
 
-_adaptive_args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
-        lr: The learning rate used by the internal SGD.
-        momentum_beta: The momentum used by the internal SGD.
-        weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
-            See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
-        use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
-        moment2_method: Method to apply second moment. Options: "adamuon" (elementwise like AdamW), "normuon" (row/column-wise).
-        beta2: The exponential decay rate for second moment (like AdamW's beta2).
-        eps: Small constant for numerical stability in second moment normalization.
-        weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
-            for more details.
-        fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
-"""
-
-
 class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
     """Orthogonalized optimizer with adaptive second moment (AdaMuon/NorMuon variants).
 
@@ -255,8 +240,3 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
                 p.add_(grad, alpha=-group["lr"])
 
         return loss
-
-
-AdaptiveOrthogonalizedOptimizer.__doc__ = AdaptiveOrthogonalizedOptimizer.__doc__.format(  # type: ignore[union-attr]
-    _adaptive_args_doc=_adaptive_args_doc
-)
