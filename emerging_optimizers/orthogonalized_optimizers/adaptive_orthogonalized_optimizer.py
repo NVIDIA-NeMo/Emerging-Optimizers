@@ -38,7 +38,7 @@ _adaptive_args_doc = """params: Iterable of parameters to optimize or dicts defi
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
         use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
-        second_moment_method: Method to apply second moment. Options: "adamuon" (elementwise like AdamW), "normuon" (row/column-wise).
+        moment2_method: Method to apply second moment. Options: "adamuon" (elementwise like AdamW), "normuon" (row/column-wise).
         beta2: The exponential decay rate for second moment (like AdamW's beta2).
         eps: Small constant for numerical stability in second moment normalization.
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
@@ -55,7 +55,6 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
     normalization logic.
 
     Args:
-        {_adaptive_args_doc}
         scaled_orthogonalize_fn: Function to orthogonalize and scale the updates.
         **kwargs: Arguments passed through to the base optimizer.
 
@@ -71,7 +70,7 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
         weight_decay: float,
         *,
         use_nesterov: bool,
-        second_moment_method: Literal["adamuon", "normuon"],
+        moment2_method: Literal["adamuon", "normuon"],
         beta2: float = 0.999,
         eps: float = 1e-8,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
@@ -82,7 +81,7 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
     ):
-        self.second_moment_method = second_moment_method
+        self.moment2_method = moment2_method
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
@@ -107,20 +106,18 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
             scaled_orthogonalize_fn=scaled_orthogonalize_fn,
+            beta2=beta2,
+            eps=eps,
         )
 
-        for group in self.param_groups:
-            group["beta2"] = beta2
-            group["eps"] = eps
-
-    def _initialize_second_moment(
+    def _initialize_moment2(
         self,
         state: dict[str, torch.Tensor],
         grad: torch.Tensor,
     ) -> None:
         """Initialize the second moment buffer if it doesn't exist.
 
-        The shape of the buffer depends on the second_moment_method:
+        The shape of the buffer depends on the moment2_method:
         - "adamuon": Full elementwise buffer with same shape as grad
         - "normuon": Reduced shape buffer (averaged along -1 if shape[-2] >= shape[-1], else -2)
 
@@ -128,27 +125,27 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
             state: The optimizer state dict for a parameter.
             grad: The gradient tensor (used for shape/dtype).
         """
-        if "second_moment_buffer" not in state:
-            if self.second_moment_method == "adamuon":
+        if "moment2_buffer" not in state:
+            if self.moment2_method == "adamuon":
                 # Full elementwise second moment
-                second_moment = torch.zeros_like(grad)
-            elif self.second_moment_method == "normuon":
+                moment2 = torch.zeros_like(grad)
+            elif self.moment2_method == "normuon":
                 # Row/column-wise second moment - reduced along one dimension
                 # Determine which dimension to reduce based on parameter shape
                 avg_dim = -1 if grad.shape[-2] >= grad.shape[-1] else -2
                 # Specify the shape with reduced dimension
-                second_moment_shape = list(grad.shape)
-                second_moment_shape[avg_dim] = 1
-                second_moment = torch.zeros(second_moment_shape, dtype=grad.dtype, device=grad.device)
+                moment2_shape = list(grad.shape)
+                moment2_shape[avg_dim] = 1
+                moment2 = torch.zeros(moment2_shape, dtype=grad.dtype, device=grad.device)
             else:
-                raise ValueError(f"Invalid second moment method: {self.second_moment_method}")
+                raise ValueError(f"Invalid second moment method: {self.moment2_method}")
 
-            state["second_moment_buffer"] = second_moment
+            state["moment2_buffer"] = moment2
 
-    def _apply_second_moment_normalization(
+    def _apply_moment2_normalization(
         self,
         orth_grad: torch.Tensor,
-        second_moment: torch.Tensor,
+        moment2: torch.Tensor,
         beta2: float,
         eps: float,
     ) -> torch.Tensor:
@@ -164,23 +161,23 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
 
         Args:
             orth_grad: The orthogonalized gradient tensor.
-            second_moment: The second moment buffer from state.
+            moment2: The second moment buffer from state.
             beta2: The exponential decay rate for second moment.
             eps: Small constant for numerical stability.
 
         Returns:
             The adaptively scaled weight update tensor.
         """
-        if self.second_moment_method == "adamuon":
+        if self.moment2_method == "adamuon":
             # AdamMuon: Full elementwise second moment like AdamW
             # Update second moment with EMA of squared orthogonalized gradient
-            second_moment.lerp_(orth_grad.square(), 1 - beta2)
+            moment2.lerp_(orth_grad.square(), 1 - beta2)
 
-            # AdamW-style division: grad / (sqrt(second_moment) + eps)
-            denom = second_moment.sqrt() + eps
+            # AdamW-style division: grad / (sqrt(moment2) + eps)
+            denom = moment2.sqrt() + eps
             return orth_grad / denom
 
-        elif self.second_moment_method == "normuon":
+        elif self.moment2_method == "normuon":
             # NorMuon: Row or column-wise second moment
             # Compute mean of squared gradients along one dimension based on shape
             # Average along the longer dimension to preserve structure along shorter dim
@@ -188,14 +185,14 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
             v_mean = orth_grad.square().mean(dim=avg_dim, keepdim=True)
 
             # Update second moment with EMA
-            second_moment.lerp_(v_mean, 1 - beta2)
+            moment2.lerp_(v_mean, 1 - beta2)
 
             # NorMuon uses reciprocal square root with clamping
-            step_size = second_moment.clamp_min(eps).rsqrt_()
+            step_size = moment2.clamp_min(eps).rsqrt_()
             return orth_grad * step_size
 
         else:
-            raise ValueError(f"Invalid second moment method: {self.second_moment_method}")
+            raise ValueError(f"Invalid second moment method: {self.moment2_method}")
 
     @torch.no_grad()  # type: ignore[misc]
     @override
@@ -222,7 +219,7 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
                 # initialize momentum buffer and second moment buffer
                 if "momentum_buffer" not in state:
                     state["momentum_buffer"] = torch.zeros_like(grad)
-                    self._initialize_second_moment(state, grad)
+                    self._initialize_moment2(state, grad)
 
                 exp_avg = state["momentum_buffer"]
 
@@ -246,9 +243,9 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
                     grad = self.scaled_orthogonalize_fn(grad)
 
                 # Apply second moment normalization
-                grad = self._apply_second_moment_normalization(
+                grad = self._apply_moment2_normalization(
                     orth_grad=grad,
-                    second_moment=state["second_moment_buffer"],
+                    moment2=state["moment2_buffer"],
                     beta2=group["beta2"],
                     eps=group["eps"],
                 )
