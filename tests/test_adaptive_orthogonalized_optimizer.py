@@ -1,10 +1,19 @@
 import torch
 import torch.nn as nn
+from absl import flags
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.orthogonalized_optimizers.adaptive_orthogonalized_optimizer import (
     AdaptiveOrthogonalizedOptimizer,
 )
+
+
+# Define command line flags
+flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+
+FLAGS = flags.FLAGS
+
+device = FLAGS.device
 
 
 class AdaptiveOrthogonalizedOptimizerTest(parameterized.TestCase):
@@ -15,7 +24,7 @@ class AdaptiveOrthogonalizedOptimizerTest(parameterized.TestCase):
     )
     def test_smoke(self, shape, second_moment_method, use_nesterov) -> None:
         """Smoke test AdaptiveOrthogonalizedOptimizer with both second moment methods."""
-        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
+        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
         adaptive_opt = AdaptiveOrthogonalizedOptimizer(
@@ -38,7 +47,7 @@ class AdaptiveOrthogonalizedOptimizerTest(parameterized.TestCase):
     )
     def test_second_moment_matches_shapes(self, shape, second_moment_method) -> None:
         """Test that second moment buffers are properly initialized."""
-        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
+        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
         adaptive_opt = AdaptiveOrthogonalizedOptimizer(
@@ -76,7 +85,7 @@ class AdaptiveOrthogonalizedOptimizerTest(parameterized.TestCase):
 
     def test_requires_second_moment_method(self) -> None:
         """Test that AdaptiveOrthogonalizedOptimizer requires second_moment_method."""
-        test_param = nn.Parameter(torch.randint(-5, 5, (8, 16), dtype=torch.float32, device="cuda"))
+        test_param = nn.Parameter(torch.randint(-5, 5, (8, 16), dtype=torch.float32, device=device))
 
         with self.assertRaises(TypeError):
             AdaptiveOrthogonalizedOptimizer(
