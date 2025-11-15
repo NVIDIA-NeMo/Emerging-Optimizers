@@ -123,7 +123,7 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
                 moment2_shape[avg_dim] = 1
                 moment2 = torch.zeros(moment2_shape, dtype=grad.dtype, device=grad.device)
             else:
-                raise ValueError(f"Invalid second moment method: {self.moment2_method}")
+                raise TypeError(f"Invalid second moment method: {self.moment2_method}")
 
             state["moment2_buffer"] = moment2
 
@@ -177,7 +177,7 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
             return orth_grad * step_size
 
         else:
-            raise ValueError(f"Invalid second moment method: {self.moment2_method}")
+            raise TypeError(f"Invalid second moment method: {self.moment2_method}")
 
     @torch.no_grad()  # type: ignore[misc]
     @override
