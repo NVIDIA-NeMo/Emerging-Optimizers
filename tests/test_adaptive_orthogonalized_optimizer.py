@@ -83,8 +83,8 @@ class AdaptiveOrthogonalizedOptimizerTest(parameterized.TestCase):
             expected_shape[avg_dim] = 1
             self.assertEqual(list(second_moment.shape), expected_shape)
 
-    def test_requires_second_moment_method(self) -> None:
-        """Test that AdaptiveOrthogonalizedOptimizer requires second_moment_method."""
+    def test_unknown_moment2_method_raise_type_error(self) -> None:
+        """Test that AdaptiveOrthogonalizedOptimizer raises TypeError for unknown moment2_method."""
         test_param = nn.Parameter(torch.randint(-5, 5, (8, 16), dtype=torch.float32, device=device))
 
         with self.assertRaises(TypeError):
@@ -94,7 +94,7 @@ class AdaptiveOrthogonalizedOptimizerTest(parameterized.TestCase):
                 momentum_beta=0.9,
                 weight_decay=0.0,
                 use_nesterov=False,
-                moment2_method=None,  # Should raise error
+                moment2_method=None,
                 beta2=0.999,
                 eps=1e-8,
                 weight_decay_method="decoupled",
