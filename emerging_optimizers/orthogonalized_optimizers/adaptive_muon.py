@@ -42,9 +42,6 @@ class AdaptiveMuon(Muon):
         momentum_beta: The exponential decay rate for momentum.
         weight_decay: Weight decay coefficient.
         use_nesterov: Whether to use Nesterov momentum.
-        moment2_method: Method for second moment accumulation ("adamuon" or "normuon").
-        beta2: The exponential decay rate for second moment.
-        eps: Small constant for numerical stability.
         weight_decay_method: The weight decay method to use.
         fp32_matmul_prec: Precision for FP32 matrix multiplication.
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration.
@@ -52,6 +49,9 @@ class AdaptiveMuon(Muon):
         scale_mode: The type of scale factor to use for the update.
         extra_scale_factor: The additional scale factor to use for the update.
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
+        moment2_method: Method for second moment accumulation ("adamuon" or "normuon").
+        beta2: The exponential decay rate for second moment.
+        eps: Small constant for numerical stability.
     """
 
     def __init__(
@@ -62,9 +62,6 @@ class AdaptiveMuon(Muon):
         weight_decay: float,
         *,
         use_nesterov: bool,
-        moment2_method: Literal["adamuon", "normuon"],
-        beta2: float = 0.999,
-        eps: float = 1e-8,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         fp32_matmul_prec: str,
         coefficient_type: str = "quintic",
@@ -72,6 +69,9 @@ class AdaptiveMuon(Muon):
         scale_mode: str = "spectral",
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
+        moment2_method: Literal["adamuon", "normuon"] = "adamuon",
+        beta2: float = 0.999,
+        eps: float = 1e-8,
     ):
         super().__init__(
             params,
@@ -192,8 +192,8 @@ class AdaptiveMuon(Muon):
 
         for group in self.param_groups:
             for p in group["params"]:
-                if p.dim() == 1:
-                    raise ValueError("AdaptiveMuon does not support 1D parameters")
+                if p.dim() != 2:
+                    raise ValueError("AdaptiveMuon only supports 2D parameters")
                 grad = p.grad
                 if grad is None:
                     continue
