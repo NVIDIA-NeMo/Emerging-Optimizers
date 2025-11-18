@@ -22,29 +22,36 @@ except ImportError:
     from typing_extensions import override
 
 import torch
-from absl import logging
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import utils
-from emerging_optimizers.orthogonalized_optimizers import muon_utils
-from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
-from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
+from emerging_optimizers.orthogonalized_optimizers.muon import Muon
 
 
-class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
+class AdaptiveOrthogonalizedOptimizer(Muon):
     """Orthogonalized optimizer with adaptive second moment (AdaMuon/NorMuon variants).
 
-    This class extends OrthogonalizedOptimizer by adding AdamW-style or NorMuon-style second moment
+    This class extends Muon by adding AdamW-style or NorMuon-style second moment
     accumulation after orthogonalization. The step() method is overridden to include second moment
     normalization logic.
 
     Args:
-        scaled_orthogonalize_fn: Function to orthogonalize and scale the updates.
-        **kwargs: Arguments passed through to the base optimizer.
-
-    Note:
-        Keyword arguments passed through are not checked here. Optimizer inherited from this class should check them.
+        params: Iterable of parameters to optimize or dicts defining parameter groups.
+        lr: Learning rate.
+        momentum_beta: The exponential decay rate for momentum.
+        weight_decay: Weight decay coefficient.
+        use_nesterov: Whether to use Nesterov momentum.
+        moment2_method: Method for second moment accumulation ("adamuon" or "normuon").
+        beta2: The exponential decay rate for second moment.
+        eps: Small constant for numerical stability.
+        weight_decay_method: The weight decay method to use.
+        fp32_matmul_prec: Precision for FP32 matrix multiplication.
+        coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration.
+        num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
+        scale_mode: The type of scale factor to use for the update.
+        extra_scale_factor: The additional scale factor to use for the update.
+        use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
     """
 
     def __init__(
@@ -68,32 +75,25 @@ class AdaptiveOrthogonalizedOptimizer(OrthogonalizedOptimizer):
     ):
         self.moment2_method = moment2_method
 
-        def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
-            logging.debug(
-                f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, "
-                f"{scale_mode} scale mode, extra_scale_factor={extra_scale_factor}"
-            )
-            orth_grad = muon_utils.newton_schulz(
-                grad,
-                steps=num_ns_steps,
-                coefficient_type=coefficient_type,
-                use_syrk=use_syrk,
-            )
-            scale_factor = get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
-            return orth_grad * scale_factor * extra_scale_factor
-
         super().__init__(
             params,
-            lr,
-            momentum_beta,
-            use_nesterov=use_nesterov,
+            lr=lr,
+            momentum_beta=momentum_beta,
             weight_decay=weight_decay,
+            use_nesterov=use_nesterov,
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
-            scaled_orthogonalize_fn=scaled_orthogonalize_fn,
-            beta2=beta2,
-            eps=eps,
+            coefficient_type=coefficient_type,
+            num_ns_steps=num_ns_steps,
+            scale_mode=scale_mode,
+            extra_scale_factor=extra_scale_factor,
+            use_syrk=use_syrk,
         )
+
+        # Add beta2 and eps to param_groups defaults
+        for group in self.param_groups:
+            group.setdefault("beta2", beta2)
+            group.setdefault("eps", eps)
 
     def _initialize_moment2(
         self,
