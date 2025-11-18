@@ -26,8 +26,6 @@ flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
 
 FLAGS = flags.FLAGS
 
-device = FLAGS.device
-
 
 class AdaptiveMuonTest(parameterized.TestCase):
     @parameterized.product(
@@ -37,7 +35,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
     )
     def test_smoke(self, shape, second_moment_method, use_nesterov) -> None:
         """Smoke test AdaptiveMuon with both second moment methods."""
-        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=device))
+        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=FLAGS.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
         adaptive_opt = AdaptiveMuon(
@@ -60,7 +58,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
     )
     def test_second_moment_matches_shapes(self, shape, second_moment_method) -> None:
         """Test that second moment buffers are properly initialized."""
-        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=device))
+        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=FLAGS.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
         adaptive_opt = AdaptiveMuon(
@@ -98,7 +96,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
 
     def test_unknown_moment2_method_raise_type_error(self) -> None:
         """Test that AdaptiveMuon raises TypeError for unknown moment2_method."""
-        test_param = nn.Parameter(torch.randint(-5, 5, (8, 16), dtype=torch.float32, device=device))
+        test_param = nn.Parameter(torch.randint(-5, 5, (8, 16), dtype=torch.float32, device=FLAGS.device))
 
         with self.assertRaises(TypeError):
             AdaptiveMuon(
