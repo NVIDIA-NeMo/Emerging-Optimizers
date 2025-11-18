@@ -34,9 +34,7 @@ class AdaptiveMuon(Muon):
 
     This class extends Muon by adding AdamW-style or NorMuon-style second moment
     accumulation after orthogonalization. The step() method is overridden to include second moment
-    normalization logic. This idea was first explored in D.E. Carlson, E. Collins, Ya-Ping Hsieh, L. Carin,
-    and V. Cevher. *Preconditioned spectral descent for deep learning.* In Advances in
-    neural information processing systems 28 (2015).
+    normalization logic.
 
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups.
