@@ -49,7 +49,7 @@ class AdaptiveMuon(Muon):
         fp32_matmul_prec: Precision for FP32 matrix multiplication.
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration.
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
-        scale_mode: The type of scale factor to use for the update.
+        scale_mode: The type of scale factor to use for the update. Defaults to "none" to avoid scaling the update.
         extra_scale_factor: The additional scale factor to use for the update.
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
     """
@@ -69,7 +69,7 @@ class AdaptiveMuon(Muon):
         fp32_matmul_prec: str,
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
-        scale_mode: str = "spectral",
+        scale_mode: str = "none",
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
     ):
