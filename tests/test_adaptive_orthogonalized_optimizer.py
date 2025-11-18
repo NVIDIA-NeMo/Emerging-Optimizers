@@ -4,7 +4,7 @@ from absl import flags
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.orthogonalized_optimizers.adaptive_orthogonalized_optimizer import (
-    AdaptiveOrthogonalizedOptimizer,
+    AdaptiveMuon,
 )
 
 
@@ -16,18 +16,18 @@ FLAGS = flags.FLAGS
 device = FLAGS.device
 
 
-class AdaptiveOrthogonalizedOptimizerTest(parameterized.TestCase):
+class AdaptiveMuonTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(5, 7), (33, 65), (127, 257)],
         second_moment_method=["adamuon", "normuon"],
         use_nesterov=[True, False],
     )
     def test_smoke(self, shape, second_moment_method, use_nesterov) -> None:
-        """Smoke test AdaptiveOrthogonalizedOptimizer with both second moment methods."""
+        """Smoke test AdaptiveMuon with both second moment methods."""
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
-        adaptive_opt = AdaptiveOrthogonalizedOptimizer(
+        adaptive_opt = AdaptiveMuon(
             [test_param],
             lr=0.01,
             momentum_beta=0.9,
@@ -50,7 +50,7 @@ class AdaptiveOrthogonalizedOptimizerTest(parameterized.TestCase):
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
-        adaptive_opt = AdaptiveOrthogonalizedOptimizer(
+        adaptive_opt = AdaptiveMuon(
             [test_param],
             lr=0.01,
             momentum_beta=0.9,
@@ -84,11 +84,11 @@ class AdaptiveOrthogonalizedOptimizerTest(parameterized.TestCase):
             self.assertEqual(list(second_moment.shape), expected_shape)
 
     def test_unknown_moment2_method_raise_type_error(self) -> None:
-        """Test that AdaptiveOrthogonalizedOptimizer raises TypeError for unknown moment2_method."""
+        """Test that AdaptiveMuon raises TypeError for unknown moment2_method."""
         test_param = nn.Parameter(torch.randint(-5, 5, (8, 16), dtype=torch.float32, device=device))
 
         with self.assertRaises(TypeError):
-            AdaptiveOrthogonalizedOptimizer(
+            AdaptiveMuon(
                 [test_param],
                 lr=0.01,
                 momentum_beta=0.9,

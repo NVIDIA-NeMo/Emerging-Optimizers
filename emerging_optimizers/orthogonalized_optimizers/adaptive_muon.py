@@ -29,8 +29,8 @@ from emerging_optimizers import utils
 from emerging_optimizers.orthogonalized_optimizers.muon import Muon
 
 
-class AdaptiveOrthogonalizedOptimizer(Muon):
-    """Orthogonalized optimizer with adaptive second moment (AdaMuon/NorMuon variants).
+class AdaptiveMuon(Muon):
+    """Adaptive Muon optimizer with adaptive second moment (AdaMuon/NorMuon variants).
 
     This class extends Muon by adding AdamW-style or NorMuon-style second moment
     accumulation after orthogonalization. The step() method is overridden to include second moment
@@ -195,7 +195,7 @@ class AdaptiveOrthogonalizedOptimizer(Muon):
         for group in self.param_groups:
             for p in group["params"]:
                 if p.dim() == 1:
-                    raise ValueError(f"{self.__class__.__name__} does not support 1D parameters")
+                    raise ValueError("AdaptiveMuon does not support 1D parameters")
                 grad = p.grad
                 if grad is None:
                     continue
