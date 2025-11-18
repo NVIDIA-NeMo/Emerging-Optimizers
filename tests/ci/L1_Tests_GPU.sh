@@ -16,6 +16,7 @@ export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 
 error=0
 python tests/test_muon_utils.py || error=1
+python tests/test_adaptive_muon.py || error=1
 python tests/test_orthogonalized_optimizer.py || error=1
 python tests/test_soap_utils.py || error=1
 python tests/test_soap.py || error=1
