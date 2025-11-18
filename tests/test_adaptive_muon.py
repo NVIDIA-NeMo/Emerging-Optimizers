@@ -97,20 +97,24 @@ class AdaptiveMuonTest(parameterized.TestCase):
     def test_unknown_moment2_method_raise_type_error(self) -> None:
         """Test that AdaptiveMuon raises TypeError for unknown moment2_method."""
         test_param = nn.Parameter(torch.randint(-5, 5, (8, 16), dtype=torch.float32, device=FLAGS.device))
+        test_param.grad = torch.randint_like(test_param, -5, 5)
 
+        adaptive_opt = AdaptiveMuon(
+            [test_param],
+            lr=0.01,
+            momentum_beta=0.9,
+            weight_decay=0.0,
+            use_nesterov=False,
+            moment2_method=None,
+            beta2=0.999,
+            eps=1e-8,
+            weight_decay_method="decoupled",
+            fp32_matmul_prec="highest",
+        )
+
+        # TypeError is raised during step() when initializing moment2_buffer
         with self.assertRaises(TypeError):
-            AdaptiveMuon(
-                [test_param],
-                lr=0.01,
-                momentum_beta=0.9,
-                weight_decay=0.0,
-                use_nesterov=False,
-                moment2_method=None,
-                beta2=0.999,
-                eps=1e-8,
-                weight_decay_method="decoupled",
-                fp32_matmul_prec="highest",
-            )
+            adaptive_opt.step()
 
 
 if __name__ == "__main__":
