@@ -73,8 +73,6 @@ class AdaptiveMuon(Muon):
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
     ):
-        self.moment2_method = moment2_method
-
         super().__init__(
             params,
             lr=lr,
@@ -89,6 +87,7 @@ class AdaptiveMuon(Muon):
             extra_scale_factor=extra_scale_factor,
             use_syrk=use_syrk,
         )
+        self.moment2_method = moment2_method
 
         for group in self.param_groups:
             group.setdefault("beta2", beta2)
