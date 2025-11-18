@@ -147,7 +147,5 @@ def get_muon_scale_factor(size_out: int, size_in: int, mode: str = "spectral") -
         # Suggested by Scion (https://arxiv.org/abs/2502.07529) and Bernstein et al.
         # (https://jeremybernste.in/writing/deriving-muon)
         return (size_out / size_in) ** 0.5
-    elif mode == "none":
-        return 1.0
     else:
         raise ValueError(f"Invalid mode for Muon update scale factor: {mode}")
