@@ -90,7 +90,6 @@ class AdaptiveMuon(Muon):
             use_syrk=use_syrk,
         )
 
-        # Add beta2 and eps to param_groups defaults
         for group in self.param_groups:
             group.setdefault("beta2", beta2)
             group.setdefault("eps", eps)
@@ -182,7 +181,7 @@ class AdaptiveMuon(Muon):
     @torch.no_grad()  # type: ignore[misc]
     @override
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
-        """Performs a single optimization step with second moment normalization.
+        """Single optimization step.
 
         Args:
             closure: A closure that reevaluates the model and returns the loss.
@@ -201,7 +200,6 @@ class AdaptiveMuon(Muon):
                     continue
                 state = self.state[p]
 
-                # initialize momentum buffer and second moment buffer
                 if "momentum_buffer" not in state:
                     state["momentum_buffer"] = torch.zeros_like(grad)
                     self._initialize_moment2(state, grad)
@@ -218,7 +216,6 @@ class AdaptiveMuon(Muon):
                 # update momentum buffer with EMA of gradient
                 exp_avg.lerp_(grad, 1 - group["momentum_beta"])
 
-                # include nesterov momentum
                 if self.use_nesterov:
                     grad = grad.lerp(exp_avg, group["momentum_beta"])
                 else:
@@ -227,7 +224,6 @@ class AdaptiveMuon(Muon):
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     grad = self.scaled_orthogonalize_fn(grad)
 
-                # Apply second moment normalization
                 grad = self._apply_moment2_normalization(
                     orth_grad=grad,
                     moment2=state["moment2_buffer"],
