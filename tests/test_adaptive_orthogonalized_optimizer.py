@@ -3,7 +3,7 @@ import torch.nn as nn
 from absl import flags
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.orthogonalized_optimizers.adaptive_orthogonalized_optimizer import (
+from emerging_optimizers.orthogonalized_optimizers.adaptive_muon import (
     AdaptiveMuon,
 )
 
