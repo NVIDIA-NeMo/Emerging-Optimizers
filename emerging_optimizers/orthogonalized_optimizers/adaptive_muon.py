@@ -222,10 +222,10 @@ class AdaptiveMuon(Muon):
                     grad = exp_avg
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    grad = self.scaled_orthogonalize_fn(grad)
+                    orth_grad = self.scaled_orthogonalize_fn(grad)
 
-                grad = self._apply_moment2_normalization(
-                    orth_grad=grad,
+                update = self._apply_moment2_normalization(
+                    orth_grad=orth_grad,
                     moment2=state["moment2_buffer"],
                     beta2=group["beta2"],
                     eps=group["eps"],
@@ -233,6 +233,6 @@ class AdaptiveMuon(Muon):
 
                 # perform weight update
                 # scale is applied to have update RMS == 1
-                p.add_(grad, alpha=-group["lr"])
+                p.add_(update, alpha=-group["lr"])
 
         return loss
