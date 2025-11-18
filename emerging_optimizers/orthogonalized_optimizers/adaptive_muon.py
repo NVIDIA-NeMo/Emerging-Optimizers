@@ -70,7 +70,7 @@ class AdaptiveMuon(Muon):
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
         moment2_method: Literal["adamuon", "normuon"] = "adamuon",
-        beta2: float = 0.999,
+        beta2: float = 0.95,
         eps: float = 1e-8,
     ):
         super().__init__(
