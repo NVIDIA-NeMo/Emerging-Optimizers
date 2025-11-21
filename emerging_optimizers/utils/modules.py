@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+from typing import Any, Self
 
 import numpy as np
 import torch
@@ -32,9 +32,6 @@ class Conv1dFlatWeights(nn.Conv1d):
         self.weight: nn.Parameter[torch.Tensor]
         self.bias: nn.Parameter[torch.Tensor] | None | str
 
-        # Calculate shape of combined 2D tensor:
-        # - Rows: out_channels (one per output feature map)
-        # - Columns: flattened kernel weights + 1 bias term
         flat_weight_dim = np.prod(self.weight.shape[1:])
         if self.bias is not None:
             flat_weight_dim += 1
@@ -55,7 +52,7 @@ class Conv1dFlatWeights(nn.Conv1d):
         self.weight = nn.Parameter(flat_weight_buffer)
 
     @classmethod
-    def from_conv1d(cls, conv1d: nn.Conv1d) -> "Conv1dFlatWeights":
+    def from_conv1d(cls, conv1d: nn.Conv1d) -> Self:
         conv1d_flat = cls(
             in_channels=conv1d.in_channels,
             out_channels=conv1d.out_channels,

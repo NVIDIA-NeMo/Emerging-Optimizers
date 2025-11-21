@@ -28,7 +28,7 @@ class TestConv1dFlatWeights(parameterized.TestCase):
         batch_size=[4, 5, 6],
         bias=[False, True],
     )
-    def test_no_bias_matches_conv1d(self, in_channels, out_channels, kernel_size, batch_size, bias):
+    def test_matches_conv1d(self, in_channels, out_channels, kernel_size, batch_size, bias):
         torch.manual_seed(42)
         conv = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, bias=bias)
         torch.manual_seed(42)
