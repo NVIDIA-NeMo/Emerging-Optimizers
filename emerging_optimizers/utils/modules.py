@@ -32,12 +32,10 @@ class Conv1dFlatWeights(nn.Conv1d):
         self.weight: nn.Parameter[torch.Tensor]
         self.bias: nn.Parameter[torch.Tensor] | None | str
 
-        flat_weight_dim = np.prod(self.weight.shape[1:])
+        flat_weight_shape = [self.out_channels, np.prod(self.weight.shape[1:])]
         if self.bias is not None:
-            flat_weight_dim += 1
-        flat_weight_buffer = torch.empty(
-            (self.out_channels, flat_weight_dim), device=self.weight.device, dtype=self.weight.dtype
-        )
+            flat_weight_shape[1] += 1
+        flat_weight_buffer = torch.empty(flat_weight_shape, device=self.weight.device, dtype=self.weight.dtype)
         if self.bias is not None:
             flat_weight_buffer[:, :-1].copy_(self.weight.view(self.out_channels, -1))
             flat_weight_buffer[:, -1].copy_(self.bias)
