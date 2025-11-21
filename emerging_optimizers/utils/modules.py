@@ -36,6 +36,11 @@ class Conv1dFlatWeights(nn.Conv1d):
     Arguments are the same as ::class:`torch.nn.Conv1d`.
 
     Note:
+        This implementation potentially introduces a small overhead because of split weights can combining gradients
+        of it. This should be trivial compared to computational cost of LLM training. If it becomes a concern, a
+        kernel can be developed to eliminate the overhead.
+
+    Note:
         Similar flattening logic can be applied to N-D convolution. But since we don't have use cases of them in LLM
         yet, they are not supported despite the __init__() function is generalized enough to support N-D convolution.
 
