@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 from typing import Any, Self
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -54,7 +54,7 @@ class Conv1dFlatWeights(nn.Conv1d):
         self.weight: nn.Parameter[torch.Tensor]
         self.bias: nn.Parameter[torch.Tensor] | None | str
 
-        flat_weight_shape = [self.out_channels, np.prod(self.weight.shape[1:])]
+        flat_weight_shape = [self.out_channels, math.prod(self.weight.shape[1:])]
         if self.bias is not None:
             flat_weight_shape[1] += 1
         flat_weight_buffer = torch.empty(flat_weight_shape, device=self.weight.device, dtype=self.weight.dtype)
