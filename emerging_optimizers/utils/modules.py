@@ -22,7 +22,24 @@ import torch.nn.functional as F
 
 
 class Conv1dFlatWeights(nn.Conv1d):
-    """Conv1d with weights+bias stored in a single 2D tensor"""
+    """Conv1d with weights+bias stored in a single 2D tensor
+
+    There are conv1d used in some LLM, in mamba mixer for example. Because the weight is not 2d, we cannot apply
+    many of the emerging optimizers originally introduced for 2d weights of Linear layers without bias. Since
+    convolution can be viewed as a matrix multiplication with im2col (either implicit or explicit), we can flatten
+    the weight into a single 2D tensor and then apply the emerging optimizers to it.
+
+    Bias is not commonly used in most LLM's anymore, but they are often included in this type of conv1d.
+    Since bias is mathematically the 0 order term of the polynomial, we can combine weight and bias into a
+    single 2D tensor.
+
+    Arguments are the same as ::class:`torch.nn.Conv1d`.
+
+    Note:
+        Similar flattening logic can be applied to N-D convolution. But since we don't have use cases of them in LLM
+        yet, they are not supported despite the __init__() function is generalized enough to support N-D convolution.
+
+    """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -37,8 +54,8 @@ class Conv1dFlatWeights(nn.Conv1d):
             flat_weight_shape[1] += 1
         flat_weight_buffer = torch.empty(flat_weight_shape, device=self.weight.device, dtype=self.weight.dtype)
         if self.bias is not None:
-            flat_weight_buffer[:, :-1].copy_(self.weight.view(self.out_channels, -1))
-            flat_weight_buffer[:, -1].copy_(self.bias)
+            flat_weight_buffer[..., :-1].copy_(self.weight.view(self.out_channels, -1))
+            flat_weight_buffer[..., -1].copy_(self.bias)
             del self.bias
             self.has_bias = True
             self.bias = "dummy"  # Trick con1d.extra_repr() to not print bias=False
@@ -66,8 +83,8 @@ class Conv1dFlatWeights(nn.Conv1d):
         )
 
         if conv1d.bias is not None:
-            conv1d_flat.weight.data[:, :-1].copy_(conv1d.weight.data.view(conv1d.out_channels, -1))
-            conv1d_flat.weight.data[:, -1].copy_(conv1d.bias.data)
+            conv1d_flat.weight.data[..., :-1].copy_(conv1d.weight.data.view(conv1d.out_channels, -1))
+            conv1d_flat.weight.data[..., -1].copy_(conv1d.bias.data)
         else:
             conv1d_flat.weight.data.copy_(conv1d.weight.data.view(conv1d.out_channels, -1))
         return conv1d_flat
@@ -78,8 +95,8 @@ class Conv1dFlatWeights(nn.Conv1d):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.has_bias:
-            weight = self.weight[:, :-1].view(self.weight_shape)
-            bias = self.weight[:, -1]
+            weight = self.weight[..., :-1].view(self.weight_shape)
+            bias = self.weight[..., -1]
         else:
             weight = self.weight.view(self.weight_shape)
             bias = None
