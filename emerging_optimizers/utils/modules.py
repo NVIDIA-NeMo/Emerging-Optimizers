@@ -63,7 +63,15 @@ class Conv1dFlatWeights(nn.Conv1d):
             dilation=conv1d.dilation,
             groups=conv1d.groups,
             padding_mode=conv1d.padding_mode,
+            device=conv1d.weight.device,
+            dtype=conv1d.weight.dtype,
         )
+
+        if conv1d.bias is not None:
+            conv1d_flat.weight.data[:, :-1].copy_(conv1d.weight.data.view(conv1d.out_channels, -1))
+            conv1d_flat.weight.data[:, -1].copy_(conv1d.bias.data)
+        else:
+            conv1d_flat.weight.data.copy_(conv1d.weight.data.view(conv1d.out_channels, -1))
         return conv1d_flat
 
     @property
