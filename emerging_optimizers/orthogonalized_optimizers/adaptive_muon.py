@@ -195,7 +195,7 @@ class AdaptiveMuon(Muon):
         for group in self.param_groups:
             for p in group["params"]:
                 if p.dim() != 2:
-                    raise ValueError("AdaptiveMuon only supports 2D parameters")
+                    raise ValueError(f"{self.__class__.__name__} only supports 2D parameters")
                 grad = p.grad
                 if grad is None:
                     continue
@@ -223,7 +223,8 @@ class AdaptiveMuon(Muon):
                     grad = exp_avg
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    orth_grad = self.scaled_orthogonalize_fn(grad)
+                    group_kwargs = {k: v for k, v in group.items() if k != "params"}
+                    orth_grad = self.orthogonalize(p, grad, **group_kwargs)
 
                 update = self._apply_moment2_normalization(
                     orth_grad=orth_grad,
