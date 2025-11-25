@@ -140,8 +140,8 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         for group in self.param_groups:
             for p in group["params"]:
-                if p.dim() == 1:
-                    raise ValueError(f"{self.__class__.__name__} does not support 1D parameters")
+                if p.dim() != 2:
+                    raise ValueError(f"{self.__class__.__name__} only supports 2D parameters")
                 grad = p.grad
                 if grad is None:
                     continue
@@ -172,11 +172,11 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     group_kwargs = {k: v for k, v in group.items() if k != "params"}
-                    grad = self.orthogonalize(p, grad, **group_kwargs)
+                    orth_grad = self.orthogonalize(p, grad, **group_kwargs)
 
                 # perform weight update
                 # scale is applied to have update RMS == 1
-                p.add_(grad, alpha=-group["lr"])
+                p.add_(orth_grad, alpha=-group["lr"])
 
         return loss
 
