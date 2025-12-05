@@ -131,6 +131,12 @@ runs:
         sudo mount -t cifs $SMB_PATH $MNT_PATH -o credentials=$SMB_CREDENTIAL_FILE,serverino,nosharesock,actimeo=30,mfsymlinks
 
         ls -al $MNT_PATH/TestData
+    
+    - name: Install uuidgen
+      shell: bash -x -e -u -o pipefail {0}
+      run: |
+        apt-get update
+        apt-get install -y uuid-runtime
 
     - name: Docker pull image
       shell: bash
