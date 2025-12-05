@@ -59,7 +59,7 @@ jobs:
     with:
       image-name: emerging_optimizers
       dockerfile: docker/Dockerfile.ci
-      runner: self-hosted-nemo
+      runner: nemo-ci-aws-gpu-x2
     secrets:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -71,7 +71,7 @@ jobs:
       matrix:
         include:
           - script: L0_Tests_GPU
-            runner: self-hosted-nemo
+            runner: nemo-ci-aws-gpu-x2
             timeout: 30
           - script: L0_Tests_CPU
             runner: linux-amd64-cpu16
