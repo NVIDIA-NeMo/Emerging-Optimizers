@@ -133,10 +133,10 @@ runs:
         ls -al $MNT_PATH/TestData
     
     - name: Install uuidgen
-      shell: bash -x -e -u -o pipefail {0}
+      shell: bash
       run: |
-        apt-get update
-        apt-get install -y uuid-runtime
+        sudo apt update
+        sudo apt install -y uuid-runtime
 
     - name: Docker pull image
       shell: bash
