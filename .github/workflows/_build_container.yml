@@ -37,7 +37,7 @@ on:
 
 jobs:
   pre-flight:
-    runs-on: self-hosted-nemo
+    runs-on: ubuntu-latest
     outputs:
       cache-from: ${{ steps.cache-from.outputs.LAST_PRS }}
     steps:
