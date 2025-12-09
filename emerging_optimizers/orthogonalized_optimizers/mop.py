@@ -75,13 +75,24 @@ MOP.__doc__ = MOP.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr
 
 
 def polar_via_svd(A: torch.Tensor, return_p: bool = False) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
-    """Compute polar decomposition via SVD"""
+    """Compute polar decomposition via SVD
 
+    Args:
+        A: The input tensor to compute the polar decomposition of.
+        return_p: Whether to return the positive-semidefinite part of the polar decomposition. p is not needed
+            by the MOP optimizer, so by default it is not calculated to save computation. The option is provided to
+            return full polar decomposition to match the function name.
+
+    Returns:
+        A tuple containing:
+            - The unitary part of the polar decomposition.
+            - The positive-semidefinite part of the polar decomposition, if return_p is True.
+    """
     U_svd, S, Vh = torch.linalg.svd(A, full_matrices=False)
     U_polar = U_svd @ Vh
 
     if not return_p:
         return U_polar, None
     else:
-        H = Vh.mH @ torch.diag(S) @ Vh
-        return U_polar, H
+        p = Vh.mH @ torch.diag(S) @ Vh
+        return U_polar, p
