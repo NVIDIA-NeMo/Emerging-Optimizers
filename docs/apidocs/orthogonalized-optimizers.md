@@ -27,6 +27,12 @@ emerging_optimizers.orthogonalized_optimizers
 .. autoclass:: Scion
     :members:
 
+:hidden:`Mop`
+~~~~~~~~~~~~~~~
+
+.. autoclass:: MOP
+    :members:
+
 
 :hidden:`Newton-Schulz`
 ~~~~~~~~~~~~~~~~~~~~~~~~
