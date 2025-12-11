@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Literal
+
 import torch
 from absl import logging
 from torch.optim.optimizer import ParamsT
@@ -21,6 +23,9 @@ from emerging_optimizers import triton_kernels
 from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
+
+
+MuonScaleT = Literal["shape_scaling", "spectral", "unit_rms_norm"]
 
 
 class Muon(OrthogonalizedOptimizer):
@@ -72,7 +77,7 @@ class Muon(OrthogonalizedOptimizer):
         fp32_matmul_prec: str = "medium",
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
-        scale_mode: str = "spectral",
+        scale_mode: MuonScaleT = "spectral",
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
     ) -> None:
@@ -122,7 +127,7 @@ class Muon(OrthogonalizedOptimizer):
 Muon.__doc__ = Muon.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
 
 
-def get_muon_scale_factor(size_out: int, size_in: int, mode: str = "spectral") -> float:
+def get_muon_scale_factor(size_out: int, size_in: int, mode: MuonScaleT = "spectral") -> float:
     """Get the scale for the update.
 
     Default mode is "spectral", which is the mode that allows for learning rate transferability from AdamW.

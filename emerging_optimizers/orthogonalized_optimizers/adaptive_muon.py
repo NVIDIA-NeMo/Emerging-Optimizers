@@ -26,10 +26,10 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import utils
-from emerging_optimizers.orthogonalized_optimizers.muon import Muon
+from emerging_optimizers.orthogonalized_optimizers import muon
 
 
-class AdaptiveMuon(Muon):
+class AdaptiveMuon(muon.Muon):
     """Adaptive Muon optimizer with adaptive second moment (AdaMuon/NorMuon variants).
 
     This class extends Muon by adding AdamW-style or NorMuon-style second moment
@@ -68,7 +68,7 @@ class AdaptiveMuon(Muon):
         fp32_matmul_prec: str,
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
-        scale_mode: str = "spectral",
+        scale_mode: muon.MuonScaleT = "spectral",
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
         moment2_method: Literal["adamuon", "normuon"] = "adamuon",
