@@ -254,9 +254,10 @@ class MopTest(parameterized.TestCase):
         shape=[(5, 7), (33, 65), (127, 257)],
         weight_decay_method=["decoupled", "independent"],
         use_nesterov=[True, False],
-        extra_scale_factor=[1.0, 2.0],
+        scale_mode=["spectral", "nuclear_norm"],
+        extra_scale_factor=[1.0, 0.2],
     )
-    def test_smoke(self, shape, weight_decay_method, use_nesterov, extra_scale_factor) -> None:
+    def test_smoke(self, shape, weight_decay_method, use_nesterov, scale_mode, extra_scale_factor) -> None:
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device="cuda"))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
@@ -264,6 +265,7 @@ class MopTest(parameterized.TestCase):
             [test_param],
             weight_decay_method=weight_decay_method,
             use_nesterov=use_nesterov,
+            scale_mode=scale_mode,
             extra_scale_factor=extra_scale_factor,
         )
         mop_opt.step()

@@ -14,7 +14,7 @@
 # limitations under the License.
 
 
-from typing import Optional
+from typing import Literal, Optional
 
 import torch
 from torch.optim.optimizer import ParamsT
@@ -36,7 +36,7 @@ class MOP(OrthogonalizedOptimizer):
 
     Args:
         {_args_doc}
-        scale_mode: The type of scale factor to use for the update. Defaults to "spectral" style scaling.
+        scale_mode: The type of scale factor to use for the update. Defaults to nuclear_norm style scaling.
         extra_scale_factor: The additional scale factor to use for the update.
     """
 
@@ -50,21 +50,25 @@ class MOP(OrthogonalizedOptimizer):
         use_nesterov: bool = False,
         weight_decay_method: WeightDecayT = "decoupled",
         fp32_matmul_prec: str = "highest",
-        scale_mode: str = "spectral",
+        scale_mode: muon.MuonScaleT | Literal["nuclear_norm"] = "nuclear_norm",
         extra_scale_factor: float = 1.0,
     ) -> None:
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
-            orth_grad, _ = polar_via_svd(grad, False)
+            orth_grad, _, S = polar_via_svd(grad, False)
 
-            scale_factor = muon.get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
+            if scale_mode != "nuclear_norm":
+                scale_factor = muon.get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
+            else:
+                # nuclear norm scaling suggested by PolarGrad paper (https://arxiv.org/pdf/2505.21799)
+                scale_factor = S.sum().sqrt()
             return orth_grad * scale_factor * extra_scale_factor
 
         super().__init__(
             params,
             lr,
             momentum_beta,
+            weight_decay,
             use_nesterov=use_nesterov,
-            weight_decay=weight_decay,
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
             scaled_orthogonalize_fn=scaled_orthogonalize_fn,
@@ -74,7 +78,9 @@ class MOP(OrthogonalizedOptimizer):
 MOP.__doc__ = MOP.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
 
 
-def polar_via_svd(A: torch.Tensor, return_p: bool = False) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+def polar_via_svd(
+    A: torch.Tensor, return_p: bool = False
+) -> tuple[torch.Tensor, Optional[torch.Tensor], torch.Tensor]:
     """Compute polar decomposition via SVD
 
     Args:
@@ -87,12 +93,13 @@ def polar_via_svd(A: torch.Tensor, return_p: bool = False) -> tuple[torch.Tensor
         A tuple containing:
             - The unitary part of the polar decomposition.
             - The positive-semidefinite part of the polar decomposition, if return_p is True.
+            - The singular values of the input tensor.
     """
     U_svd, S, Vh = torch.linalg.svd(A, full_matrices=False)
     U_polar = U_svd @ Vh
 
     if not return_p:
-        return U_polar, None
+        return U_polar, None, S
     else:
         p = Vh.mH @ torch.diag(S) @ Vh
-        return U_polar, p
+        return U_polar, p, S
