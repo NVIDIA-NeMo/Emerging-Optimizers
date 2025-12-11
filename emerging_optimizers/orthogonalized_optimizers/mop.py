@@ -60,7 +60,7 @@ class MOP(OrthogonalizedOptimizer):
                 scale_factor = muon.get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
             else:
                 # nuclear norm scaling suggested by PolarGrad paper (https://arxiv.org/pdf/2505.21799)
-                scale_factor = S.sum().sqrt()
+                scale_factor = S.sum()
             return orth_grad * scale_factor * extra_scale_factor
 
         super().__init__(
