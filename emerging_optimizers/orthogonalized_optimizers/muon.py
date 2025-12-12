@@ -53,7 +53,7 @@ class Muon(OrthogonalizedOptimizer):
     Warning:
         - This optimizer requires that all parameters passed in are 2D.
         - It should not be used for the embedding layer, the final fully connected layer, or any 1-D
-          parameters; those should all be optimized by a standard method (e.g., AdamW).
+          parameters; those can all be optimized by a standard method (e.g., AdamW).
 
     Args:
         {_args_doc}
@@ -61,7 +61,8 @@ class Muon(OrthogonalizedOptimizer):
             ["simple", "quintic", "polar_express"].
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
         scale_mode: The type of scale factor to use for the update. Defaults to "spectral" style scaling.
-        extra_scale_factor: The additional scale factor to use for the update.
+        extra_scale_factor: The additional scale factor to use for the update. Set it to 0.2 can closely match
+            the update RMS norm of AdamW as suggested by https://arxiv.org/abs/2502.16982.
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
     """
 
