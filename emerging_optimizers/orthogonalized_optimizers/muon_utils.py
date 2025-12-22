@@ -20,7 +20,7 @@ from absl import logging
 from emerging_optimizers import triton_kernels
 
 
-__all__ = ["newton_schulz", "newton_schulz_tp"]
+__all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT"]
 
 NSCoeffT = Literal["simple", "quintic", "polar_express", "aol", "custom"]
 
