@@ -116,10 +116,18 @@ class Conv1dFlatWeights(nn.Conv1d):
 
     @override
     def extra_repr(self) -> str:
-        if self.has_bias:
-            # trick extra_repr() to print bias=True
-            self.bias = torch.tensor(0)
-        base_repr = super().extra_repr()
-        if self.has_bias:
-            del self.bias
-        return f"{base_repr}, flattened_param_shape={tuple(self.weight.shape)}"
+        s = "{in_channels}, {out_channels}, kernel_size={kernel_size}, stride={stride}"
+        if self.padding != (0,) * len(self.padding):
+            s += ", padding={padding}"
+        if self.dilation != (1,) * len(self.dilation):
+            s += ", dilation={dilation}"
+        if self.output_padding != (0,) * len(self.output_padding):
+            s += ", output_padding={output_padding}"
+        if self.groups != 1:
+            s += ", groups={groups}"
+        if not self.has_bias:
+            s += ", bias=False"
+        if self.padding_mode != "zeros":
+            s += ", padding_mode={padding_mode}"
+        s += ", flattened_param_shape={tuple(self.weight.shape)}"
+        return s.format(**self.__dict__)
