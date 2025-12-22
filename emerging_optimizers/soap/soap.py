@@ -14,7 +14,7 @@
 # limitations under the License.
 from functools import partial
 from itertools import chain
-from typing import Callable
+from typing import Callable, overload
 
 
 # TODO(@boxiangw): remove this once bump to python 3.12
@@ -135,6 +135,12 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             "weight_decay": weight_decay,
         }
         super().__init__(params, defaults)
+
+    @overload
+    def step(self, closure: None = ...) -> None: ...
+
+    @overload
+    def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override

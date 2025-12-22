@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Callable, Literal
+from typing import Callable, Literal, overload
 
 
 # TODO(@boxiangw): remove this once bump to python 3.12
@@ -180,6 +180,12 @@ class AdaptiveMuon(muon.Muon):
 
         else:
             raise TypeError(f"Invalid second moment method: {self.moment2_method}")
+
+    @overload
+    def step(self, closure: None = ...) -> None: ...
+
+    @overload
+    def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override

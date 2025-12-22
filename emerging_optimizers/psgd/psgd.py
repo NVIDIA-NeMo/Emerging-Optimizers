@@ -13,7 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import Callable, override
+from typing import Callable, overload
+
+
+try:
+    from typing import override
+except ImportError:
+    from typing_extensions import override
 
 import torch
 from torch.optim.optimizer import ParamsT
@@ -84,6 +90,12 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
             "min_precond_lr": min_precond_lr,
         }
         super().__init__(params, defaults)
+
+    @overload
+    def step(self, closure: None = ...) -> None: ...
+
+    @overload
+    def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override

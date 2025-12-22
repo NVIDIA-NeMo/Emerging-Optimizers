@@ -123,7 +123,7 @@ def newton_schulz(
     if tp_group is not None:
         X = distributed_normalize_p2(x, eps, tp_group)
     else:
-        X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)
+        X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)  # type: ignore[arg-type]
 
     if coefficient_type in _COEFFICIENT_SETS:
         coefficient_sets = _COEFFICIENT_SETS[coefficient_type]

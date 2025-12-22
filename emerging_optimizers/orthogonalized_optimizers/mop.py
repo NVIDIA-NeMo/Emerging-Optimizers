@@ -57,6 +57,7 @@ class MOP(OrthogonalizedOptimizer):
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             orth_grad, _, S = polar_via_svd(grad, False)
 
+            scale_factor: float | torch.Tensor
             if scale_mode != "nuclear_norm":
                 scale_factor = muon.get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
             else:

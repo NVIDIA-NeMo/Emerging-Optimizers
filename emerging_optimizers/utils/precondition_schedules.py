@@ -16,6 +16,11 @@ import math
 from abc import ABC, abstractmethod
 
 
+try:
+    from typing import override
+except ImportError:
+    from typing_extensions import override
+
 __all__ = [
     "LinearSchedule",
     "CosineSchedule",
@@ -106,6 +111,7 @@ class LinearSchedule(PreconditionSchedule):
             raise ValueError("transition_steps must be positive")
         self.transition_steps = transition_steps
 
+    @override
     def _compute_frequency(self, step: int) -> int:
         if step <= self.transition_steps:
             # Linear interpolation
@@ -137,6 +143,7 @@ class CosineSchedule(PreconditionSchedule):
             raise ValueError("transition_steps must be positive")
         self.transition_steps = transition_steps
 
+    @override
     def _compute_frequency(self, step: int) -> int:
         progress = (1 + math.cos(math.pi * (step % self.transition_steps) / self.transition_steps)) / 2
         current_freq = self.max_freq - (self.max_freq - self.min_freq) * progress
@@ -185,6 +192,7 @@ class StepSchedule(PreconditionSchedule):
         frequencies = list(schedule_dict.values())
         super().__init__(min(frequencies), max(frequencies), start_step)
 
+    @override
     def _compute_frequency(self, step: int) -> int:
         current_freq = self.schedule_dict[self.sorted_steps[0]]  # Default to first value
         for threshold in self.sorted_steps:
