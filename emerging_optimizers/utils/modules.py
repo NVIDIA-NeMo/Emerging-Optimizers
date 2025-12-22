@@ -129,5 +129,5 @@ class Conv1dFlatWeights(nn.Conv1d):
             s += ", bias=False"
         if self.padding_mode != "zeros":
             s += f", padding_mode={self.padding_mode}"
-        s += f", flattened_param_shape={self.weight.shape}"
+        s += f", flattened_param_shape={tuple(self.weight.shape)}"
         return s
