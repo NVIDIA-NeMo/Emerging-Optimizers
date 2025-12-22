@@ -118,16 +118,16 @@ class Conv1dFlatWeights(nn.Conv1d):
     def extra_repr(self) -> str:
         s = "{in_channels}, {out_channels}, kernel_size={kernel_size}, stride={stride}"
         if self.padding != (0,) * len(self.padding):
-            s += ", padding={padding}"
+            s += f", padding={self.padding}"
         if self.dilation != (1,) * len(self.dilation):
-            s += ", dilation={dilation}"
+            s += f", dilation={self.dilation}"
         if self.output_padding != (0,) * len(self.output_padding):
-            s += ", output_padding={output_padding}"
+            s += f", output_padding={self.output_padding}"
         if self.groups != 1:
-            s += ", groups={groups}"
+            s += f", groups={self.groups}"
         if not self.has_bias:
             s += ", bias=False"
         if self.padding_mode != "zeros":
-            s += ", padding_mode={padding_mode}"
-        s += ", flattened_param_shape={tuple(self.weight.shape)}"
-        return s.format(**self.__dict__)
+            s += f", padding_mode={self.padding_mode}"
+        s += f", flattened_param_shape={self.weight.shape}"
+        return s
