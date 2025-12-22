@@ -79,7 +79,7 @@ class ObliqueSGD(Optimizer):
 
     @torch.no_grad()  # type: ignore[misc]
     @override
-    def step(self, closure: None = None) -> float | None:
+    def step(self, closure: Callable[[], float] | None = None) -> float | None:
         """Performs a single optimization step.
 
         Args:
