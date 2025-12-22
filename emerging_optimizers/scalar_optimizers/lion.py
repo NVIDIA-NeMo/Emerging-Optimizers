@@ -12,8 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional
-
 import torch
 
 
@@ -28,7 +26,7 @@ def calculate_lion_update(
     grad: torch.Tensor,
     exp_avg: torch.Tensor,
     momentum_beta: float,
-    momentum_beta2: Optional[float] = None,
+    momentum_beta2: float | None = None,
 ) -> torch.Tensor:
     """Performs the Lion update.
 

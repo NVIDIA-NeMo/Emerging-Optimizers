@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import Callable, List, Tuple, override
+from typing import Callable, override
 
 import torch
 from torch.optim.optimizer import ParamsT
@@ -154,7 +154,7 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
 def _init_psgd_kron_states(
     grad: torch.Tensor,
     precond_init_scale: float = 1.0,
-) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
     """Initialize the Kronecker factor matrices and Lipschitz constants.
 
     Args:
@@ -165,8 +165,8 @@ def _init_psgd_kron_states(
         q_list: List of Kronecker factors.
         lip_const_list: List of Lipschitz constants for the Kronecker factors.
     """
-    q_list: List[torch.Tensor] = []
-    lip_const_list: List[torch.Tensor] = []
+    q_list: list[torch.Tensor] = []
+    lip_const_list: list[torch.Tensor] = []
 
     # Create identity matrices scaled by precond_init_scale for each dimension
     for size in grad.shape:
@@ -177,13 +177,13 @@ def _init_psgd_kron_states(
 
 
 def _update_precond_procrustes(
-    q_list: List[torch.Tensor],
-    lip_const_list: List[torch.Tensor],
+    q_list: list[torch.Tensor],
+    lip_const_list: list[torch.Tensor],
     exp_avg: torch.Tensor,
     damping_noise_scale: float = 1e-9,
     precond_lr: float = 0.1,
     beta_lip: float = 0.9,
-) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
     r"""Update the Kron preconditioner Q using procrustes step and uniformization.
 
     Args:
@@ -201,8 +201,8 @@ def _update_precond_procrustes(
     dampened_momentum = exp_avg + (damping_noise_scale + 1e-7 * exp_avg.abs()) * torch.randn_like(exp_avg)
     pg = psgd_kron_contractions.apply_preconditioner(q_list, dampened_momentum)
     total_numel = pg.numel()
-    updated_q_list: List[torch.Tensor] = []
-    updated_lip_const_list: List[torch.Tensor] = []
+    updated_q_list: list[torch.Tensor] = []
+    updated_lip_const_list: list[torch.Tensor] = []
     for dim, q in enumerate(q_list):
         # compute gradient covariance
         precond_grad_cov = psgd_kron_contractions.partial_contraction(pg, pg, dim)
@@ -229,7 +229,7 @@ def _update_matrix_preconditioner(
     total_numel: int,
     precond_lr: float,
     beta_lip: float,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     r"""Update matrix-structured preconditioner with adaptive Lipschitz constant.
 
     Args:
@@ -259,7 +259,7 @@ def _update_1d_preconditioner(
     total_numel: int,
     precond_lr: float,
     beta_lip: float,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     r"""Update 1D preconditioner with adaptive Lipschitz constant.
 
     Args:

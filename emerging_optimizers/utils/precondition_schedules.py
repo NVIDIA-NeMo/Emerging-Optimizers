@@ -14,7 +14,6 @@
 # limitations under the License.
 import math
 from abc import ABC, abstractmethod
-from typing import Dict
 
 
 __all__ = [
@@ -160,7 +159,7 @@ class StepSchedule(PreconditionSchedule):
         })
     """
 
-    def __init__(self, schedule_dict: Dict[int, int], start_step: int = 0):
+    def __init__(self, schedule_dict: dict[int, int], start_step: int = 0):
         """Initialize with a dictionary mapping steps to frequencies.
 
         Args:

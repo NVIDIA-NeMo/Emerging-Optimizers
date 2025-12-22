@@ -12,8 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Tuple
-
 import torch
 
 
@@ -28,7 +26,7 @@ def calculate_adam_update(
     grad: torch.Tensor,
     exp_avg: torch.Tensor,
     exp_avg_sq: torch.Tensor,
-    betas: Tuple[float, float],
+    betas: tuple[float, float],
     correct_bias: bool,
     use_nesterov: bool,
     step: int,
