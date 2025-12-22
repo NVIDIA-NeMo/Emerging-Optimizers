@@ -58,7 +58,7 @@ class Conv1dFlatWeights(nn.Conv1d):
         assert self.padding_mode == "zeros", "Only zeros padding is supported"
 
         self.weight: nn.Parameter
-        self.bias: nn.Parameter | None
+        self.bias: torch.Tensor | None
 
         flat_weight_shape = [self.out_channels, math.prod(self.weight.shape[1:])]
         if self.bias is not None:
@@ -116,7 +116,10 @@ class Conv1dFlatWeights(nn.Conv1d):
 
     @override
     def extra_repr(self) -> str:
+        if self.has_bias:
+            # trick extra_repr() to print bias=True
+            self.bias = torch.tensor(0)
         base_repr = super().extra_repr()
         if self.has_bias:
-            base_repr += ", bias=True"
+            del self.bias
         return f"{base_repr}, flattened_param_shape={tuple(self.weight.shape)}"
