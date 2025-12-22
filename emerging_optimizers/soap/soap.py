@@ -31,6 +31,7 @@ from torch.optim.optimizer import ParamsT
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import scalar_optimizers, utils
 from emerging_optimizers.soap import soap_utils
+from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 __all__ = [
@@ -97,9 +98,9 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         adam_warmup_steps: int = 0,
         precondition_1d: bool = False,
         correct_bias: bool = True,
-        fp32_matmul_prec: str = "high",
+        fp32_matmul_prec: FP32MatmulPrecT = "high",
         use_eigh: bool = False,
-        qr_fp32_matmul_prec: str = "high",
+        qr_fp32_matmul_prec: FP32MatmulPrecT = "high",
         use_adaptive_criteria: bool = False,
         adaptive_update_tolerance: float = 1e-7,
         power_iter_steps: int = 1,

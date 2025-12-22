@@ -20,6 +20,7 @@ from torch.optim.optimizer import ParamsT
 from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schulz
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
+from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 class Scion(OrthogonalizedOptimizer):
@@ -61,7 +62,7 @@ class Scion(OrthogonalizedOptimizer):
         lr: float = 3e-4,
         momentum_beta: float = 0.95,
         *,
-        fp32_matmul_prec: str = "medium",
+        fp32_matmul_prec: FP32MatmulPrecT = "medium",
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
         spectral_radius: float = 1.0,

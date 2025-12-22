@@ -23,6 +23,7 @@ from emerging_optimizers import triton_kernels
 from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
+from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 MuonScaleT = Literal["shape_scaling", "spectral", "unit_rms_norm"]
@@ -75,7 +76,7 @@ class Muon(OrthogonalizedOptimizer):
         *,
         use_nesterov: bool = False,
         weight_decay_method: WeightDecayT = "decoupled",
-        fp32_matmul_prec: str = "medium",
+        fp32_matmul_prec: FP32MatmulPrecT = "medium",
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
         scale_mode: MuonScaleT = "spectral",

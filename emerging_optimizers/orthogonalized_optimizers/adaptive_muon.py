@@ -27,6 +27,7 @@ from torch.optim.optimizer import ParamsT
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import utils
 from emerging_optimizers.orthogonalized_optimizers import muon
+from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 class AdaptiveMuon(muon.Muon):
@@ -65,7 +66,7 @@ class AdaptiveMuon(muon.Muon):
         *,
         use_nesterov: bool,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
-        fp32_matmul_prec: str,
+        fp32_matmul_prec: FP32MatmulPrecT,
         coefficient_type: str = "quintic",
         num_ns_steps: int = 5,
         scale_mode: muon.MuonScaleT = "spectral",
