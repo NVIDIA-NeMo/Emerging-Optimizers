@@ -33,10 +33,11 @@ repos:
     - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.14.0
+    rev: v1.19.1
     hooks:
       - id: mypy
         exclude: ^docs|^tests|^benchmarks|^docker
+        additional_dependencies: ["torch"]
 
   - repo: local
     hooks:

@@ -22,7 +22,9 @@ from torch.optim.optimizer import ParamsT
 from emerging_optimizers import triton_kernels
 from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
+from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
+from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 MuonScaleT = Literal["shape_scaling", "spectral", "unit_rms_norm"]
@@ -75,8 +77,8 @@ class Muon(OrthogonalizedOptimizer):
         *,
         use_nesterov: bool = False,
         weight_decay_method: WeightDecayT = "decoupled",
-        fp32_matmul_prec: str = "medium",
-        coefficient_type: str = "quintic",
+        fp32_matmul_prec: FP32MatmulPrecT = "medium",
+        coefficient_type: NSCoeffT = "quintic",
         num_ns_steps: int = 5,
         scale_mode: MuonScaleT = "spectral",
         extra_scale_factor: float = 1.0,

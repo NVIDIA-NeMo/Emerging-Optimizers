@@ -12,8 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional, Tuple
-
 import torch
 from absl import logging
 from torch import Tensor
@@ -30,8 +28,8 @@ __all__ = [
 def eigh_with_fallback(
     x: Tensor,
     force_double: bool = False,
-    eps: Optional[float] = None,
-    output_dtype: Optional[torch.dtype] = None,
+    eps: float | None = None,
+    output_dtype: torch.dtype | None = None,
 ) -> tuple[Tensor, Tensor]:
     r"""torch.linalg.eigh() function with double precision fallback
 
@@ -190,7 +188,7 @@ def orthogonal_iteration(
     exp_avg_sq: torch.Tensor,
     convert_to_float: bool,
     power_iter_steps: int,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Computes the eigenbases of the preconditioner using power iteration and QR decomposition.
 
     This function performs multiple rounds of power iteration followed by QR decomposition
@@ -275,7 +273,7 @@ def _is_diagonal(x: Tensor) -> bool:
     return not x.triu(diagonal=1).any() and not x.tril(diagonal=-1).any()
 
 
-def _try_handle_diagonal_matrix(x: Tensor) -> Optional[tuple[Tensor, Tensor]]:
+def _try_handle_diagonal_matrix(x: Tensor) -> tuple[Tensor, Tensor] | None:
     """Checks if matrix A is diagonal and returns its eigenvalues/vectors in ascending order if so.
 
     Args:

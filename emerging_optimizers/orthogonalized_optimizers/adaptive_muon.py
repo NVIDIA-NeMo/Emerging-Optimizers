@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Callable, Literal
+from typing import Callable, Literal, overload
 
 
 # TODO(@boxiangw): remove this once bump to python 3.12
@@ -27,6 +27,8 @@ from torch.optim.optimizer import ParamsT
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import utils
 from emerging_optimizers.orthogonalized_optimizers import muon
+from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
+from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 class AdaptiveMuon(muon.Muon):
@@ -65,8 +67,8 @@ class AdaptiveMuon(muon.Muon):
         *,
         use_nesterov: bool,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
-        fp32_matmul_prec: str,
-        coefficient_type: str = "quintic",
+        fp32_matmul_prec: FP32MatmulPrecT,
+        coefficient_type: NSCoeffT = "quintic",
         num_ns_steps: int = 5,
         scale_mode: muon.MuonScaleT = "spectral",
         extra_scale_factor: float = 1.0,
@@ -178,6 +180,12 @@ class AdaptiveMuon(muon.Muon):
 
         else:
             raise TypeError(f"Invalid second moment method: {self.moment2_method}")
+
+    @overload
+    def step(self, closure: None = ...) -> None: ...
+
+    @overload
+    def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override

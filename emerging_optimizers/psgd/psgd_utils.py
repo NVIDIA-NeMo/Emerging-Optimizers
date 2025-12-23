@@ -12,8 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List
-
 import torch
 
 
@@ -25,7 +23,7 @@ __all__ = [
 
 
 @torch.compile  # type: ignore[misc]
-def uniformize_q_in_place(Q_list: List[torch.Tensor]) -> None:
+def uniformize_q_in_place(Q_list: list[torch.Tensor]) -> None:
     """Balance the dynamic ranges of kronecker factors in place to prevent numerical underflow or overflow.
 
     Each tensor in `Q_list` is rescaled so that its maximum absolute entry

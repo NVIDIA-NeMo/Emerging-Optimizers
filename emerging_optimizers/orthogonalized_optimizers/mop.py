@@ -22,6 +22,7 @@ from torch.optim.optimizer import ParamsT
 from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
+from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 __all__ = ["MOP"]
@@ -49,13 +50,14 @@ class MOP(OrthogonalizedOptimizer):
         *,
         use_nesterov: bool = False,
         weight_decay_method: WeightDecayT = "decoupled",
-        fp32_matmul_prec: str = "highest",
+        fp32_matmul_prec: FP32MatmulPrecT = "highest",
         scale_mode: muon.MuonScaleT | Literal["nuclear_norm"] = "nuclear_norm",
         extra_scale_factor: float = 1.0,
     ) -> None:
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             orth_grad, _, S = polar_via_svd(grad, False)
 
+            scale_factor: float | torch.Tensor
             if scale_mode != "nuclear_norm":
                 scale_factor = muon.get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
             else:

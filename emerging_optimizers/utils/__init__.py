@@ -13,18 +13,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, Literal
 
 import torch
 
 from .eig import *
 
 
-__all__ = ["fp32_matmul_precision", "get_pg_size", "get_pg_rank"]
+__all__ = ["fp32_matmul_precision", "get_pg_size", "get_pg_rank", "FP32MatmulPrecT"]
+
+FP32MatmulPrecT = Literal["highest", "high", "medium"]
 
 
 @contextmanager
-def fp32_matmul_precision(precision: str = "highest") -> Generator[None, None, None]:
+def fp32_matmul_precision(precision: FP32MatmulPrecT = "highest") -> Generator[None, None, None]:
     """Context manager for setting the precision of matmuls.
 
     Args:

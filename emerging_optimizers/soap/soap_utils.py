@@ -12,11 +12,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional, Tuple
+from typing import TypeAlias
 
 import torch
 
 from emerging_optimizers.utils import eig as eig_utils
+
+
+TensorList: TypeAlias = list[torch.Tensor]
 
 
 __all__ = [
@@ -26,13 +29,13 @@ __all__ = [
 
 
 def get_eigenbasis_eigh(
-    kronecker_factor_list: List[torch.Tensor],
+    kronecker_factor_list: TensorList,
     convert_to_float: bool = True,
-    eigenbasis_list: Optional[List[torch.Tensor]] = None,
+    eigenbasis_list: TensorList | None = None,
     use_adaptive_criteria: bool = False,
-    adaptive_update_tolerance: Optional[float] = None,
-    eps: Optional[float] = None,
-) -> List[torch.Tensor]:
+    adaptive_update_tolerance: float | None = None,
+    eps: float | None = None,
+) -> TensorList:
     """Computes the eigenbases of the preconditioner using torch.linalg.eigh decomposition.
 
     Args:
@@ -66,7 +69,7 @@ def get_eigenbasis_eigh(
         adaptive_update_tolerance = 1e-7
 
     # cast the kronecker factor matrices to float32 if convert_to_float is True
-    casted_matrix_list: List[torch.Tensor] = []
+    casted_matrix_list: TensorList = []
     for kronecker_factor in kronecker_factor_list:
         if kronecker_factor.numel() == 0:
             casted_matrix_list.append(torch.empty(0, device=kronecker_factor.device))
@@ -76,7 +79,7 @@ def get_eigenbasis_eigh(
         else:
             casted_matrix_list.append(kronecker_factor)
 
-    updated_eigenbasis_list: List[torch.Tensor] = []
+    updated_eigenbasis_list: TensorList = []
 
     # use adaptive early exit criteria
     if use_adaptive_criteria and eigenbasis_list is not None:
@@ -112,14 +115,14 @@ def get_eigenbasis_eigh(
 
 
 def get_eigenbasis_qr(
-    kronecker_factor_list: List[torch.Tensor],
-    eigenbasis_list: List[torch.Tensor],
+    kronecker_factor_list: TensorList,
+    eigenbasis_list: TensorList,
     exp_avg_sq: torch.Tensor,
     convert_to_float: bool = True,
     use_adaptive_criteria: bool = False,
-    adaptive_update_tolerance: Optional[float] = None,
+    adaptive_update_tolerance: float | None = None,
     power_iter_steps: int = 1,
-) -> Tuple[List[torch.Tensor], torch.Tensor]:
+) -> tuple[TensorList, torch.Tensor]:
     """Updates the eigenbases of the preconditioner using power iteration and QR.
 
     Computes using multiple rounds of power iteration followed by QR decomposition (orthogonal iteration).
@@ -175,8 +178,8 @@ def get_eigenbasis_qr(
     if adaptive_update_tolerance is None:
         adaptive_update_tolerance = 1e-7
 
-    casted_matrix_list: List[torch.Tensor] = []
-    casted_eigenbasis_list: List[torch.Tensor] = []
+    casted_matrix_list: TensorList = []
+    casted_eigenbasis_list: TensorList = []
     for kronecker_factor, eigenbasis in zip(kronecker_factor_list, eigenbasis_list, strict=True):
         # If the tensor is empty, propagate an empty tensor to the output lists.
         if kronecker_factor.numel() == 0:
@@ -195,7 +198,7 @@ def get_eigenbasis_qr(
     if convert_to_float and exp_avg_sq.dtype != torch.float:
         exp_avg_sq = exp_avg_sq.to(torch.float)
 
-    updated_eigenbasis_list: List[torch.Tensor] = []
+    updated_eigenbasis_list: TensorList = []
     for ind, (kronecker_factor, eigenbasis) in enumerate(zip(casted_matrix_list, casted_eigenbasis_list, strict=True)):
         if kronecker_factor.numel() == 0:
             updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))

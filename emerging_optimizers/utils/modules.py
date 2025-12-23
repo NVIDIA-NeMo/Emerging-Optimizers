@@ -16,6 +16,12 @@
 import math
 from typing import Any, Self
 
+
+try:
+    from typing import override
+except ImportError:
+    from typing_extensions import override
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -51,8 +57,8 @@ class Conv1dFlatWeights(nn.Conv1d):
 
         assert self.padding_mode == "zeros", "Only zeros padding is supported"
 
-        self.weight: nn.Parameter[torch.Tensor]
-        self.bias: nn.Parameter[torch.Tensor] | None | str
+        self.weight: nn.Parameter
+        self.bias: torch.Tensor | None
 
         flat_weight_shape = [self.out_channels, math.prod(self.weight.shape[1:])]
         if self.bias is not None:
@@ -63,7 +69,6 @@ class Conv1dFlatWeights(nn.Conv1d):
             flat_weight_buffer[..., -1].copy_(self.bias)
             del self.bias
             self.has_bias = True
-            self.bias = "dummy"  # Trick con1d.extra_repr() to not print bias=False
         else:
             flat_weight_buffer.copy_(self.weight.view(self.out_channels, -1))
             self.has_bias = False
@@ -98,6 +103,7 @@ class Conv1dFlatWeights(nn.Conv1d):
     def weight_shape(self) -> tuple[int, int, int]:
         return (self.out_channels, self.in_channels // self.groups, self.kernel_size[0])
 
+    @override
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.has_bias:
             weight = self.weight[..., :-1].view(self.weight_shape)
@@ -108,6 +114,20 @@ class Conv1dFlatWeights(nn.Conv1d):
 
         return F.conv1d(x, weight, bias, self.stride, self.padding, self.dilation, self.groups)
 
+    @override
     def extra_repr(self) -> str:
-        base_repr = super().extra_repr()
-        return f"{base_repr}, flattened_param_shape={tuple(self.weight.shape)}"
+        s = f"{self.in_channels}, {self.out_channels}, kernel_size={self.kernel_size}, stride={self.stride}"
+        if self.padding != (0,) * len(self.padding):
+            s += f", padding={self.padding}"
+        if self.dilation != (1,) * len(self.dilation):
+            s += f", dilation={self.dilation}"
+        if self.output_padding != (0,) * len(self.output_padding):
+            s += f", output_padding={self.output_padding}"
+        if self.groups != 1:
+            s += f", groups={self.groups}"
+        if not self.has_bias:
+            s += ", bias=False"
+        if self.padding_mode != "zeros":
+            s += f", padding_mode={self.padding_mode}"
+        s += f", flattened_param_shape={tuple(self.weight.shape)}"
+        return s

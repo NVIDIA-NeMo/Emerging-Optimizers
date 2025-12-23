@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Callable
+from typing import Any, Callable, overload
 
 
 # TODO(@boxiangw): remove this once bump to python 3.12
@@ -28,6 +28,7 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import utils
+from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 _args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
@@ -103,7 +104,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         *,
         use_nesterov: bool,
         weight_decay_method: opt_mixin.WeightDecayT,
-        fp32_matmul_prec: str,
+        fp32_matmul_prec: FP32MatmulPrecT,
         scaled_orthogonalize_fn: Callable | None = None,
         **kwargs: Any,
     ):
@@ -124,6 +125,12 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         super().__init__(params, default_args_dict)
         self.scaled_orthogonalize_fn = scaled_orthogonalize_fn
+
+    @overload
+    def step(self, closure: None = ...) -> None: ...
+
+    @overload
+    def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override

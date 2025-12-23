@@ -14,7 +14,7 @@
 # limitations under the License.
 from functools import partial
 from itertools import chain
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, overload
 
 
 # TODO(@boxiangw): remove this once bump to python 3.12
@@ -31,6 +31,7 @@ from torch.optim.optimizer import ParamsT
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import scalar_optimizers, utils
 from emerging_optimizers.soap import soap_utils
+from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 __all__ = [
@@ -86,20 +87,20 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self,
         params: ParamsT,
         lr: float,
-        betas: Tuple[float, float] = (0.9, 0.95),
+        betas: tuple[float, float] = (0.9, 0.95),
         shampoo_beta: float = 0.95,
         eps: float = 1e-8,
         weight_decay: float = 0.01,
         *,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         use_nesterov: bool = False,
-        precondition_frequency: Union[int, Callable[[int], int]] = 1,
+        precondition_frequency: int | Callable[[int], int] = 1,
         adam_warmup_steps: int = 0,
         precondition_1d: bool = False,
         correct_bias: bool = True,
-        fp32_matmul_prec: str = "high",
+        fp32_matmul_prec: FP32MatmulPrecT = "high",
         use_eigh: bool = False,
-        qr_fp32_matmul_prec: str = "high",
+        qr_fp32_matmul_prec: FP32MatmulPrecT = "high",
         use_adaptive_criteria: bool = False,
         adaptive_update_tolerance: float = 1e-7,
         power_iter_steps: int = 1,
@@ -134,6 +135,12 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             "weight_decay": weight_decay,
         }
         super().__init__(params, defaults)
+
+    @overload
+    def step(self, closure: None = ...) -> None: ...
+
+    @overload
+    def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override
@@ -293,7 +300,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 def init_kronecker_factors(
     grad: torch.Tensor,
     precondition_1d: bool = False,
-) -> List[torch.Tensor]:
+) -> list[torch.Tensor]:
     """Initializes the kronecker factor matrices for the SOAP optimizer.
 
     This function creates the initial Kronecker factor matrices (L and R) used for
@@ -338,7 +345,7 @@ def init_kronecker_factors(
         >>> print(precond_2d[1].shape)  # (20, 20)
 
     """
-    kronecker_factor_list: List[torch.Tensor] = []
+    kronecker_factor_list: list[torch.Tensor] = []
 
     if grad.dim() == 1:
         if not precondition_1d:
@@ -358,7 +365,7 @@ def init_kronecker_factors(
 
 @torch.no_grad()  # type: ignore[misc]
 def update_kronecker_factors(
-    kronecker_factor_list: List[torch.Tensor],
+    kronecker_factor_list: list[torch.Tensor],
     grad: torch.Tensor,
     shampoo_beta: float,
     precondition_1d: bool = False,
@@ -414,10 +421,10 @@ def update_kronecker_factors(
 
 @torch.no_grad()  # type: ignore[misc]
 def update_kronecker_factors_kl_shampoo(
-    kronecker_factor_list: List[torch.Tensor],
+    kronecker_factor_list: list[torch.Tensor],
     grad: torch.Tensor,
     shampoo_beta: float,
-    eigenbasis_list: List[torch.Tensor],
+    eigenbasis_list: list[torch.Tensor],
     eps: float,
     eigval_exp: float = -1.0,
 ) -> None:
@@ -457,16 +464,16 @@ def update_kronecker_factors_kl_shampoo(
 
 @torch.no_grad()  # type: ignore[misc]
 def update_eigenbasis_and_momentum(
-    kronecker_factor_list: List[torch.Tensor],
-    eigenbasis_list: List[torch.Tensor],
+    kronecker_factor_list: list[torch.Tensor],
+    eigenbasis_list: list[torch.Tensor],
     exp_avg_sq: torch.Tensor,
     momentum: torch.Tensor,
     use_eigh: bool = False,
     use_adaptive_criteria: bool = False,
-    adaptive_update_tolerance: Optional[float] = None,
+    adaptive_update_tolerance: float | None = None,
     power_iter_steps: int = 1,
     convert_to_float: bool = True,
-) -> Tuple[List[torch.Tensor], torch.Tensor, torch.Tensor]:
+) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
     """Updates the eigenbases using QR decomposition and power iteration or eigh.
 
     This function performs an update of the eigenbases (QL and QR)
@@ -559,8 +566,8 @@ def update_eigenbasis_and_momentum(
 @torch.compile  # type: ignore[misc]
 def precondition(
     grad: torch.Tensor,
-    eigenbasis_list: Optional[List[torch.Tensor]] = None,
-    dims: Optional[List[List[int]]] = None,
+    eigenbasis_list: list[torch.Tensor] | None = None,
+    dims: list[list[int]] | None = None,
 ) -> torch.Tensor:
     """Projects the gradient to and from the eigenbases of the kronecker factor matrices.
 
@@ -610,7 +617,7 @@ def precondition(
 def _is_eigenbasis_update_step(
     step: int,
     adam_warmup_steps: int,
-    precondition_frequency: Union[int, Callable[[int], int]],
+    precondition_frequency: int | Callable[[int], int],
 ) -> bool:
     """Checks if amortized computation of the eigenbasis should be recomputed.
 

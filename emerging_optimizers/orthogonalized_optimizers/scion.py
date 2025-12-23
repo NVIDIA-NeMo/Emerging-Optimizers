@@ -17,9 +17,11 @@ import torch
 from absl import logging
 from torch.optim.optimizer import ParamsT
 
+from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
-from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schulz
+from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
+from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 class Scion(OrthogonalizedOptimizer):
@@ -61,8 +63,8 @@ class Scion(OrthogonalizedOptimizer):
         lr: float = 3e-4,
         momentum_beta: float = 0.95,
         *,
-        fp32_matmul_prec: str = "medium",
-        coefficient_type: str = "quintic",
+        fp32_matmul_prec: FP32MatmulPrecT = "medium",
+        coefficient_type: NSCoeffT = "quintic",
         num_ns_steps: int = 5,
         spectral_radius: float = 1.0,
     ) -> None:
@@ -83,7 +85,9 @@ class Scion(OrthogonalizedOptimizer):
             logging.debug(
                 f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, spectral_radius={spectral_radius}"
             )
-            orth_grad = newton_schulz(grad, steps=num_ns_steps, coefficient_type=coefficient_type, use_syrk=False)
+            orth_grad = muon_utils.newton_schulz(
+                grad, steps=num_ns_steps, coefficient_type=coefficient_type, use_syrk=False
+            )
             width_factor = get_muon_scale_factor(grad.size(-2), grad.size(-1), mode="unit_rms_norm")
             return orth_grad * width_factor * spectral_radius
 

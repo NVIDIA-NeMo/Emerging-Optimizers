@@ -20,7 +20,9 @@ from absl import logging
 from emerging_optimizers import triton_kernels
 
 
-__all__ = ["newton_schulz", "newton_schulz_tp"]
+__all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT"]
+
+NSCoeffT = Literal["simple", "quintic", "polar_express", "aol", "custom"]
 
 _COEFFICIENT_SETS = {
     "simple": [
@@ -67,7 +69,7 @@ def distributed_normalize_p2(x: torch.Tensor, eps: float, group: torch.distribut
 def newton_schulz(
     x: torch.Tensor,
     steps: int,
-    coefficient_type: str = "quintic",
+    coefficient_type: NSCoeffT = "quintic",
     custom_coefficient_sets: list[tuple[float, float, float]] | None = None,
     eps: float = 1e-7,
     transpose: bool | None = None,
@@ -121,7 +123,7 @@ def newton_schulz(
     if tp_group is not None:
         X = distributed_normalize_p2(x, eps, tp_group)
     else:
-        X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)
+        X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)  # type: ignore[arg-type]
 
     if coefficient_type in _COEFFICIENT_SETS:
         coefficient_sets = _COEFFICIENT_SETS[coefficient_type]
@@ -164,7 +166,7 @@ def newton_schulz(
 def newton_schulz_tp(
     x: torch.Tensor,
     steps: int,
-    coefficient_type: str,
+    coefficient_type: NSCoeffT,
     tp_group: torch.distributed.ProcessGroup,
     partition_dim: int | None = None,
     mode: Literal["duplicated", "distributed"] = "duplicated",
