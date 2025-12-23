@@ -116,7 +116,7 @@ class Conv1dFlatWeights(nn.Conv1d):
 
     @override
     def extra_repr(self) -> str:
-        s = "{in_channels}, {out_channels}, kernel_size={kernel_size}, stride={stride}"
+        s = f"{self.in_channels}, {self.out_channels}, kernel_size={self.kernel_size}, stride={self.stride}"
         if self.padding != (0,) * len(self.padding):
             s += f", padding={self.padding}"
         if self.dilation != (1,) * len(self.dilation):
