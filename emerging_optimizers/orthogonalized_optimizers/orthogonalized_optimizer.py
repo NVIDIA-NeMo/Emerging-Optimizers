@@ -147,8 +147,6 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         for group in self.param_groups:
             for p in group["params"]:
-                if p.dim() != 2:
-                    raise ValueError(f"{self.__class__.__name__} only supports 2D parameters")
                 grad = p.grad
                 if grad is None:
                     continue
@@ -195,6 +193,11 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         For example, a scaled_orthogonalize_fn function can get attributes from p or from kwargs to determine if
         the parameter is a fused parameter and should be split for preconditioning.
 
+        Note:
+            N-D parameters can be supported by overriding this function. For example, convolution weight can be
+            supported by reshaping to [output_channels, input_channels * kernel_height * kernel_width], i.e. treating
+            convolution as matrix multiplication with im2col.
+
         Args:
             p: The parameter tensor. It is necessary to pass param tensor in addition to momentum because a lot of
                 information is only available in the param tensor, attributes for example. Although not used in
@@ -205,6 +208,8 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         Returns:
             The orthogonalized gradient tensor.
         """
+        if grad.ndim != 2:
+            raise ValueError("Only 2D parameters are supported.")
         grad = self.scaled_orthogonalize_fn(grad)
         return grad
 
