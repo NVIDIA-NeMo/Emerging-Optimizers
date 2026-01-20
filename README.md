@@ -41,7 +41,7 @@ Emerging optimizers have demonstrated significant practical impact in large-scal
 
 ### Prerequisites
 
-- Python 3.10 or higher, 3.12 is recommended
+- Python 3.12 (Release v0.1.0 is the last version supports Python 3.10)
 - PyTorch 2.0 or higher
 
 ### Install from Source
