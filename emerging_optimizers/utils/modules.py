@@ -14,13 +14,7 @@
 # limitations under the License.
 
 import math
-from typing import Any, Self
-
-
-try:
-    from typing import override
-except ImportError:
-    from typing_extensions import override
+from typing import Any, Self, override
 
 import torch
 import torch.nn as nn

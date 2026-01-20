@@ -14,14 +14,7 @@
 # limitations under the License.
 from functools import partial
 from itertools import chain
-from typing import Callable, overload
-
-
-# TODO(@boxiangw): remove this once bump to python 3.12
-try:
-    from typing import override
-except ImportError:
-    from typing_extensions import override
+from typing import Callable, overload, override
 
 import torch
 from absl import logging
