@@ -318,7 +318,7 @@ def init_kronecker_factors(
             (like biases). If False, 1D tensors will skip preconditioning.
 
     Returns:
-        List[torch.Tensor]: List of kronecker factor matrices (L and R in paper).
+        List of kronecker factor matrices (L and R in paper).
             - For 1D tensors with precondition_1d=False: List containing an empty tensor
             - For 1D tensors with precondition_1d=True: List containing a square matrix
             - For higher dimensional tensors: List of square matrices, one per dimension
@@ -496,9 +496,9 @@ def update_eigenbasis_and_momentum(
             orthonormal matrices to float for amortized computation. Otherwise, they are left in their original type.
 
     Returns:
-        Tuple[List[torch.Tensor], torch.Tensor]: A tuple containing:
-            - List[torch.Tensor]: Updated list of eigenbases (QL and QR)
-            - torch.Tensor: Updated momentum tensor projected to the new eigenbasis
+        A tuple containing:
+            - Updated list of eigenbases (QL and QR)
+            - Updated momentum tensor projected to the new eigenbasis
 
     Example:
         >>> L = torch.randn(10, 10)

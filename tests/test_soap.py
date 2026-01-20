@@ -14,7 +14,7 @@
 # limitations under the License.
 import math
 from functools import partial
-from typing import Any, List
+from typing import Any
 
 import soap_reference
 import torch
@@ -29,9 +29,9 @@ from emerging_optimizers.utils.precondition_schedules import LinearSchedule
 
 
 def kl_shampoo_update_ref(
-    kronecker_factor_list: List[torch.Tensor],
+    kronecker_factor_list: list[torch.Tensor],
     grad: torch.Tensor,
-    eigenbasis_list: List[torch.Tensor],
+    eigenbasis_list: list[torch.Tensor],
     shampoo_beta: float,
     eps: float,
     eigval_exp: float = -1.0,

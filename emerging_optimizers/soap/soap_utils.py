@@ -50,7 +50,7 @@ def get_eigenbasis_eigh(
         eps: Small offset for numerical stability. If None, uses dtype-appropriate values (1e-7 for float32, 1e-15 for float64)
 
     Returns:
-        List[torch.Tensor]: List of orthonormal kronecker factor eigenbases matrices
+        List of orthonormal kronecker factor eigenbases matrices
 
     Example:
         .. code-block:: python
@@ -135,15 +135,16 @@ def get_eigenbasis_qr(
             orthonormal matrices will be cast to float. Otherwise, they are left in
             their original type.
         use_adaptive_criteria: Whether to use update criteria strategy
-        adaptive_update_tolerance: Tolerance threshold for the normalized diagonal component of approximated eigenvalue matrix.
-            If None, defaults to 1e-7, which is appropriate for single precision computations. This means adaptive update criteria will be used whenever there is a small change in the approximated eigenvalues
-            matrix and QR will be used.
+        adaptive_update_tolerance: Tolerance threshold for the normalized diagonal component of approximated
+            eigenvalues matrix. If None, defaults to 1e-7, which is appropriate for single precision computations.
+            This means adaptive update criteria will be used whenever there is a small change in the approximated
+            eigenvalues matrix and QR will be used.
         power_iter_steps: Number of power iteration steps to perform before QR decomposition.
             More steps can lead to better convergence but increased computation time.
 
     Returns:
-        List[torch.Tensor]: Updated list of orthonormal kronecker factor eigenbases matrices
-        torch.Tensor: Updated (sorted) inner adam second moment
+        Tuple of updated list of orthonormal kronecker factor eigenbases matrices and updated (sorted) inner
+            Adam's second moment.
 
     Example:
         .. code-block:: python

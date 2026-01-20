@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import Optional, Tuple
 
 import torch
 
@@ -30,9 +29,9 @@ def calculate_sim_ademamix_update(
     grad: torch.Tensor,
     exp_avg: torch.Tensor,
     exp_avg_sq: torch.Tensor,
-    num_beta_fast_warmup_steps: Optional[int],
+    num_beta_fast_warmup_steps: int | None,
     min_beta_fast: float,
-    betas: Tuple[float, float],
+    betas: tuple[float, float],
     step: int,
     eps: float,
     correct_bias: bool,
@@ -107,9 +106,9 @@ def calculate_ademamix_update(
     exp_avg_fast: torch.Tensor,
     exp_avg_slow: torch.Tensor,
     exp_avg_sq: torch.Tensor,
-    num_beta_slow_warmup_steps: Optional[int],
-    num_alpha_warmup_steps: Optional[int],
-    betas: Tuple[float, float, float],
+    num_beta_slow_warmup_steps: int | None,
+    num_alpha_warmup_steps: int | None,
+    betas: tuple[float, float, float],
     step: int,
     eps: float,
     correct_bias: bool,

@@ -37,7 +37,6 @@
 # SOFTWARE.
 
 from itertools import chain
-from typing import Tuple
 
 import torch
 import torch.optim as optim
@@ -56,7 +55,7 @@ class ReferenceSoap(optim.Optimizer):
         self,
         params,
         lr: float,
-        betas: Tuple[float, float],
+        betas: tuple[float, float],
         shampoo_beta: float,
         eps: float,
         weight_decay: float,

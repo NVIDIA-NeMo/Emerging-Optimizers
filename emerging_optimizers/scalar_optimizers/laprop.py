@@ -12,8 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Tuple
-
 import torch
 
 
@@ -29,7 +27,7 @@ def calculate_laprop_update(
     exp_avg: torch.Tensor,
     exp_avg_sq: torch.Tensor,
     correct_bias: bool,
-    betas: Tuple[float, float],
+    betas: tuple[float, float],
     step: int,
     eps: float,
 ) -> torch.Tensor:
