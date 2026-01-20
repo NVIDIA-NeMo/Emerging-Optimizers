@@ -14,7 +14,7 @@
 # limitations under the License.
 
 
-from typing import Literal, Optional
+from typing import Literal
 
 import torch
 from torch.optim.optimizer import ParamsT
@@ -80,9 +80,7 @@ class MOP(OrthogonalizedOptimizer):
 MOP.__doc__ = MOP.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
 
 
-def polar_via_svd(
-    A: torch.Tensor, return_p: bool = False
-) -> tuple[torch.Tensor, Optional[torch.Tensor], torch.Tensor]:
+def polar_via_svd(A: torch.Tensor, return_p: bool = False) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
     """Compute polar decomposition via SVD
 
     Args:

@@ -13,13 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import Callable, overload
-
-
-try:
-    from typing import override
-except ImportError:
-    from typing_extensions import override
+from typing import Callable, overload, override
 
 import torch
 from torch.optim.optimizer import ParamsT

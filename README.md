@@ -9,7 +9,7 @@
 <!-- Get the codecov badge with a token direct from https://app.codecov.io/gh/NVIDIA-NeMo -->
 [![codecov](https://codecov.io/gh/NVIDIA-NeMo/Emerging-Optimizers/graph/badge.svg?token=IQ6U7IFYN0)](https://codecov.io/gh/NVIDIA-NeMo/Emerging-Optimizers)
 [![CICD NeMo](https://github.com/NVIDIA-NeMo/Emerging-Optimizers/actions/workflows/cicd-main.yml/badge.svg?branch=main)](https://github.com/NVIDIA-NeMo/Emerging-Optimizers/actions/workflows/cicd-main.yml)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/release/python-3100/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/release/python-3120/)
 ![GitHub Repo stars](https://img.shields.io/github/stars/NVIDIA-NeMo/Emerging-Optimizers)
 [![Documentation](https://img.shields.io/badge/api-reference-blue.svg)](https://docs.nvidia.com/nemo/emerging-optimizers/latest/index.html)
 
@@ -41,7 +41,7 @@ Emerging optimizers have demonstrated significant practical impact in large-scal
 
 ### Prerequisites
 
-- Python 3.10 or higher, 3.12 is recommended
+- Python 3.12 (Release v0.1.0 is the last version supports Python 3.10)
 - PyTorch 2.0 or higher
 
 ### Install from Source

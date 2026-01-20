@@ -14,12 +14,8 @@
 # limitations under the License.
 import math
 from abc import ABC, abstractmethod
+from typing import override
 
-
-try:
-    from typing import override
-except ImportError:
-    from typing_extensions import override
 
 __all__ = [
     "LinearSchedule",

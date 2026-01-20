@@ -12,8 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List
-
 import torch
 
 
@@ -43,7 +41,7 @@ def partial_contraction(G1: torch.Tensor, G2: torch.Tensor, axis: int) -> torch.
 
 
 @torch.compile  # type: ignore[misc]
-def apply_kronecker_factors(Q_list: List[torch.Tensor], X: torch.Tensor) -> torch.Tensor:
+def apply_kronecker_factors(Q_list: list[torch.Tensor], X: torch.Tensor) -> torch.Tensor:
     """Apply all Kronecker factors once to tensor :math:`X`, each to its corresponding dimension.
 
     This applies each :math:`Q` factor once, for example in 2D case: :math:`Q_1 X Q_2^T`.
@@ -67,7 +65,7 @@ def apply_kronecker_factors(Q_list: List[torch.Tensor], X: torch.Tensor) -> torc
 
 
 @torch.compile  # type: ignore[misc]
-def apply_preconditioner(Q_list: List[torch.Tensor], X: torch.Tensor) -> torch.Tensor:
+def apply_preconditioner(Q_list: list[torch.Tensor], X: torch.Tensor) -> torch.Tensor:
     """Apply the full PSGD preconditioner to X.
 
     This is the full Kronecker product of PSGD's kronecker factors Q^T Q, applied to X.
@@ -130,7 +128,7 @@ def _dim_n_mul_and_permute(X: torch.Tensor, M: torch.Tensor, contract_dim: int) 
 
 
 @torch.compile  # type: ignore[misc]
-def _apply_single_kronecker_factor(Q_list: List[torch.Tensor], X: torch.Tensor, axis: int) -> torch.Tensor:
+def _apply_single_kronecker_factor(Q_list: list[torch.Tensor], X: torch.Tensor, axis: int) -> torch.Tensor:
     """Apply a single Kronecker factor Q to X at dimension `axis`. Helper function for apply_kronecker_factors.
 
     If Q is a vector, we multiply X by Q.
