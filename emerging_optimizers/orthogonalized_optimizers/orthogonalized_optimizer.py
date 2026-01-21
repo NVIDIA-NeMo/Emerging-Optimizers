@@ -32,11 +32,13 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
         use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
             for more details.
+        weight_update_method: Method to apply weight updates, see :class:`~emerging_optimizers.mixin.WeightUpdateMixin`
+            for more details.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
 """
 
 
-class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
+class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, opt_mixin.WeightUpdateMixin, optim.Optimizer):
     """Base class for orthogonalized optimizers.
 
     This class is a wrapper around a base optimizer that performs orthogonalization on the updates.
@@ -97,6 +99,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         *,
         use_nesterov: bool,
         weight_decay_method: opt_mixin.WeightDecayT,
+        weight_update_method: opt_mixin.WeightUpdateT = "sgd",
         fp32_matmul_prec: FP32MatmulPrecT,
         scaled_orthogonalize_fn: Callable | None = None,
         **kwargs: Any,
@@ -108,6 +111,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self.fp32_matmul_prec = fp32_matmul_prec
         self.use_nesterov = use_nesterov
         self.weight_decay_method = weight_decay_method
+        self.weight_update_method = weight_update_method
 
         default_args_dict = dict(
             lr=lr,
@@ -174,7 +178,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 # perform weight update
                 # scale is applied to have update RMS == 1
-                p.add_(orth_grad, alpha=-group["lr"])
+                self._apply_weight_update_inplace(p, orth_grad, group["lr"])
 
         return loss
 
