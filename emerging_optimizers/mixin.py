@@ -16,6 +16,7 @@
 from typing import Literal
 
 import torch
+import torch.nnfunctional as F
 
 
 WeightDecayT = Literal["decoupled", "independent", "l2"]
@@ -97,7 +98,7 @@ class WeightUpdateMixin:
             R = p.norm()
 
             # Normalize the update (Frobenius norm over all elements)
-            normalized_update = update / (update.norm() + eps)
+            normalized_update = F.normalize(update, p=2, dim=0, eps=eps)
 
             # Compute W_t - lr * R * normalize(update)
             p.add_(normalized_update, alpha=-lr * R)
