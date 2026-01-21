@@ -16,7 +16,7 @@
 from typing import Literal
 
 import torch
-import torch.nnfunctional as F
+import torch.nn.functional as F
 
 
 WeightDecayT = Literal["decoupled", "independent", "l2"]
