@@ -59,7 +59,7 @@ class WeightUpdateMixin:
 
     Supports different types of weight updates:
 
-    - "simple": Standard SGD-style update: W_{t+1} = W_t - lr * update
+    - "sgd": Standard SGD-style update: W_{t+1} = W_t - lr * update
     - "hyperball": Norm-preserving update on the sphere manifold:
         W_{t+1} = R * normalize(W_t - lr * R * normalize(update))
       where R is the Frobenius norm of W_t. This keeps the weight matrix
