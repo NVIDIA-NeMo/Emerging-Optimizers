@@ -32,13 +32,11 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
         use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
             for more details.
-        weight_update_method: Method to apply weight updates, see :class:`~emerging_optimizers.mixin.WeightUpdateMixin`
-            for more details.
-        fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
+emerging_optimizers/orthogonalized_optimizers/orthogonalized_optimizer.py        fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
 """
 
 
-class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, opt_mixin.WeightUpdateMixin, optim.Optimizer):
+class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
     """Base class for orthogonalized optimizers.
 
     This class is a wrapper around a base optimizer that performs orthogonalization on the updates.
@@ -99,7 +97,6 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, opt_mixin.WeightUpdate
         *,
         use_nesterov: bool,
         weight_decay_method: opt_mixin.WeightDecayT,
-        weight_update_method: opt_mixin.WeightUpdateT = "sgd",
         fp32_matmul_prec: FP32MatmulPrecT,
         scaled_orthogonalize_fn: Callable | None = None,
         **kwargs: Any,
@@ -111,7 +108,6 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, opt_mixin.WeightUpdate
         self.fp32_matmul_prec = fp32_matmul_prec
         self.use_nesterov = use_nesterov
         self.weight_decay_method = weight_decay_method
-        self.weight_update_method = weight_update_method
 
         default_args_dict = dict(
             lr=lr,
@@ -176,9 +172,10 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, opt_mixin.WeightUpdate
                     group_kwargs = {k: v for k, v in group.items() if k != "params"}
                     orth_grad = self.orthogonalize(p, grad, **group_kwargs)
 
-                # perform weight update
-                # scale is applied to have update RMS == 1
-                self._apply_weight_update_inplace(p, orth_grad, group["lr"])
+                # perform weight update with pr and post weight update hooks for subclass customization
+                self.pre_weight_update(p, orth_grad)
+                p.add_(orth_grad, alpha=-group["lr"])
+                self.post_weight_update(p, orth_grad)
 
         return loss
 
@@ -209,6 +206,30 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, opt_mixin.WeightUpdate
             raise ValueError("Only 2D parameters are supported.")
         grad = self.scaled_orthogonalize_fn(grad)
         return grad
+
+    def pre_weight_update(self, p: torch.Tensor, update: torch.Tensor) -> None:
+        """Hook called before the final weight update.
+
+        Subclasses can override this to implement custom behavior before the weight update.
+        For example, to implement hyperball-style updates that preserve weight norms.
+
+        Args:
+            p: The parameter tensor.
+            update: The orthogonalized gradient tensor (will be applied as p -= lr * update).
+        """
+        pass
+
+    def post_weight_update(self, p: torch.Tensor, update: torch.Tensor) -> None:
+        """Hook called after the final weight update.
+
+        Subclasses can override this to implement custom behavior after the weight update.
+        For example, to implement hyperball-style updates that preserve weight norms.
+
+        Args:
+            p: The parameter tensor (already updated).
+            update: The orthogonalized gradient tensor that was applied.
+        """
+        pass
 
 
 OrthogonalizedOptimizer.__doc__ = OrthogonalizedOptimizer.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
