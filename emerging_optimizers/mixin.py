@@ -19,7 +19,6 @@ import torch
 
 
 WeightDecayT = Literal["decoupled", "independent", "l2"]
-WeightUpdateT = Literal["sgd", "hyperball"]
 
 
 class WeightDecayMixin:
