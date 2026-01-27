@@ -126,16 +126,30 @@ def newton_schulz(
         X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)  # type: ignore[arg-type]
 
     if coefficient_type in _COEFFICIENT_SETS:
-        coefficient_sets = _COEFFICIENT_SETS[coefficient_type]
+        coefficient_sets = list(_COEFFICIENT_SETS[coefficient_type])
     elif coefficient_type == "custom":
         if custom_coefficient_sets is None:
             raise ValueError("custom_coefficient_sets must be provided when coefficient_type is 'custom'.")
-        coefficient_sets = custom_coefficient_sets
+        coefficient_sets = list(custom_coefficient_sets)
     else:
         raise ValueError(f"Invalid coefficient type: {coefficient_type}")
 
-    if steps % len(coefficient_sets) != 0:
-        raise ValueError(f"steps ({steps}) must be multiple of len(coefficient_sets) ({len(coefficient_sets)}).")
+    # Adjust coefficient_sets based on coefficient_type and steps
+    num_coeffs = len(coefficient_sets)
+    if coefficient_type == "simple":
+        # For simple, repeat the same coefficients as many times as needed
+        coefficient_sets = coefficient_sets * steps
+    elif coefficient_type == "polar_express":
+        # For polar_express, steps must be >= 8, repeat last step if steps > 8
+        if steps < num_coeffs:
+            raise ValueError(f"steps ({steps}) must be at least {num_coeffs} for polar_express.")
+        if steps > num_coeffs:
+            coefficient_sets = coefficient_sets + [coefficient_sets[-1]] * (steps - num_coeffs)
+    else:
+        # For quintic, aol, custom, and others, steps must be a multiple of len(coefficient_sets)
+        if steps % num_coeffs != 0:
+            raise ValueError(f"steps ({steps}) must be multiple of len(coefficient_sets) ({num_coeffs}).")
+        coefficient_sets = coefficient_sets * (steps // num_coeffs)
 
     ns_step_fn = newton_schulz_step
     # Perform the NS iterations
@@ -151,7 +165,7 @@ def newton_schulz(
             ns_step_fn = newton_schulz_step_tsyrk
 
     for i in range(steps):
-        a, b, c = coefficient_sets[i % len(coefficient_sets)]
+        a, b, c = coefficient_sets[i]
         X = ns_step_fn(X, a, b, c, tp_group=tp_group)
 
     # Convert back to FP32. This is a noop if X is already in FP32.
