@@ -32,7 +32,7 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
         use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
             for more details.
-emerging_optimizers/orthogonalized_optimizers/orthogonalized_optimizer.py        fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
+        fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
 """
 
 
@@ -172,7 +172,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     group_kwargs = {k: v for k, v in group.items() if k != "params"}
                     orth_grad = self.orthogonalize(p, grad, **group_kwargs)
 
-                # perform weight update with pr and post weight update hooks for subclass customization
+                # perform weight update with pre and post weight update hooks for subclass customization
                 self.pre_weight_update(p, orth_grad)
                 p.add_(orth_grad, alpha=-group["lr"])
                 self.post_weight_update(p, orth_grad)
