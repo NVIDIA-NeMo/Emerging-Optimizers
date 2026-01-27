@@ -16,7 +16,6 @@
 from typing import Literal
 
 import torch
-import torch.nn.functional as F
 
 
 WeightDecayT = Literal["decoupled", "independent", "l2"]
@@ -53,58 +52,3 @@ class WeightDecayMixin:
             grad.add_(p, alpha=weight_decay)
         else:
             raise ValueError(f"Invalid weight decay method: {weight_decay_method}")
-
-
-class WeightUpdateMixin:
-    """Mixin for weight update strategies.
-
-    Supports different types of weight updates:
-
-    - "sgd": Standard SGD-style update: W_{t+1} = W_t - lr * update
-    - "hyperball": Norm-preserving update on the sphere manifold:
-        W_{t+1} = R * normalize(W_t - lr * R * normalize(update))
-      where R is the Frobenius norm of W_t. This keeps the weight matrix
-      at constant scale while updating.
-
-    The normalized update is useful for training with normalized weights,
-    as it performs gradient descent on the sphere manifold while preserving
-    the weight norm.
-    """
-
-    def _apply_weight_update_inplace(
-        self,
-        p: torch.Tensor,
-        update: torch.Tensor,
-        lr: float,
-        eps: float = 1e-8,
-    ) -> None:
-        """Apply weight update to parameter tensor in-place.
-
-        Args:
-            p: Parameter tensor to update
-            update: The update/gradient tensor (already processed by optimizer)
-            lr: Learning rate
-            eps: Epsilon for numerical stability in normalization
-        """
-        weight_update_method = getattr(self, "weight_update_method", "sgd")
-
-        if weight_update_method == "sgd":
-            # Standard SGD-style update: W_{t+1} = W_t - lr * update
-            p.add_(update, alpha=-lr)
-
-        elif weight_update_method == "hyperball":
-            # Norm-preserving update: W_{t+1} = R * normalize(W_t - lr * R * normalize(update))
-            # Compute R = ||W_t||_F (Frobenius norm)
-            R = p.norm()
-
-            # Normalize the update (Frobenius norm over all elements)
-            normalized_update = F.normalize(update, p=2, dim=0, eps=eps)
-
-            # Compute W_t - lr * R * normalize(update)
-            p.add_(normalized_update, alpha=-lr * R)
-
-            # Normalize the result and scale back by R: p = R * (p / ||p||)
-            p.mul_(R / (p.norm() + eps))
-
-        else:
-            raise ValueError(f"Invalid weight update method: {weight_update_method}")
