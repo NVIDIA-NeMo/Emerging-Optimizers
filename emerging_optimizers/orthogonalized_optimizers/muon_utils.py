@@ -140,7 +140,7 @@ def newton_schulz(
         # For simple, repeat the same coefficients as many times as needed
         coefficient_sets = coefficient_sets * steps
     elif coefficient_type == "polar_express":
-        # For polar_express, steps must be >= 8, repeat last step if steps > 8
+        # For polar_express, steps must be >= num_coeffs, repeat last step if steps > num_coeffs
         if steps < num_coeffs:
             raise ValueError(f"steps ({steps}) must be at least {num_coeffs} for polar_express.")
         if steps > num_coeffs:
