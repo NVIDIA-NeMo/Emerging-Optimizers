@@ -32,7 +32,7 @@ In a layer-wise distributed optimizer, parameters of different layers are distri
 
 One change comes with layer-wise is variable size communication, e.g. each GPU now needs to collect different size of updated parameters from different GPUs, aka [all_gatherv](https://www.mpich.org/static/docs/v3.2/www3/MPI_Allgatherv.html). The full Megatron-Core integration can be found in [layer_wise_optimizer.py](https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/optimizer/layer_wise_optimizer.py).
 
-There are further optimizations possible for the layer-wise distributed optimizers as well as different parallel strategy preconditioner based optimizer in general. They'll be introduced in future documents.
+There are further optimizations possible for the layer-wise distributed optimizers as well as different parallel strategy for preconditioner based optimizer in general. They'll be introduced in future documents.
 
 ### Toy example
 
