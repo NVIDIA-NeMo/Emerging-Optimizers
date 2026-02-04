@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.orthogonalized_optimizers import mop, muon, scion
+from emerging_optimizers.orthogonalized_optimizers import mop, muon, muon_hyperball, scion
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
 
@@ -269,6 +269,78 @@ class MopTest(parameterized.TestCase):
             extra_scale_factor=extra_scale_factor,
         )
         mop_opt.step()
+
+
+class MuonHyperballTest(parameterized.TestCase):
+    @parameterized.product(
+        shape=[(5, 7), (33, 65), (127, 257)],
+    )
+    def test_norm_preservation(self, shape) -> None:
+        """Test that MuonHyperball preserves parameter norm after optimizer steps."""
+        test_param = nn.Parameter(torch.randn(shape, dtype=torch.float32, device="cuda"))
+        initial_norm = test_param.norm().item()
+
+        opt = muon_hyperball.MuonHyperball(
+            [test_param],
+            lr=0.01,
+            momentum_beta=0.0,
+            weight_decay=0.0,
+        )
+
+        # Run multiple steps with random gradients
+        for _ in range(5):
+            test_param.grad = torch.randn_like(test_param)
+            opt.step()
+
+            # Norm should be preserved after each step
+            torch.testing.assert_close(
+                test_param.norm(),
+                torch.tensor(initial_norm, device="cuda"),
+                atol=1e-5,
+                rtol=1e-5,
+            )
+
+    @parameterized.product(
+        shape=[(5, 7), (33, 65), (127, 257)],
+        hyperball_radius=[0.5, 1.0, 2.0],
+    )
+    def test_hyperball_radius_rescales_params(self, shape, hyperball_radius) -> None:
+        """Test that hyperball_radius kwarg rescales parameters to specified radius."""
+        test_param = nn.Parameter(torch.randn(shape, dtype=torch.float32, device="cuda"))
+
+        opt = muon_hyperball.MuonHyperball(
+            [test_param],
+            lr=0.01,
+            hyperball_radius=hyperball_radius,
+        )
+
+        # After initialization, parameter should have the specified radius
+        torch.testing.assert_close(
+            test_param.norm(),
+            torch.tensor(hyperball_radius, device="cuda"),
+            atol=1e-5,
+            rtol=1e-5,
+        )
+
+        # Run multiple steps with random gradients
+        for _ in range(5):
+            test_param.grad = torch.randn_like(test_param)
+            opt.step()
+
+            # Norm should remain at hyperball_radius after each step
+            torch.testing.assert_close(
+                test_param.norm(),
+                torch.tensor(hyperball_radius, device="cuda"),
+                atol=1e-5,
+                rtol=1e-5,
+            )
+
+    def test_zero_norm_raises_error(self) -> None:
+        """Test that MuonHyperball raises ValueError for zero-norm parameters."""
+        test_param = nn.Parameter(torch.zeros((5, 7), dtype=torch.float32, device="cuda"))
+
+        with self.assertRaises(ValueError):
+            muon_hyperball.MuonHyperball([test_param], lr=0.01)
 
 
 if __name__ == "__main__":

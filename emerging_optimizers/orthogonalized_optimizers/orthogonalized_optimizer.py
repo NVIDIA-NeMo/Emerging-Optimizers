@@ -172,9 +172,10 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     group_kwargs = {k: v for k, v in group.items() if k != "params"}
                     orth_grad = self.orthogonalize(p, grad, **group_kwargs)
 
-                # perform weight update
-                # scale is applied to have update RMS == 1
+                # perform weight update with pre and post weight update functions for subclass customization
+                self.pre_weight_update_fn_inplace(p, orth_grad)
                 p.add_(orth_grad, alpha=-group["lr"])
+                self.post_weight_update_fn_inplace(p, orth_grad)
 
         return loss
 
@@ -205,6 +206,36 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
             raise ValueError("Only 2D parameters are supported.")
         grad = self.scaled_orthogonalize_fn(grad)
         return grad
+
+    def pre_weight_update_fn_inplace(self, p: torch.Tensor, update: torch.Tensor) -> None:
+        """Function called before the final weight update.
+
+        Subclasses can override this to implement custom behavior before the weight update.
+        For example, to implement hyperball-style updates that preserve weight norms.
+
+        Warning:
+            This function is experimental and may change in future versions.
+
+        Args:
+            p: The parameter tensor.
+            update: The orthogonalized gradient tensor (will be applied as p -= lr * update).
+        """
+        pass
+
+    def post_weight_update_fn_inplace(self, p: torch.Tensor, update: torch.Tensor) -> None:
+        """Function called after the final weight update.
+
+        Subclasses can override this to implement custom behavior after the weight update.
+        For example, to implement hyperball-style updates that preserve weight norms.
+
+        Warning:
+            This function is experimental and may change in future versions.
+
+        Args:
+            p: The parameter tensor (already updated).
+            update: The orthogonalized gradient tensor that was applied.
+        """
+        pass
 
 
 OrthogonalizedOptimizer.__doc__ = OrthogonalizedOptimizer.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
