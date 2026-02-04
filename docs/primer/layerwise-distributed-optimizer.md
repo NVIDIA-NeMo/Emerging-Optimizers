@@ -25,7 +25,12 @@ If weights and optimizer states are evenly distributed among DP ranks, update ca
 
 In a layer-wise distributed optimizer, parameters of different layers are distributed to different DP ranks. Each GPU has full layers worth of parameters so that preconditioner can be calculated.
 
-<img src="_img/layerwise.png" alt="layerwise" width="600"/>
+```{image} _img/layerwise.png
+:alt: layerwise
+:width: 600px
+```
+# End of Selection
+```
 
 One change comes with layer-wise is variable size communication, e.g. each GPU now needs to collect different size of updated parameters from different GPUs, aka [all_gatherv](https://www.mpich.org/static/docs/v3.2/www3/MPI_Allgatherv.html). The full Megatron-Core integration can be found in [layer_wise_optimizer.py](https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/optimizer/layer_wise_optimizer.py).
 
@@ -87,6 +92,6 @@ if __name__ == "__main__":
 
 
 
-### Try it today
+# Try it today
 
 Kimi-K2 recipe with Muon support is now available in NeMo Megatron-bridge, [kimi_k2.py](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/src/megatron/bridge/recipes/kimi/kimi_k2.py)
