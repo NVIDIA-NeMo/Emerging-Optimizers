@@ -1,10 +1,8 @@
 # Layer-wise distributed optimizer
 
-The latest NeMo stack supports a new type of distributed optimizer designed for preconditioner based optimizers like Muon.
+This document introduces a new type of distributed optimizer designed for preconditioner based optimizers like Muon.
 
-## Overview
-
-### Element-wise distributed optimizer
+## Element-wise distributed optimizer
 
 In traditional Data Parallelism, every GPU keeps a full copy of the optimizer states and weights. An **element-wise** distributed optimizer breaks this redundancy by:
 
@@ -15,15 +13,15 @@ In traditional Data Parallelism, every GPU keeps a full copy of the optimizer st
 
 A more advanced version breaks down operations and overlaps communication with computations, e.g. the [Megatron-Core version](https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/optimizer/distrib_optimizer.py).
 
-### Preconditioner based optimizers
+## Emerging optimizers
 
 There are many emerging optimizers that requires gradient of the entire layer to calculate update to each individual weight. For example, the popular Muon optimizer does:
-$$
-orth()
-$$
+
+<img src="https://kellerjordan.github.io/images/muon/muon_algo.png" alt="Muon" style="zoom:25%;" />
+
 If weights and optimizer states are evenly distributed among DP ranks, update can't be calculated based on the data available on each GPU. Addition communication will be needed to collect data for calculating the full update.
 
-### Layer-wise sharding
+## Layer-wise sharding
 
 In a layer-wise distributed optimizer, parameters of different layers are distributed to different DP ranks. Each GPU has full layers worth of parameters so that preconditioner can be calculated.
 
@@ -35,15 +33,60 @@ There are further optimizations possible for the layer-wise distributed optimize
 
 ### Toy example
 
-### 
+Here is an example demonstrate the layer-wise sharding idea.
 
-## Kimi-K2 with Muon
+```python
+# torchrun --nproc-per-node 4 example.py
+import torch
+from torch import nn
 
-Measured on 256xB200.
+class DummyModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            nn.Linear(16, 32, bias=False),
+            nn.Linear(32, 64, bias=False),
+            nn.Linear(64, 128, bias=False),
+            nn.Linear(128, 256, bias=False),
+        ])
 
-| Optimizer                      | TFLOPs/s | Memory consumption |
-| ------------------------------ | -------- | ------------------ |
-| Element-wise distributed AdamW |          |                    |
-| Layer-wise distributed Muon    |          |                    |
-|                                |          |                    |
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
 
+def main():
+    model = DummyModel().cuda()
+
+    # Assign dummy gradients
+    for param in model.parameters():
+        param.grad = torch.randn_like(param)
+
+    # Variable size reduce-scatter is difficult, use all-reduce to reduce gradient to all ranks
+    # regardless whether the rank owns the parameter
+    all_gather_buffer = []
+    for param in model.parameters():
+        torch.distributed.all_reduce(param.grad, op=torch.distributed.ReduceOp.AVG)
+        all_gather_buffer.append(torch.empty_like(param))
+
+    # Mimic local update
+    rank = torch.distributed.get_rank()
+    model.layers[rank].weight.data += model.layers[rank].weight.grad * 0.01
+
+    # All-gatherv parameters to all ranks
+    torch.distributed.all_gather(all_gather_buffer, model.layers[rank].weight.data)
+
+
+if __name__ == "__main__":
+    torch.distributed.init_process_group(backend="nccl")
+    assert torch.distributed.get_world_size() == 4, "This toy example only works on 4 ranks"
+    torch.cuda.set_device(torch.distributed.get_rank())
+    main()
+    torch.distributed.destroy_process_group()
+```
+
+
+
+### Try it today
+
+Kimi-K2 recipe with Muon support is now available in NeMo Megatron-bridge, [kimi_k2.py](https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/main/src/megatron/bridge/recipes/kimi/kimi_k2.py)
