@@ -17,7 +17,7 @@ A more advanced version breaks down operations and overlaps communication with c
 
 There are many emerging optimizers that requires gradient of the entire layer to calculate update to each individual weight. For example, the popular Muon optimizer does:
 
-<img src="https://kellerjordan.github.io/images/muon/muon_algo.png" alt="Muon" style="zoom:10%;" />
+<img src="https://kellerjordan.github.io/images/muon/muon_algo.png" alt="Muon" width="400" />
 
 If weights and optimizer states are evenly distributed among DP ranks, update can't be calculated based on the data available on each GPU. Addition communication will be needed to collect data for calculating the full update.
 
@@ -25,7 +25,7 @@ If weights and optimizer states are evenly distributed among DP ranks, update ca
 
 In a layer-wise distributed optimizer, parameters of different layers are distributed to different DP ranks. Each GPU has full layers worth of parameters so that preconditioner can be calculated.
 
-<img src="_img/layerwise.png" alt="layerwise" style="zoom:10%; background-color:white;" />
+<img src="_img/layerwise.png" alt="layerwise" width="600"/>
 
 One change comes with layer-wise is variable size communication, e.g. each GPU now needs to collect different size of updated parameters from different GPUs, aka [all_gatherv](https://www.mpich.org/static/docs/v3.2/www3/MPI_Allgatherv.html). The full Megatron-Core integration can be found in [layer_wise_optimizer.py](https://github.com/NVIDIA/Megatron-LM/blob/main/megatron/core/optimizer/layer_wise_optimizer.py).
 
