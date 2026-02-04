@@ -15,7 +15,7 @@ A more advanced version breaks down operations and overlaps communication with c
 
 ## Emerging optimizers
 
-There are many emerging optimizers that requires gradient of the entire layer to calculate update to each individual weight. For example, the popular Muon optimizer does:
+There are many emerging optimizers that require gradient of the entire layer to calculate update to each individual weight. For example, the popular Muon optimizer does:
 
 <img src="https://kellerjordan.github.io/images/muon/muon_algo.png" alt="Muon" width="400" />
 
