@@ -124,4 +124,5 @@ html_extra_path = ["project.json", "versions1.json"]
 linkcheck_ignore = [
     ".*github\\.com.*",
     ".*githubusercontent\\.com.*",
+    ".*www\\.mpich\\.org.*",
 ]
