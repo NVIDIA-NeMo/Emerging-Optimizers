@@ -68,17 +68,18 @@ class MuonHyperball(muon.Muon):
         super().__init__(*args, **kwargs)
 
         # Validate and optionally rescale parameters based on hyperball_radius.
-        for group in self.param_groups:
-            for p in group["params"]:
-                p_norm = p.norm()
-                # Validate that parameter has non-zero norm.
-                if p_norm.item() == 0:
-                    raise ValueError(
-                        "MuonHyperball requires all parameters to have non-zero norm. Found parameter with zero norm."
-                    )
-                # Rescale parameter to have the specified radius if provided.
-                if self.hyperball_radius is not None:
-                    p.data.mul_(self.hyperball_radius / p_norm.clamp_min(self.hyperball_eps))
+        with torch.no_grad():
+            for group in self.param_groups:
+                for p in group["params"]:
+                    p_norm = p.norm()
+                    # Validate that parameter has non-zero norm.
+                    if p_norm.item() == 0:
+                        raise ValueError(
+                            "MuonHyperball requires all parameters to have non-zero norm. Found parameter with zero norm."
+                        )
+                    # Rescale parameter to have the specified radius if provided.
+                    if self.hyperball_radius is not None:
+                        p.mul_(self.hyperball_radius / p_norm.clamp_min(self.hyperball_eps))
 
     @override
     def pre_weight_update_fn_inplace(self, p: torch.Tensor, update: torch.Tensor) -> None:
