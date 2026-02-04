@@ -7,7 +7,7 @@ This document introduces a new type of distributed optimizer designed for precon
 In traditional Data Parallelism, every GPU keeps a full copy of the optimizer states and weights. An **element-wise** distributed optimizer breaks this redundancy by:
 
 - **Partitioning states:** Instead of every GPU storing everything, the optimizer states are **evenly** sliced up across all available GPUs.
-- **Reduce-Scatter gradien**t: A reduce-scatter is performed over all gradients and each GPU gets portion of gradients corresponding to the parameters it "owns".
+- **Reduce-Scatter gradient**: A reduce-scatter is performed over all gradients and each GPU gets portion of gradients corresponding to the parameters it "owns".
 - **Local Updates:** Each GPU only updates the specific portion of the model parameters it "owns."
 - **All-Gather parameters:** After the update, GPUs communicate to ensure everyone has the updated version of the full model for the next forward pass.
 
@@ -19,7 +19,7 @@ There are many emerging optimizers that requires gradient of the entire layer to
 
 <img src="https://kellerjordan.github.io/images/muon/muon_algo.png" alt="Muon" width="400" />
 
-If weights and optimizer states are evenly distributed among DP ranks, update can't be calculated based on the data available on each GPU. Addition communication will be needed to collect data for calculating the full update.
+If weights and optimizer states are evenly distributed among DP ranks, update can't be calculated based on the data available on each GPU. Additional communication will be needed to collect data for calculating the full update.
 
 ## Layer-wise sharding
 
@@ -36,7 +36,7 @@ There are further optimizations possible for the layer-wise distributed optimize
 
 ### Toy example
 
-Here is an example demonstrate the layer-wise sharding idea.
+Here is an example demonstrating the layer-wise sharding idea.
 
 ```python
 # torchrun --nproc-per-node 4 example.py
