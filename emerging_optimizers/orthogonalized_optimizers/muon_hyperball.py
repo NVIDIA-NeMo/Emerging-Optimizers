@@ -56,11 +56,12 @@ class MuonHyperball(muon.Muon):
             *args: Arguments passed to Muon.
             **kwargs: Keyword arguments passed to Muon.
 
-        Keyword Args:
-            hyperball_eps: Epsilon for numerical stability in normalization. Defaults to 1e-8.
-            hyperball_radius: Fixed radius for the hyperball. If None (default), uses each
-                parameter's initial Frobenius norm as its radius. If specified, all parameters will be
-                rescaled to have this radius at initialization.
+        Keyword args:
+            hyperball_eps (float, optional): Epsilon for numerical stability in normalization.
+                Default: ``1e-8``.
+            hyperball_radius (float, optional): Fixed radius for the hyperball. If ``None`` (default),
+                uses each parameter's initial Frobenius norm as its radius. If specified, all
+                parameters will be rescaled to have this radius at initialization.
         """
         self.hyperball_eps = hyperball_eps
         self.hyperball_radius = hyperball_radius
