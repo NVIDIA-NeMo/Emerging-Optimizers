@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
+from copy import deepcopy
 
 import torch
 from absl import logging
@@ -190,6 +191,20 @@ class TestMuonUtils(parameterized.TestCase):
             self.assertEqual(scale, math.sqrt(size_out / size_in))
         else:
             raise ValueError(f"Invalid mode: {mode}")
+
+    @parameterized.parameters(
+        (511, 513),
+        (511, 257),
+        (257, 513),
+    )
+    def test_get_polar_express_9steps_close_to_reference(self, dim1, dim2):
+        x = torch.randn(dim1, dim2, device="cuda", dtype=torch.float32)
+        out_pe9 = muon_utils.newton_schulz(x, steps=9, coefficient_type="polar_express")
+
+        coeff = deepcopy(muon_utils._COEFFICIENT_SETS["polar_express"])
+        coeff.append(coeff[-1])
+        out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
+        torch.testing.assert_close(out_pe9, out_ref, atol=1e-6, rtol=1e-7)
 
 
 @absltest.skipIf(
