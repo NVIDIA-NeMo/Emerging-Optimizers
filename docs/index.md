@@ -35,6 +35,7 @@ Coming soon.
 
 apidocs/index.md
 documentation.md
+primer/index.md
 ```
 
 
