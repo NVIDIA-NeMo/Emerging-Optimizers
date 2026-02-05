@@ -81,6 +81,7 @@ def get_coefficient_iterator(
         Tuples (a, b, c) from coefficient_sets according to the specified mode.
 
     Raises:
+        ValueError: If coefficient_sets is empty.
         ValueError: If an invalid mode is provided.
     """
     logging.info(f"Iterating through {steps} steps with {mode} mode.")
