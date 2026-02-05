@@ -21,7 +21,7 @@ from absl import logging
 from emerging_optimizers import triton_kernels
 
 
-__all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "iter_coefficient_set", "CoeffIterMode"]
+__all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "get_coefficient_iterator", "CoeffIterMode"]
 
 CoeffIterMode = Literal["cycle", "repeat_last"]
 
