@@ -12,7 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Literal
+from itertools import chain, cycle, islice, repeat
+from typing import Any, Iterator, Literal, Sequence
 
 import torch
 from absl import logging
@@ -20,11 +21,14 @@ from absl import logging
 from emerging_optimizers import triton_kernels
 
 
-__all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT"]
+__all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "iter_coefficient_set", "CoeffIterMode"]
+
+CoeffIterMode = Literal["cycle", "repeat_last"]
 
 NSCoeffT = Literal["simple", "quintic", "polar_express", "aol", "custom"]
 
 _COEFFICIENT_SETS = {
+    # Values are rounded to closest representable in single precision.
     "simple": [
         (3.4445, -4.7750, 2.0315),
     ],
@@ -57,6 +61,44 @@ _COEFFICIENT_SETS = {
         (2.7215, -3.0494, 1.3169),
     ],
 }
+
+
+def get_coefficient_iterator(
+    steps: int,
+    coefficient_sets: Sequence[tuple[float, float, float]],
+    mode: CoeffIterMode = "cycle",
+) -> Iterator[tuple[float, float, float]]:
+    """Iterate through coefficient sets with configurable end behavior using itertools.
+
+    Args:
+        steps: The number of tuples to yield.
+        coefficient_sets: A sequence of (a, b, c) coefficient tuples.
+        mode: Iteration mode:
+            - "cycle": After the last element, restart from the beginning.
+            - "repeat_last": After the last element, keep yielding the last tuple.
+
+    Yields:
+        Tuples (a, b, c) from coefficient_sets according to the specified mode.
+
+    Raises:
+        ValueError: If an invalid mode is provided.
+    """
+    logging.info(f"Iterating through {steps} steps with {mode} mode.")
+    logging.debug(f"Coefficient sets: {coefficient_sets}")
+
+    if not coefficient_sets:
+        raise ValueError("coefficient_sets must be non-empty.")
+
+    base: Iterator[tuple[float, float, float]]
+    if mode == "cycle":
+        base = cycle(coefficient_sets)
+    elif mode == "repeat_last":
+        # Chain the original list with an infinite repeat of the last item
+        base = chain(coefficient_sets, repeat(coefficient_sets[-1]))
+    else:
+        raise ValueError(f"Invalid mode: {mode}. Expected 'cycle' or 'repeat_last'.")
+
+    return islice(base, steps)
 
 
 def distributed_normalize_p2(x: torch.Tensor, eps: float, group: torch.distributed.ProcessGroup) -> torch.Tensor:
@@ -134,8 +176,8 @@ def newton_schulz(
     else:
         raise ValueError(f"Invalid coefficient type: {coefficient_type}")
 
-    if steps % len(coefficient_sets) != 0:
-        raise ValueError(f"steps ({steps}) must be multiple of len(coefficient_sets) ({len(coefficient_sets)}).")
+    iter_mode: CoeffIterMode = "cycle" if coefficient_type != "polar_express" else "repeat_last"
+    coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
     ns_step_fn = newton_schulz_step
     # Perform the NS iterations
@@ -150,8 +192,7 @@ def newton_schulz(
         if use_syrk:
             ns_step_fn = newton_schulz_step_tsyrk
 
-    for i in range(steps):
-        a, b, c = coefficient_sets[i % len(coefficient_sets)]
+    for a, b, c in coeff_iter:
         X = ns_step_fn(X, a, b, c, tp_group=tp_group)
 
     # Convert back to FP32. This is a noop if X is already in FP32.
