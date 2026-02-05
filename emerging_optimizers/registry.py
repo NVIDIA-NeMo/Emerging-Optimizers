@@ -16,6 +16,7 @@ from functools import partial
 from inspect import signature
 from typing import Any, Callable
 
+from absl import logging
 from torch import optim
 
 
@@ -33,7 +34,29 @@ def register_optimizer(name: str) -> Callable[[type], type]:
 
 
 def get_optimizer(name: str) -> type[optim.Optimizer]:
-    """Returns the optimizer class from the registry."""
+    """Returns the optimizer class from the registry.
+
+    Args:
+        name: The name of the optimizer to get.
+
+    Returns:
+        The optimizer class.
+
+    Raises:
+        ValueError: If the optimizer is not found in the registry.
+
+    Warning:
+        To get the optimizer class, you need to import the optimizer module first so that the
+        register_optimizer decorator is called and the optimizer is registered. See example below.
+
+    Example:
+        >>> from emerging_optimizers.orthogonalized_optimizers import muon
+        >>> from emerging_optimizers import registry
+        >>> opt_cls = registry.get_optimizer("muon")
+        >>> opt_cls
+        <class 'emerging_optimizers.orthogonalized_optimizers.muon.Muon'>
+    """
+    logging.debug(f"Available optimizers: {list(_OPTIMIZERS.keys())}")
     optimizer = _OPTIMIZERS.get(name.lower())
     if optimizer is None:
         raise ValueError(f"Optimizer {name} not found in the registry.")
