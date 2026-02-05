@@ -18,6 +18,7 @@ from typing import Any, Callable
 
 from absl import logging
 from torch import optim
+from torch.optim.optimizer import ParamsT
 
 
 _OPTIMIZERS: dict[str, type[optim.Optimizer]] = {}
@@ -77,7 +78,7 @@ def validate_optimizer_args(opt_cls: type, kwargs: dict[str, Any]) -> None:
         )
 
 
-def get_configured_optimizer(name: str, **kwargs: Any) -> Callable[[], optim.Optimizer]:
+def get_configured_optimizer(name: str, **kwargs: Any) -> Callable[[ParamsT], optim.Optimizer]:
     """Returns a callable that creates an optimizer with the given arguments."""
     opt_cls = get_optimizer(name)
     validate_optimizer_args(opt_cls, kwargs)
