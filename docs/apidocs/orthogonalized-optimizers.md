@@ -33,6 +33,12 @@ emerging_optimizers.orthogonalized_optimizers
 .. autoclass:: MOP
     :members:
 
+:hidden:`MuonHyperball`
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: MuonHyperball
+    :members:
+
 
 :hidden:`Newton-Schulz`
 ~~~~~~~~~~~~~~~~~~~~~~~~
