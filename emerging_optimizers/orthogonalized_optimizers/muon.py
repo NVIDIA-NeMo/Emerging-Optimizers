@@ -19,7 +19,7 @@ import torch
 from absl import logging
 from torch.optim.optimizer import ParamsT
 
-from emerging_optimizers import triton_kernels
+from emerging_optimizers import registry, triton_kernels
 from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
@@ -27,9 +27,12 @@ from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer impo
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
+__all__ = ["Muon", "get_muon_scale_factor"]
+
 MuonScaleT = Literal["shape_scaling", "spectral", "unit_rms_norm"]
 
 
+@registry.register_optimizer("muon")
 class Muon(OrthogonalizedOptimizer):
     """Muon: MomentUm Orthogonalized by Newton-schulz
 

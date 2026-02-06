@@ -22,7 +22,7 @@ from torch import optim
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import scalar_optimizers, utils
+from emerging_optimizers import registry, scalar_optimizers, utils
 from emerging_optimizers.soap import soap_utils
 from emerging_optimizers.utils import FP32MatmulPrecT
 
@@ -36,6 +36,7 @@ __all__ = [
 ]
 
 
+@registry.register_optimizer("soap")
 class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
     """Implements a variant of SOAP (ShampoO with Adam in the Preconditioner eigenbasis) algorithm.
 

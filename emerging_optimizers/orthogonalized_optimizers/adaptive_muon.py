@@ -18,12 +18,16 @@ import torch
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import utils
+from emerging_optimizers import registry, utils
 from emerging_optimizers.orthogonalized_optimizers import muon
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
+__all__ = ["AdaptiveMuon"]
+
+
+@registry.register_optimizer("adaptive_muon")
 class AdaptiveMuon(muon.Muon):
     """Adaptive Muon optimizer with adaptive second moment (AdaMuon/NorMuon variants).
 

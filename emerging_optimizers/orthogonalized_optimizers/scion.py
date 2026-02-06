@@ -17,6 +17,7 @@ import torch
 from absl import logging
 from torch.optim.optimizer import ParamsT
 
+from emerging_optimizers import registry
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
@@ -24,6 +25,10 @@ from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer impo
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
+__all__ = ["Scion"]
+
+
+@registry.register_optimizer("scion")
 class Scion(OrthogonalizedOptimizer):
     """Scion: Stochastic CondItional descent with Operator Norms
 
