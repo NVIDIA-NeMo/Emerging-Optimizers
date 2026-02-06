@@ -45,6 +45,7 @@ _COEFFICIENT_SETS = {
     "polar_express": [
         # Polar Express iteration from: https://arxiv.org/abs/2505.16932
         # We include PolarExpress' division by 1.01^polynomial_degree in the coefficient list.
+        # This is a safety factor for numerical stability.
         (8.2051, -22.9019, 16.4607),
         (4.0664, -2.8612, 0.5184),
         (3.9096, -2.8234, 0.5250),
