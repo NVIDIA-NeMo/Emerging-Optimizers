@@ -27,7 +27,7 @@ emerging_optimizers.orthogonalized_optimizers
 .. autoclass:: Scion
     :members:
 
-:hidden:`Mop`
+:hidden:`MOP`
 ~~~~~~~~~~~~~~~
 
 .. autoclass:: MOP
