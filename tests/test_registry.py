@@ -30,6 +30,13 @@ class TestRegistry(parameterized.TestCase):
 
         self.assertIs(registry.get_optimizer("test_optimizer"), TestOptimizer)
 
+        with self.assertRaisesRegex(ValueError, "already registered"):
+
+            @registry.register_optimizer("test_optimizer")
+            class TestOptimizer(torch.optim.Optimizer):
+                def __init__(self, params, lr=0.01):
+                    super().__init__(params, lr)
+
     @parameterized.parameters(
         ("muon", muon.Muon),
         ("mop", mop.MOP),

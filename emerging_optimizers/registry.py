@@ -14,7 +14,7 @@
 # limitations under the License.
 from functools import partial
 from inspect import signature
-from typing import Any, Callable
+from typing import Any, Callable, Concatenate
 
 from absl import logging
 from torch import optim
@@ -24,10 +24,12 @@ from torch.optim.optimizer import ParamsT
 _OPTIMIZERS: dict[str, type[optim.Optimizer]] = {}
 
 
-def register_optimizer(name: str) -> Callable[[type], type]:
+def register_optimizer(name: str) -> Callable[[type[optim.Optimizer]], type[optim.Optimizer]]:
     """Decorator to register an optimizer class in the registry."""
 
-    def decorator(cls: type) -> type:
+    def decorator(cls: type[optim.Optimizer]) -> type[optim.Optimizer]:
+        if name.lower() in _OPTIMIZERS:
+            raise ValueError(f"Optimizer {name} already registered.")
         _OPTIMIZERS[name.lower()] = cls
         return cls
 
@@ -78,7 +80,7 @@ def validate_optimizer_args(opt_cls: type, kwargs: dict[str, Any]) -> None:
         )
 
 
-def get_configured_optimizer(name: str, **kwargs: Any) -> Callable[[ParamsT], optim.Optimizer]:
+def get_configured_optimizer(name: str, **kwargs: Any) -> Callable[Concatenate[ParamsT, ...], optim.Optimizer]:
     """Returns a callable that creates an optimizer with the given arguments."""
     opt_cls = get_optimizer(name)
     validate_optimizer_args(opt_cls, kwargs)
