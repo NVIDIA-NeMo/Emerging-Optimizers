@@ -41,6 +41,17 @@ class MuonHyperball(muon.Muon):
 
     See :class:`~emerging_optimizers.orthogonalized_optimizers.muon.Muon` for full documentation
     of the base Muon optimizer.
+
+
+    Args:
+        *args: Arguments passed to Muon.
+        hyperball_eps: Epsilon for numerical stability in normalization.
+            Default: ``1e-8``.
+        hyperball_radius: Fixed radius for the hyperball. If ``None`` (default),
+            uses each parameter's initial Frobenius norm as its radius. If specified, all
+            parameters will be rescaled to have this radius at initialization.
+        **kwargs: Keyword arguments passed to Muon.
+
     """
 
     def __init__(
@@ -50,19 +61,6 @@ class MuonHyperball(muon.Muon):
         hyperball_radius: float | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize MuonHyperball optimizer.
-
-        Args:
-            *args: Arguments passed to Muon.
-            **kwargs: Keyword arguments passed to Muon.
-
-        Keyword args:
-            hyperball_eps (float, optional): Epsilon for numerical stability in normalization.
-                Default: ``1e-8``.
-            hyperball_radius (float, optional): Fixed radius for the hyperball. If ``None`` (default),
-                uses each parameter's initial Frobenius norm as its radius. If specified, all
-                parameters will be rescaled to have this radius at initialization.
-        """
         self.hyperball_eps = hyperball_eps
         self.hyperball_radius = hyperball_radius
         super().__init__(*args, **kwargs)
