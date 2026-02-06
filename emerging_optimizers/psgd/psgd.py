@@ -19,6 +19,7 @@ import torch
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
+from emerging_optimizers import registry
 from emerging_optimizers.psgd import psgd_kron_contractions, psgd_utils
 from emerging_optimizers.psgd.procrustes_step import procrustes_step
 from emerging_optimizers.soap.soap import _clip_update_rms_in_place
@@ -29,6 +30,7 @@ __all__ = [
 ]
 
 
+@registry.register_optimizer("psgd_pro")
 class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
     """Implements a variant of the PSGD optimization algorithm (PSGD-Kron-Whiten with Procrustes step for preconditioner update).
 

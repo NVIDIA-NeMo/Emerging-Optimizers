@@ -19,6 +19,7 @@ from typing import Literal
 import torch
 from torch.optim.optimizer import ParamsT
 
+from emerging_optimizers import registry
 from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
@@ -28,6 +29,7 @@ from emerging_optimizers.utils import FP32MatmulPrecT
 __all__ = ["MOP"]
 
 
+@registry.register_optimizer("mop")
 class MOP(OrthogonalizedOptimizer):
     """MOP: Momentum Orthogonalized by Polar decomposition
 
