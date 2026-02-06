@@ -61,21 +61,21 @@ def procrustes_step(
             # clip step size to max_step_size, based on a 2nd order expansion.
             _step_size = torch.clamp(-tr_RQ / tr_RRQ, min=0, max=max_step_size)
             # If tr_RRQ >= 0, the quadratic approximation is not concave, we fallback to max_step_size.
-            step_size = torch.where(tr_RRQ < 0, _step_size, max_step_size)
+            step_size: float = torch.where(tr_RRQ < 0, _step_size, max_step_size).item()
             # rotate Q as exp(a R) Q ~ (I + a R + a^2 R^2/2) Q with an optimal step size by line search
             # for 2nd order expansion, only expand exp(a R) to its 2nd term.
             # Q += _step_size * (RQ + 0.5 * _step_size * RRQ)
-            Q = torch.add(Q, torch.add(RQ, RRQ, alpha=0.5 * step_size), alpha=step_size)  # type: ignore[call-overload]
+            Q = torch.add(Q, torch.add(RQ, RRQ, alpha=0.5 * step_size), alpha=step_size)
         if order == 3:
             RRRQ = R @ RRQ
             tr_RRRQ = torch.trace(RRRQ)
             # for a 3rd order expansion, we take the larger root of the cubic.
             _step_size = (-tr_RRQ - torch.sqrt(tr_RRQ * tr_RRQ - 1.5 * tr_RQ * tr_RRRQ)) / (0.75 * tr_RRRQ)
-            step_size = torch.clamp(_step_size, max=max_step_size)
+            step_size = torch.clamp(_step_size, max=max_step_size).item()
             # Q += step_size * (RQ + 0.5 * step_size * (RRQ + 0.25 * step_size * RRRQ))
-            Q = torch.add(  # type: ignore[call-overload]
+            Q = torch.add(
                 Q,
-                torch.add(RQ, torch.add(RRQ, RRRQ, alpha=0.25 * step_size), alpha=0.5 * step_size),  # type: ignore[call-overload]
-                alpha=step_size,  # type: ignore[call-overload]
+                torch.add(RQ, torch.add(RRQ, RRRQ, alpha=0.25 * step_size), alpha=0.5 * step_size),
+                alpha=step_size,
             )
     return Q
