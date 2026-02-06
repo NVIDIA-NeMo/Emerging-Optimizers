@@ -46,6 +46,11 @@ class TestRegistry(parameterized.TestCase):
         with self.assertRaisesRegex(ValueError, "not found in the registry"):
             registry.get_optimizer("unknown_optimizer")
 
+    def test_get_configured_optimizer_smoke(self):
+        opt_cls = registry.get_configured_optimizer("muon", lr=0.01)
+        assert opt_cls is not muon.Muon
+        _ = opt_cls([torch.randn(10, 10)], extra_scale_factor=0.2)
+
 
 if __name__ == "__main__":
     absltest.main()

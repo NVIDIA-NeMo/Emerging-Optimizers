@@ -31,5 +31,6 @@ coverage run -p --source=emerging_optimizers tests/test_psgd_contractions.py --d
 coverage run -p --source=emerging_optimizers tests/test_psgd_utils.py --device=cuda  -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_psgd_convergence.py --device=cuda  -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_utils_modules.py -v -2 || error=1
+coverage run -p --source=emerging_optimizers tests/test_registry.py -v -2 || error=1
 
 exit "${error}"
