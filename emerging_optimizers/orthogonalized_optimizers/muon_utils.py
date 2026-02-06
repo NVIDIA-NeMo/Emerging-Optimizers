@@ -35,7 +35,7 @@ _COEFFICIENT_SETS = {
     "quintic": [
         # optimized for a quintic iteration.
         # Source: https://leloykun.github.io/ponder/muon-opt-coeffs/#how-do-we-optimize-the-coefficients
-        # Numbers from: https://github.com/KellerJordan/modded-nanogpt/blob/master/train_gpt_medium.py#L44
+        # Numbers from: https://github.com/KellerJordan/modded-nanogpt/blob/0674386070ceb4dcd207e1aca747ffcea6c15250/train_gpt_medium.py#L45
         (4.0848, -6.8946, 2.9270),
         (3.9505, -6.3029, 2.6377),
         (3.7418, -5.5913, 2.3037),
@@ -44,6 +44,8 @@ _COEFFICIENT_SETS = {
     ],
     "polar_express": [
         # Polar Express iteration from: https://arxiv.org/abs/2505.16932
+        # We include PolarExpress' division by 1.01^polynomial_degree (as stated in their Algorithm 1) in the coefficient list.
+        # This is a safety factor for numerical stability.
         (8.2051, -22.9019, 16.4607),
         (4.0664, -2.8612, 0.5184),
         (3.9096, -2.8234, 0.5250),
