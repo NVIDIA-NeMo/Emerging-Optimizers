@@ -35,7 +35,7 @@ _COEFFICIENT_SETS = {
     "quintic": [
         # optimized for a quintic iteration.
         # Source: https://leloykun.github.io/ponder/muon-opt-coeffs/#how-do-we-optimize-the-coefficients
-        # Numbers from: https://github.com/KellerJordan/modded-nanogpt/blob/master/train_gpt_medium.py#L44
+        # Numbers from: https://github.com/KellerJordan/modded-nanogpt/blob/0674386070ceb4dcd207e1aca747ffcea6c15250/train_gpt_medium.py#L45
         (4.0848, -6.8946, 2.9270),
         (3.9505, -6.3029, 2.6377),
         (3.7418, -5.5913, 2.3037),
