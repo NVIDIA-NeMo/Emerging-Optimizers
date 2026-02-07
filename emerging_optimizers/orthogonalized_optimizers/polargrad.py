@@ -22,6 +22,7 @@ from torch.optim.optimizer import ParamsT
 from emerging_optimizers import registry, triton_kernels
 from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
+from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
 from emerging_optimizers.orthogonalized_optimizers import muon
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
 from emerging_optimizers.utils import FP32MatmulPrecT
@@ -56,7 +57,7 @@ class PolarGrad(OrthogonalizedOptimizer):
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration. Can be one of
             ["simple", "quintic", "polar_express"].
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
-        scale_mode: The type of scale factor to use for the update. Defaults to "spectral" style scaling.
+        scale_mode: The type of scale factor to use for the update. Defaults to "nuclear_norm" style scaling.
         extra_scale_factor: The additional scale factor to use for the update. Setting it to 0.2 can closely match
             the update RMS norm of AdamW as suggested by https://arxiv.org/abs/2502.16982.
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
@@ -72,7 +73,7 @@ class PolarGrad(OrthogonalizedOptimizer):
         use_nesterov: bool = False,
         weight_decay_method: WeightDecayT = "decoupled",
         fp32_matmul_prec: FP32MatmulPrecT = "highest",
-        coefficient_type: muon.NSCoeffT = "quintic",
+        coefficient_type: NSCoeffT = "quintic",
         num_ns_steps: int = 5,
         scale_mode: muon.MuonScaleT | Literal["nuclear_norm"] = "nuclear_norm",
         extra_scale_factor: float = 1.0,
