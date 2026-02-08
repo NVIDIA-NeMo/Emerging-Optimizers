@@ -36,7 +36,14 @@ emerging_optimizers.orthogonalized_optimizers
 :hidden:`MuonHyperball`
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: MuonHyperball
+.. autoclass:: PolarGrad
+    :members:
+
+
+:hidden:`PolarGrad`
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: PolarGrad
     :members:
 
 
