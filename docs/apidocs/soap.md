@@ -5,11 +5,13 @@
 emerging_optimizers.soap
 ===================================
 
-.. automodule:: emerging_optimizers.soap.soap
-.. currentmodule:: emerging_optimizers.soap.soap
+.. automodule:: emerging_optimizers.soap
+
 
 :hidden:`SOAP`
 ~~~~~~~~~~~~~~~
+
+.. currentmodule:: emerging_optimizers.soap.soap
 
 .. autoclass:: SOAP
     :members:
@@ -23,6 +25,16 @@ emerging_optimizers.soap
 .. autofunction:: update_kronecker_factors_kl_shampoo
 
 .. autofunction:: update_eigenbasis_and_momentum
+
+
+:hidden:`RSKE`
+~~~~~~~~~~~~~~~
+
+.. currentmodule:: emerging_optimizers.soap.rske
+
+.. autoclass:: RSKE
+    :members:
+
 
 emerging_optimizers.soap.soap_utils
 =====================================
