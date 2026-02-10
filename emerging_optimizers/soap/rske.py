@@ -16,12 +16,13 @@
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import soap
+from emerging_optimizers import registry, soap
 
 
 __all__ = ["RSKE"]
 
 
+@registry.register_optimizer("rske")
 class RSKE(soap.SOAP):
     """RSKE (Realtime Soap with Kullback–Leibler minimization and Eigen decomposition) optimizer.
 
