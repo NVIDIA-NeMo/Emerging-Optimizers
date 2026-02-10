@@ -20,7 +20,6 @@ import soap_reference
 import torch
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers import soap
 from emerging_optimizers.soap import rekls, soap
 from emerging_optimizers.soap.soap import (
     _clip_update_rms_in_place,

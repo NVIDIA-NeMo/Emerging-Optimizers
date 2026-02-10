@@ -17,14 +17,14 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry
-from emerging_optimizers.soap.soap import SOAP
+from emerging_optimizers.soap import soap
 
 
 __all__ = ["REKLS"]
 
 
 @registry.register_optimizer("rekls")
-class REKLS(SOAP):
+class REKLS(soap.SOAP):
     """REKLS (Realtime Eigen Kullback-Leibler Soap) optimizer.
 
     REKLS is a variant of SOAP that uses the up to date eigenbasis calculated by Eigen decomposition. It is
