@@ -5,8 +5,6 @@
 emerging_optimizers.soap
 ===================================
 
-.. automodule:: emerging_optimizers.soap
-
 
 :hidden:`SOAP`
 ~~~~~~~~~~~~~~~
