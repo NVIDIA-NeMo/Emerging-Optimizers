@@ -52,7 +52,6 @@ def kl_shampoo_update_ref(
         * (torch.diag(eigenbasis_list[idx].T @ kronecker_factor_list[idx] @ eigenbasis_list[idx]) + eps) ** eigval_exp
         for idx in range(len(kronecker_factor_list))
     ]
-    print(scale_factors)
     kronecker_product_corrections = [
         (eigenbasis_list[idx] * scale_factors[idx][None, :]) @ eigenbasis_list[idx].T
         for idx in range(len(kronecker_factor_list))
