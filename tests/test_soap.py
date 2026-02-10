@@ -20,7 +20,7 @@ import soap_reference
 import torch
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.soap import soap
+from emerging_optimizers.soap import rekls, soap
 from emerging_optimizers.soap.soap import (
     _clip_update_rms_in_place,
     _is_eigenbasis_update_step,
@@ -349,6 +349,18 @@ class SoapTest(parameterized.TestCase):
         )
 
         for _ in range(10):
+            param.grad = torch.randn_like(param)
+            optimizer.step()
+            param.grad = None
+
+    def test_rekls_5steps_smoke(self):
+        param = torch.randn(5, 3, requires_grad=True, device="cuda")
+        optimizer = rekls.REKLS(
+            [param],
+            lr=self.default_config["lr"],
+        )
+
+        for _ in range(5):
             param.grad = torch.randn_like(param)
             optimizer.step()
             param.grad = None
