@@ -16,7 +16,8 @@
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import registry, soap
+from emerging_optimizers import registry
+from emerging_optimizers.soap import soap
 
 
 __all__ = ["RSKE"]
