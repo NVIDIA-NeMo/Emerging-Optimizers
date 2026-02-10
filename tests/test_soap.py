@@ -20,7 +20,7 @@ import soap_reference
 import torch
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.soap import rekls, soap
+from emerging_optimizers.soap import REKLS, SOAP, soap
 from emerging_optimizers.soap.soap import (
     _clip_update_rms_in_place,
     _is_eigenbasis_update_step,
@@ -89,7 +89,7 @@ class SoapFunctionsTest(parameterized.TestCase):
 
         param = torch.randn(5, 3, requires_grad=True, device="cuda")
 
-        optimizer = soap.SOAP(
+        optimizer = SOAP(
             [param],
             lr=0.001,
             weight_decay=0.01,
@@ -234,14 +234,14 @@ class SoapFunctionsTest(parameterized.TestCase):
     def test_soap_optimizer_fixed_frequency(self) -> None:
         """Test that SOAP optimizer can be created with fixed precondition frequency (default case)."""
         param = torch.randn(10, 5, requires_grad=True)
-        optimizer = soap.SOAP([param], lr=1e-3, precondition_frequency=10)
+        optimizer = SOAP([param], lr=1e-3, precondition_frequency=10)
         self.assertEqual(optimizer.precondition_frequency, 10)
 
     def test_soap_optimizer_class_based_schedule(self) -> None:
         """Test that SOAP optimizer can be created with class-based precondition frequency schedule."""
         param = torch.randn(10, 5, requires_grad=True)
         schedule = LinearSchedule(min_freq=2, max_freq=10, transition_steps=100)
-        optimizer = soap.SOAP([param], lr=1e-3, precondition_frequency=schedule)
+        optimizer = SOAP([param], lr=1e-3, precondition_frequency=schedule)
         self.assertTrue(optimizer.precondition_frequency == schedule)
 
         self.assertEqual(schedule(0), 2)
@@ -329,7 +329,7 @@ class SoapTest(parameterized.TestCase):
 
     def test_10steps_smoke(self):
         param = torch.randn(5, 3, requires_grad=True, device="cuda")
-        optimizer = soap.SOAP(
+        optimizer = SOAP(
             [param],
             **self.default_config,
         )
@@ -341,7 +341,7 @@ class SoapTest(parameterized.TestCase):
 
     def test_with_kl_shampoo_10steps_smoke(self):
         param = torch.randn(5, 3, requires_grad=True, device="cuda")
-        optimizer = soap.SOAP(
+        optimizer = SOAP(
             [param],
             **self.default_config,
             use_kl_shampoo=True,
@@ -354,7 +354,7 @@ class SoapTest(parameterized.TestCase):
 
     def test_rekls_5steps_smoke(self):
         param = torch.randn(5, 3, requires_grad=True, device="cuda")
-        optimizer = rekls.REKLS(
+        optimizer = REKLS(
             [param],
             lr=self.default_config["lr"],
         )
@@ -400,7 +400,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
             correct_bias=correct_bias,
         )
 
-        test_optimizer = soap.SOAP(
+        test_optimizer = SOAP(
             [param_test],
             **common_kwargs,
             adam_warmup_steps=0,
@@ -455,7 +455,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
             correct_bias=False,
         )
 
-        test_optimizer = soap.SOAP(
+        test_optimizer = SOAP(
             [param_soap],
             **common_kwargs,
             weight_decay_method="l2",
