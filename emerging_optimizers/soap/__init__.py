@@ -12,11 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from emerging_optimizers.soap.rske import RSKE
+from emerging_optimizers.soap.rekls import REKLS
 from emerging_optimizers.soap.soap import SOAP
 
 
 __all__ = [
-    "RSKE",
+    "REKLS",
     "SOAP",
 ]

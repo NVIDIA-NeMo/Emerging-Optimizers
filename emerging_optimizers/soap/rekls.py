@@ -20,16 +20,18 @@ from emerging_optimizers import registry
 from emerging_optimizers.soap import soap
 
 
-__all__ = ["RSKE"]
+__all__ = ["REKLS"]
 
 
-@registry.register_optimizer("rske")
-class RSKE(soap.SOAP):
-    """RSKE (Realtime Soap with Kullback–Leibler minimization and Eigen decomposition) optimizer.
+@registry.register_optimizer("rekls")
+class REKLS(soap.SOAP):
+    """REKLS (Realtime Eigen Kullback-Leibler Soap) optimizer.
+
+    REKLS is a variant of SOAP that uses the up to date eigenbasis calculated by Eigen decomposition. It is
+    "up to date" because current step's gradient is accumulated to the kronecker factor before eigenbasis update.
 
     Note:
-        RSKE (pronounces "risky") is a variant of SOAP.
-        Refer to :class:`~emerging_optimizers.soap.soap.SOAP` for detailed documentation.
+        Refer to :class:`~emerging_optimizers.soap.soap.SOAP` for detailed documentation of arguments.
     """
 
     def __init__(

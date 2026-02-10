@@ -27,12 +27,12 @@ emerging_optimizers.soap
 .. autofunction:: update_eigenbasis_and_momentum
 
 
-:hidden:`RSKE`
+:hidden:`REKLS`
 ~~~~~~~~~~~~~~~
 
-.. currentmodule:: emerging_optimizers.soap.rske
+.. currentmodule:: emerging_optimizers.soap.rekls
 
-.. autoclass:: RSKE
+.. autoclass:: REKLS
     :members:
 
 
