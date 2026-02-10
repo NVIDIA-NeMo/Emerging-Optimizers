@@ -26,7 +26,7 @@ class RSKE(soap.SOAP):
     """RSKE (Realtime Soap with Kullback–Leibler minimization and Eigen decomposition) optimizer.
 
     Note:
-        RSKE (pronounces "risky") is a subset of SOAP.
+        RSKE (pronounces "risky") is a variant of SOAP.
         Refer to :class:`~emerging_optimizers.soap.soap.SOAP` for detailed documentation.
     """
 
