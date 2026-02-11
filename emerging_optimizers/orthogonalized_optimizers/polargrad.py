@@ -19,7 +19,7 @@ import torch
 from absl import logging
 from torch.optim.optimizer import ParamsT
 
-from emerging_optimizers import registry, triton_kernels
+from emerging_optimizers import registry
 from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
@@ -82,20 +82,6 @@ class PolarGrad(OrthogonalizedOptimizer):
         if num_ns_steps < 1:
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
 
-        if use_syrk:
-            if torch.cuda.is_available():
-                sm_version = torch.cuda.get_device_capability()
-            else:
-                sm_version = (0, 0)
-            if not triton_kernels.HAS_TRITON_340:  # type: ignore[attr-defined]
-                logging.error("Triton 3.4.0 or higher is required for use_syrk to be True.")
-                use_syrk = False
-            elif sm_version not in ((8, 0), (9, 0), (10, 0), (10, 3)):
-                logging.error(
-                    f"Correctness of Triton kernel on SM {sm_version} cannot be guaranteed. Setting use_syrk to False."
-                )
-                use_syrk = False
-
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
                 f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, "
@@ -107,11 +93,12 @@ class PolarGrad(OrthogonalizedOptimizer):
                 coefficient_type=coefficient_type,
                 use_syrk=use_syrk,
             )
+            nuc_norm = (orth_grad * grad).sum()
             scale_factor: float | torch.Tensor
             if scale_mode != "nuclear_norm":
-                scale_factor = muon.get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
+                scale_factor = nuc_norm * muon.get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
             else:
-                scale_factor = (orth_grad * grad).sum()
+                scale_factor = nuc_norm
             return orth_grad * scale_factor * extra_scale_factor
 
         super().__init__(
