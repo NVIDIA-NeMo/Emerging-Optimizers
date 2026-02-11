@@ -97,12 +97,11 @@ class MuonHyperball(muon.Muon):
         update.mul_(R / update_norm)
 
     @override
-    def post_weight_update_fn_inplace(self, p: torch.Tensor, update: torch.Tensor) -> None:
+    def post_weight_update_fn_inplace(self, p: torch.Tensor) -> None:
         """Normalize the updated weights and scale back to original norm using Frobenius norm.
 
         Args:
             p: The parameter tensor (already updated).
-            update: The orthogonalized gradient tensor that was applied.
         """
         # Retrieve R from per-parameter state
         R = self.state[p]["hyperball_R"]
