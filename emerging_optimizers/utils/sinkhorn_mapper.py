@@ -12,6 +12,8 @@ class SinkhornMapper:
     Applies the Sinkhorn-Knopp mapping in place on the input tensor:
     Input -> [Exp] -> [Iterative Row/Col Normalization]
 
+    Based on Deepseek's Manifold-Constrained Hyperconnections (https://arxiv.org/abs/2512.24880)
+
     Args:
         t_max: The number of iterations to run the Sinkhorn-Knopp mapping.
         epsilon: The epsilon value to use for the Sinkhorn-Knopp mapping for numerical stability.
