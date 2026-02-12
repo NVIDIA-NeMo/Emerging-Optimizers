@@ -56,6 +56,21 @@ class SinkhornMuon(muon.Muon):
 
         self.sinkhorn_mapper = SinkhornMapper(t_max=t_max, epsilon=epsilon)
 
+        for group in self.param_groups:
+            for p in group["params"]:
+                # Validate parameter is 2D
+                if p.dim() != 2:
+                    raise ValueError(
+                        f"{self.__class__.__name__} only supports 2D parameters, "
+                        f"but got parameter with shape {p.shape} (dim={p.dim()})"
+                    )
+                # Initialize weights as doubly-stochastic matrices.
+                # Apply sigmoid to map values to (0, 1) range, ensuring safe exp() evaluation
+                # and preserving relative ordering. Then apply Sinkhorn-Knopp normalization
+                # to enforce row and column sum constraints.
+                torch.sigmoid_(p)
+                self.sinkhorn_mapper(p)
+
     @override
     def post_weight_update_fn_inplace(self, p: torch.Tensor) -> None:
         """Normalize the updated weights in-place using Sinkhorn-Knopp mapping.
