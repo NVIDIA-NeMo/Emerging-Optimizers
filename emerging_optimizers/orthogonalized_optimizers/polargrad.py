@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Literal
-
 import torch
 from absl import logging
 from torch.optim.optimizer import ParamsT
@@ -23,7 +21,6 @@ from emerging_optimizers import registry
 from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
-from emerging_optimizers.orthogonalized_optimizers import muon
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
 from emerging_optimizers.utils import FP32MatmulPrecT
 
@@ -75,9 +72,7 @@ class PolarGrad(OrthogonalizedOptimizer):
         fp32_matmul_prec: FP32MatmulPrecT = "highest",
         coefficient_type: NSCoeffT = "quintic",
         num_ns_steps: int = 5,
-        scale_mode: muon.MuonScaleT | Literal["nuclear_norm"] = "nuclear_norm",
         extra_scale_factor: float = 1.0,
-        use_syrk: bool = False,
     ) -> None:
         if num_ns_steps < 1:
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
@@ -85,19 +80,14 @@ class PolarGrad(OrthogonalizedOptimizer):
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
                 f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, "
-                f"{scale_mode} scale mode (multiplied with nuclear norm of grad), "
-                f"extra_scale_factor={extra_scale_factor}"
+                f"multiplied with the nuclear norm of grad, extra_scale_factor={extra_scale_factor}"
             )
             orth_grad = muon_utils.newton_schulz(
                 grad,
                 steps=num_ns_steps,
                 coefficient_type=coefficient_type,
-                use_syrk=use_syrk,
             )
-            scale_factor: float | torch.Tensor
-            scale_factor = (orth_grad * grad).sum()            
-            if scale_mode != "nuclear_norm":
-                scale_factor *= muon.get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
+            scale_factor = (orth_grad * grad).sum()
             return orth_grad * scale_factor * extra_scale_factor
 
         super().__init__(
