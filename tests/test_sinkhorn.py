@@ -143,26 +143,26 @@ class TestSinkhornMuon(parameterized.TestCase):
         with self.assertRaises(ValueError):
             SinkhornMuon([test_param], sinkhorn_iters=0)
 
-    def test_invalid_epsilon_raises(self) -> None:
-        """epsilon <= 0 should raise ValueError."""
+    def test_invalid_sinkhorn_eps_raises(self) -> None:
+        """sinkhorn_eps <= 0 should raise ValueError."""
         test_param = nn.Parameter(torch.randn(4, 4, device=FLAGS.device, dtype=torch.float32))
         with self.assertRaises(ValueError):
-            SinkhornMuon([test_param], epsilon=0.0)
+            SinkhornMuon([test_param], sinkhorn_eps=0.0)
         with self.assertRaises(ValueError):
-            SinkhornMuon([test_param], epsilon=-1e-8)
+            SinkhornMuon([test_param], sinkhorn_eps=-1e-8)
 
     def test_zero_lr_only_weight_decay(self) -> None:
         """With lr=0 and independent weight decay, weight decay + sinkhorn should be applied."""
         shape = (8, 8)
         weight_decay = 0.25
         sinkhorn_iters = 20
-        epsilon = 1e-8
+        sinkhorn_eps = 1e-8
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=FLAGS.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
         # With lr=0, only weight decay is applied, then sinkhorn mapping runs on top
         expected_param = (1 - weight_decay) * test_param.data.clone()
-        expected_param = SinkhornMapper(sinkhorn_iters=sinkhorn_iters, epsilon=epsilon)(expected_param)
+        expected_param = SinkhornMapper(sinkhorn_iters=sinkhorn_iters, epsilon=sinkhorn_eps)(expected_param)
 
         opt = SinkhornMuon(
             [test_param],
@@ -171,7 +171,7 @@ class TestSinkhornMuon(parameterized.TestCase):
             weight_decay_method="independent",
             momentum_beta=0.0,
             sinkhorn_iters=sinkhorn_iters,
-            epsilon=epsilon,
+            sinkhorn_eps=sinkhorn_eps,
         )
         opt.step()
 
