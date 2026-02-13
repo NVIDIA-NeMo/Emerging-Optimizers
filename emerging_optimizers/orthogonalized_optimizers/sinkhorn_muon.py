@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,26 +35,32 @@ class SinkhornMuon(muon.Muon):
     Args:
         *args: Arguments passed to Muon.
         **kwargs: Keyword arguments passed to Muon.
-        t_max: The number of iterations to run the Sinkhorn-Knopp mapping.
-        epsilon: The epsilon value to use for the Sinkhorn-Knopp mapping.
+        sinkhorn_iters: The number of iterations to run the Sinkhorn-Knopp mapping.
+        sinkhorn_eps: The epsilon value to use for the Sinkhorn-Knopp mapping.
+        doubly_stochastic_tolerance: Tolerance for validating that parameters are close to
+            doubly-stochastic. Defaults to 0.1.
     """
 
     def __init__(
         self,
         *args: Any,
-        t_max: int = 20,
-        epsilon: float = 1e-8,
+        sinkhorn_iters: int = 20,
+        sinkhorn_eps: float = 1e-8,
+        doubly_stochastic_tolerance: float = 0.1,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
 
         # Validate sinkhorn mapper parameters
-        if t_max < 1:
-            raise ValueError(f"t_max must be at least 1, got {t_max}")
-        if epsilon <= 0:
-            raise ValueError(f"epsilon must be positive, got {epsilon}")
+        if sinkhorn_iters < 1:
+            raise ValueError(f"sinkhorn_iters must be at least 1, got {sinkhorn_iters}")
+        if sinkhorn_eps <= 0:
+            raise ValueError(f"sinkhorn_eps must be positive, got {sinkhorn_eps}")
+        if doubly_stochastic_tolerance <= 0:
+            raise ValueError(f"doubly_stochastic_tolerance must be positive, got {doubly_stochastic_tolerance}")
 
-        self.sinkhorn_mapper = SinkhornMapper(t_max=t_max, epsilon=epsilon)
+        self.sinkhorn_mapper = SinkhornMapper(sinkhorn_iters=sinkhorn_iters, epsilon=sinkhorn_eps)
+        self.doubly_stochastic_tolerance = doubly_stochastic_tolerance
 
         for group in self.param_groups:
             for p in group["params"]:
@@ -64,12 +70,34 @@ class SinkhornMuon(muon.Muon):
                         f"{self.__class__.__name__} only supports 2D parameters, "
                         f"but got parameter with shape {p.shape} (dim={p.dim()})"
                     )
-                # Initialize weights as doubly-stochastic matrices.
-                # Apply sigmoid to map values to (0, 1) range, ensuring safe exp() evaluation
-                # and preserving relative ordering. Then apply Sinkhorn-Knopp normalization
-                # to enforce row and column sum constraints.
-                torch.sigmoid_(p)
-                self.sinkhorn_mapper(p)
+                # Validate that parameter is close to doubly-stochastic.
+                # A doubly-stochastic matrix has non-negative entries with row sums and column sums equal to 1.
+
+                # Check non-negativity
+                if (p < 0).any():
+                    min_val = p.min().item()
+                    raise ValueError(
+                        f"Parameter with shape {p.shape} contains negative values (min={min_val:.6f}). "
+                        f"Doubly-stochastic matrices must have non-negative entries."
+                    )
+
+                # Check row and column sum constraints
+                row_sums = p.sum(dim=-1)
+                col_sums = p.sum(dim=-2)
+                max_row_deviation = (row_sums - 1.0).abs().max().item()
+                max_col_deviation = (col_sums - 1.0).abs().max().item()
+
+                if (
+                    max_row_deviation > self.doubly_stochastic_tolerance
+                    or max_col_deviation > self.doubly_stochastic_tolerance
+                ):
+                    raise ValueError(
+                        f"Parameter with shape {p.shape} is not close to doubly-stochastic. "
+                        f"Max row sum deviation: {max_row_deviation:.6f}, "
+                        f"max column sum deviation: {max_col_deviation:.6f}. "
+                        f"Expected deviations < {self.doubly_stochastic_tolerance}. "
+                        f"Please initialize parameters as doubly-stochastic matrices."
+                    )
 
     @override
     def post_weight_update_fn_inplace(self, p: torch.Tensor) -> None:
@@ -78,4 +106,4 @@ class SinkhornMuon(muon.Muon):
         Args:
             p: The parameter tensor (already updated).
         """
-        self.sinkhorn_mapper(p)
+        p.copy_(self.sinkhorn_mapper(p))

@@ -23,33 +23,46 @@ __all__ = [
 
 
 class SinkhornMapper:
-    """
-    Applies the Sinkhorn-Knopp mapping in place on the input tensor:
+    """Applies the Sinkhorn-Knopp mapping to the input tensor.
+
+    The Sinkhorn-Knopp mapping is an iterative technique for normalizing the rows and columns of a matrix to sum to 1:
     Input -> [Exp] -> [Iterative Row/Col Normalization]
+
+    Returns a new tensor with the Sinkhorn-Knopp mapping applied. The input tensor is not modified.
 
     Based on Deepseek's Manifold-Constrained Hyperconnections (https://arxiv.org/abs/2512.24880)
 
     Args:
-        t_max: The number of iterations to run the Sinkhorn-Knopp mapping.
+        sinkhorn_iters: The number of iterations to run the Sinkhorn-Knopp mapping.
         epsilon: The epsilon value to use for the Sinkhorn-Knopp mapping for numerical stability.
     """
 
-    def __init__(self, t_max: int = 20, epsilon: float = 1e-8):
-        self.t_max = t_max
+    def __init__(self, sinkhorn_iters: int = 20, epsilon: float = 1e-8):
+        self.sinkhorn_iters = sinkhorn_iters
         self.epsilon = epsilon
 
     @torch.no_grad()
-    def _sinkhorn_inplace(self, x: torch.Tensor) -> None:
-        # Enforce positivity via exp in place
-        x.exp_()
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply Sinkhorn-Knopp mapping to the input tensor.
+
+        Args:
+            x: Input tensor to apply the mapping to.
+
+        Returns:
+            A new tensor with the Sinkhorn-Knopp mapping applied.
+        """
+        # Enforce positivity via exp with numerical stability.
+        # Subtract global max before exp to prevent overflow (log-sum-exp trick).
+        # The normalization step will scale the result, so subtracting any max (global, row, or column)
+        # is sufficient for numerical stability.
+        global_max = x.max()
+        result = (x - global_max).exp()
 
         # Iterative normalization of rows and columns
-        for _ in range(self.t_max):
-            # Normalize columns
-            F.normalize(x, p=1, dim=-2, eps=self.epsilon, out=x)
-            # Normalize rows
-            F.normalize(x, p=1, dim=-1, eps=self.epsilon, out=x)
+        for _ in range(self.sinkhorn_iters):
+            # Normalize columns (along row dimension, making each column sum to 1)
+            F.normalize(result, p=1, dim=-2, eps=self.epsilon, out=result)
+            # Normalize rows (along column dimension, making each row sum to 1)
+            F.normalize(result, p=1, dim=-1, eps=self.epsilon, out=result)
 
-    @torch.no_grad()
-    def __call__(self, x: torch.Tensor) -> None:
-        self._sinkhorn_inplace(x)
+        return result
