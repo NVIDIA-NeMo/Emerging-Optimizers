@@ -40,6 +40,13 @@ emerging_optimizers.orthogonalized_optimizers
     :members:
 
 
+:hidden:`PolarGrad`
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: PolarGrad
+    :members:
+
+
 :hidden:`Newton-Schulz`
 ~~~~~~~~~~~~~~~~~~~~~~~~
 .. automodule:: emerging_optimizers.orthogonalized_optimizers.muon_utils
