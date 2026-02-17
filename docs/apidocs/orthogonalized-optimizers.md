@@ -39,6 +39,12 @@ emerging_optimizers.orthogonalized_optimizers
 .. autoclass:: MuonHyperball
     :members:
 
+:hidden:`Spectron`
+~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: Spectron
+    :members:
+
 
 :hidden:`Newton-Schulz`
 ~~~~~~~~~~~~~~~~~~~~~~~~
