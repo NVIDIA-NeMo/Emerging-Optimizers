@@ -156,8 +156,7 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 if state["step"] == 0:
                     assert all(
-                        key not in state
-                        for key in ["factor_A", "factor_B", "momentum_A", "momentum_B", "u_A", "u_B"]
+                        key not in state for key in ["factor_A", "factor_B", "momentum_A", "momentum_B", "u_A", "u_B"]
                     ), (
                         "factor_A, factor_B, momentum_A, momentum_B, u_A, u_B should not be initialized at step 0. "
                         "Some mismatch has been created likely in checkpointing"
@@ -247,9 +246,7 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
         state["u_A"] = u_A
         state["u_B"] = u_B
 
-    def _power_iteration(
-        self, X: torch.Tensor, u: torch.Tensor, num_iters: int
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    def _power_iteration(self, X: torch.Tensor, u: torch.Tensor, num_iters: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Estimate the largest singular value using power iteration.
 
         Args:
