@@ -49,7 +49,7 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
     6. Reconstruct full weight matrix W = A @ B^T
 
     References:
-        - Algorithm 1 (Spectron) and Algorithm 3 (PowerIter) from the Spectron paper.
+        - Algorithm 1 (Spectron) and Algorithm 3 (PowerIter) from the Spectron paper (https://arxiv.org/abs/2602.12429).
           Low-rank spectral optimization with orthogonalized momentum.
 
     Warning:
