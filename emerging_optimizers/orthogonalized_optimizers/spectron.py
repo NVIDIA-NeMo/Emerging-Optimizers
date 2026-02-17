@@ -164,6 +164,7 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 # Compute gradients for A and B from parameter gradient
                 # Using chain rule: ∂L/∂A = ∂L/∂W @ B, ∂L/∂B = ∂L/∂W^T @ A
+                # grad is always fp32, so no cast needed
                 grad_A = grad @ factor_B  # shape: (m, r)
                 grad_B = grad.mT @ factor_A  # shape: (n, r)
 
@@ -196,7 +197,7 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 factor_B.add_(orth_momentum_B, alpha=-scaled_lr)
 
                 # Reconstruct full weight matrix: W = A @ B^T
-                p.copy_(factor_A @ factor_B.mT)
+                p.copy_((factor_A @ factor_B.mT).to(p.dtype))
 
         return loss
 
@@ -212,22 +213,24 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         # Initialize A and B using SVD of the parameter
         # This provides a good initialization close to the original weights
+        # Low-rank factors are stored in fp32 for numerical stability
         with torch.no_grad():
             U, S, Vh = torch.linalg.svd(p.float(), full_matrices=False)
             # Keep only top r singular values/vectors
             sqrt_S = torch.sqrt(S[:r])
-            factor_A = (U[:, :r] * sqrt_S).to(p.dtype)
-            factor_B = (Vh[:r, :].mT * sqrt_S).to(p.dtype)
+            factor_A = U[:, :r] * sqrt_S
+            factor_B = Vh[:r, :].mT * sqrt_S
 
         state["factor_A"] = factor_A.clone()
         state["factor_B"] = factor_B.clone()
-        state["momentum_A"] = torch.zeros_like(factor_A)
-        state["momentum_B"] = torch.zeros_like(factor_B)
+        # Momentum buffers are always stored in fp32 for numerical stability
+        state["momentum_A"] = torch.zeros_like(factor_A, dtype=torch.float32)
+        state["momentum_B"] = torch.zeros_like(factor_B, dtype=torch.float32)
 
-        # Initialize power iteration vectors (normalized random vectors)
-        u_A = torch.randn(m, dtype=p.dtype, device=p.device)
+        # Initialize power iteration vectors (normalized random vectors in fp32)
+        u_A = torch.randn(m, dtype=torch.float32, device=p.device)
         u_A = u_A / u_A.norm()
-        u_B = torch.randn(n, dtype=p.dtype, device=p.device)
+        u_B = torch.randn(n, dtype=torch.float32, device=p.device)
         u_B = u_B / u_B.norm()
 
         state["u_A"] = u_A
