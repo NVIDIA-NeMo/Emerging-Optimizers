@@ -46,7 +46,7 @@ class PowerIterationTest(parameterized.TestCase):
         u = u / u.norm()
         
         # Run power iteration
-        sigma_approx, u_out = power_iteration(W, u, k=k)
+        sigma_approx, u_out, _v_out = power_iteration(W, u, k=k)
         
         # Check that approximation is close to true value
         # More iterations should give better approximation
@@ -63,7 +63,7 @@ class PowerIterationTest(parameterized.TestCase):
         W = torch.randn(20, 15, dtype=torch.float32, device=FLAGS.device)
         u = torch.randn(20, dtype=torch.float32, device=FLAGS.device)
         
-        _, u_out = power_iteration(W, u, k=5)
+        _, u_out, _v_out = power_iteration(W, u, k=5)
         
         # Check that output is normalized
         torch.testing.assert_close(
@@ -79,7 +79,7 @@ class PowerIterationTest(parameterized.TestCase):
         u = torch.randn(20, dtype=torch.float32, device=FLAGS.device) * 100  # Unnormalized
         
         # Should not raise error and should normalize internally
-        sigma, u_out = power_iteration(W, u, k=5)
+        sigma, u_out, _v_out = power_iteration(W, u, k=5)
         
         self.assertIsInstance(sigma.item(), float)
         torch.testing.assert_close(
@@ -94,8 +94,8 @@ class PowerIterationTest(parameterized.TestCase):
         W = torch.randn(20, 15, dtype=torch.float32, device=FLAGS.device)
         u = torch.randn(20, dtype=torch.float32, device=FLAGS.device)
         
-        sigma1, u1 = power_iteration(W, u.clone(), k=5)
-        sigma2, u2 = power_iteration(W, u.clone(), k=5)
+        sigma1, u1, _v1 = power_iteration(W, u.clone(), k=5)
+        sigma2, u2, _v2 = power_iteration(W, u.clone(), k=5)
         
         torch.testing.assert_close(sigma1, sigma2, atol=0, rtol=0)
         torch.testing.assert_close(u1, u2, atol=0, rtol=0)
@@ -224,11 +224,11 @@ class SpectronTest(parameterized.TestCase):
         state_small = opt_small.state[test_param_small]
         
         # Compute sigma values after step
-        sigma_A_large, _ = power_iteration(state_large["factor_A"], state_large["u_A"], k=1)
-        sigma_B_large, _ = power_iteration(state_large["factor_B"], state_large["u_B"], k=1)
+        sigma_A_large, _, _ = power_iteration(state_large["factor_A"], state_large["u_A"], k=1)
+        sigma_B_large, _, _ = power_iteration(state_large["factor_B"], state_large["u_B"], k=1)
         
-        sigma_A_small, _ = power_iteration(state_small["factor_A"], state_small["u_A"], k=1)
-        sigma_B_small, _ = power_iteration(state_small["factor_B"], state_small["u_B"], k=1)
+        sigma_A_small, _, _ = power_iteration(state_small["factor_A"], state_small["u_A"], k=1)
+        sigma_B_small, _, _ = power_iteration(state_small["factor_B"], state_small["u_B"], k=1)
         
         scaled_lr_large = lr / (sigma_A_large + sigma_B_large + 1.0)
         scaled_lr_small = lr / (sigma_A_small + sigma_B_small + 1.0)

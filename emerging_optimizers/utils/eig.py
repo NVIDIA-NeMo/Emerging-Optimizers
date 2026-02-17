@@ -31,11 +31,11 @@ def power_iteration(
     u: torch.Tensor,
     k: int = 1,
     eps: float = 1e-8,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Approximate largest singular value and left singular vector using power iteration.
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Approximate largest singular value and left/right singular vectors using power iteration.
 
     Implements Algorithm 3 from the Spectron paper (https://arxiv.org/abs/2602.12429). This method iteratively refines
-    estimates of the dominant singular value and corresponding left singular vector
+    estimates of the dominant singular value and corresponding left and right singular vectors
     of a matrix W.
 
     Args:
@@ -45,9 +45,10 @@ def power_iteration(
         eps: Small constant for numerical stability. Default: 1e-8
 
     Returns:
-        Tuple of (sigma, u) where:
+        Tuple of (sigma, u, v) where:
             - sigma: Approximation of the largest singular value (scalar tensor)
             - u: Updated left singular vector of shape (p,)
+            - v: Updated right singular vector of shape (q,)
     """
     # Ensure initial normalization
     u = u / u.norm(p=2).clamp_min(eps)
@@ -71,8 +72,8 @@ def power_iteration(
     v = v / v.norm(p=2).clamp_min(eps)
     sigma = u @ (W @ v)
 
-    # Return σ and u
-    return sigma, u
+    # Return σ, u, and v
+    return sigma, u, v
 
 
 def eigh_with_fallback(

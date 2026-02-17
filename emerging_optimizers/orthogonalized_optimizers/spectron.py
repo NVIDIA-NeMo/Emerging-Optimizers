@@ -252,4 +252,6 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
         Returns:
             Tuple of (largest singular value, updated_u)
         """
-        return power_iteration(matrix, u, k=num_iters)
+        # power_iteration returns (sigma, u, v) but Spectron only needs sigma and u (left singular vector)
+        sigma, u, _v = power_iteration(matrix, u, k=num_iters)
+        return sigma, u
