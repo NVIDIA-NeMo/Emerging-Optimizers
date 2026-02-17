@@ -103,9 +103,7 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         # Create orthogonalization function following OrthogonalizedOptimizer pattern
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
-            logging.debug(
-                f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient"
-            )
+            logging.debug(f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient")
             return muon_utils.newton_schulz(
                 grad,
                 steps=num_ns_steps,
@@ -170,12 +168,8 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 grad_B = grad.mT @ factor_A  # shape: (n, r)
 
                 # Apply weight decay
-                self._apply_weight_decay_inplace(
-                    factor_A, grad_A, group["lr"], group["weight_decay"]
-                )
-                self._apply_weight_decay_inplace(
-                    factor_B, grad_B, group["lr"], group["weight_decay"]
-                )
+                self._apply_weight_decay_inplace(factor_A, grad_A, group["lr"], group["weight_decay"])
+                self._apply_weight_decay_inplace(factor_B, grad_B, group["lr"], group["weight_decay"])
 
                 # Update momentum buffers (EMA of gradients)
                 momentum_A.lerp_(grad_A, 1 - group["momentum_beta"])
