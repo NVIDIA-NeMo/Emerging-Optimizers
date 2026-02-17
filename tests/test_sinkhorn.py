@@ -116,6 +116,32 @@ class TestSinkhornMapper(parameterized.TestCase):
                 rtol=1e-5,
             )
 
+    @parameterized.parameters(
+        (10, 10),
+        (20, 15),
+    )
+    def test_inplace_modes(self, rows, cols):
+        """Test both inplace=False and inplace=True modes produce same results."""
+        mapper = SinkhornMapper(sinkhorn_iters=20)
+
+        # Test inplace=False: input should not be modified
+        x_original = torch.randn(rows, cols, device=FLAGS.device, dtype=torch.float32)
+        x_copy = x_original.clone()
+        result_non_inplace = mapper._sinkhorn_map(x_copy, inplace=False)
+
+        # Verify input was not modified
+        torch.testing.assert_close(x_copy, x_original, atol=1e-7, rtol=1e-7)
+
+        # Test inplace=True: input should be modified
+        x_inplace = x_original.clone()
+        result_inplace = mapper._sinkhorn_map(x_inplace, inplace=True)
+
+        # Verify input was modified (should equal the result)
+        torch.testing.assert_close(x_inplace, result_inplace, atol=1e-7, rtol=1e-7)
+
+        # Verify both modes produce the same result
+        torch.testing.assert_close(result_non_inplace, result_inplace, atol=1e-5, rtol=1e-5)
+
 
 class TestSinkhornMuon(parameterized.TestCase):
     """Tests for the SinkhornMuon optimizer."""

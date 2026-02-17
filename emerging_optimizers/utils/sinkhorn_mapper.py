@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 import torch
 import torch.nn.functional as F
 
@@ -42,21 +43,26 @@ class SinkhornMapper:
         self.epsilon = epsilon
 
     @torch.no_grad()
-    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+    def _sinkhorn_map(self, x: torch.Tensor, inplace: bool = False) -> torch.Tensor:
         """Apply Sinkhorn-Knopp mapping to the input tensor.
 
         Args:
             x: Input tensor to apply the mapping to.
+            inplace: If True, modify x in place. If False, work on a copy.
 
         Returns:
-            A new tensor with the Sinkhorn-Knopp mapping applied.
+            The tensor with the Sinkhorn-Knopp mapping applied.
         """
+        # Work on x directly if inplace, otherwise clone
+        result = x if inplace else x.clone()
+
         # Enforce positivity via exp with numerical stability.
         # Subtract global max before exp to prevent overflow (log-sum-exp trick).
         # The normalization step will scale the result, so subtracting any max (global, row, or column)
         # is sufficient for numerical stability.
         global_max = x.max()
-        result = (x - global_max).exp()
+        result.sub_(global_max)
+        result.exp_()
 
         # Iterative normalization of rows and columns
         for _ in range(self.sinkhorn_iters):
@@ -66,3 +72,16 @@ class SinkhornMapper:
             F.normalize(result, p=1, dim=-1, eps=self.epsilon, out=result)
 
         return result
+
+    @torch.no_grad()
+    def __call__(self, x: torch.Tensor, inplace: bool = False) -> torch.Tensor:
+        """Apply Sinkhorn-Knopp mapping to the input tensor.
+
+        Args:
+            x: Input tensor to apply the mapping to.
+            inplace: If True, modify x in place. If False, work on a copy.
+
+        Returns:
+            A new tensor with the Sinkhorn-Knopp mapping applied. The input tensor is not modified.
+        """
+        return self._sinkhorn_map(x, inplace=inplace)
