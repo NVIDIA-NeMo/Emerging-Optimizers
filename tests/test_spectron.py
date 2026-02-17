@@ -99,6 +99,37 @@ class PowerIterationTest(parameterized.TestCase):
         
         torch.testing.assert_close(sigma1, sigma2, atol=0, rtol=0)
         torch.testing.assert_close(u1, u2, atol=0, rtol=0)
+    
+    def test_power_iteration_returns_both_singular_vectors(self) -> None:
+        """Test that power iteration returns both left and right singular vectors normalized."""
+        W = torch.randn(20, 15, dtype=torch.float32, device=FLAGS.device)
+        u = torch.randn(20, dtype=torch.float32, device=FLAGS.device)
+        
+        sigma, u_out, v_out = power_iteration(W, u, k=10)
+        
+        # Both singular vectors should be normalized
+        torch.testing.assert_close(
+            u_out.norm(),
+            torch.tensor(1.0, device=FLAGS.device),
+            atol=1e-6,
+            rtol=1e-6,
+        )
+        torch.testing.assert_close(
+            v_out.norm(),
+            torch.tensor(1.0, device=FLAGS.device),
+            atol=1e-6,
+            rtol=1e-6,
+        )
+        
+        # Check that W @ v ≈ sigma * u (definition of singular vectors)
+        Wv = W @ v_out
+        sigma_u = sigma * u_out
+        torch.testing.assert_close(Wv, sigma_u, atol=1e-4, rtol=1e-4)
+        
+        # Check that W^T @ u ≈ sigma * v
+        WTu = W.mT @ u_out
+        sigma_v = sigma * v_out
+        torch.testing.assert_close(WTu, sigma_v, atol=1e-4, rtol=1e-4)
 
 
 class SpectronTest(parameterized.TestCase):
