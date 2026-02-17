@@ -150,9 +150,21 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 grad = p.grad
                 state = self.state[p]
 
-                # Initialize low-rank factors and momentum buffers
-                if "factor_A" not in state:
+                # State initialization
+                if len(state) == 0:
+                    state["step"] = 0
+
+                if state["step"] == 0:
+                    assert all(
+                        key not in state
+                        for key in ["factor_A", "factor_B", "momentum_A", "momentum_B", "u_A", "u_B"]
+                    ), (
+                        "factor_A, factor_B, momentum_A, momentum_B, u_A, u_B should not be initialized at step 0. "
+                        "Some mismatch has been created likely in checkpointing"
+                    )
                     self._initialize_state(p, state)
+
+                state["step"] += 1
 
                 # Get state variables
                 factor_A = state["factor_A"]
@@ -197,7 +209,7 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 factor_B.add_(orth_momentum_B, alpha=-scaled_lr)
 
                 # Reconstruct full weight matrix: W = A @ B^T
-                p.copy_((factor_A @ factor_B.mT).to(p.dtype))
+                p.copy_(factor_A @ factor_B.mT)
 
         return loss
 
@@ -221,8 +233,8 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
             factor_A = U[:, :r] * sqrt_S
             factor_B = Vh[:r, :].mT * sqrt_S
 
-        state["factor_A"] = factor_A.clone()
-        state["factor_B"] = factor_B.clone()
+        state["factor_A"] = factor_A
+        state["factor_B"] = factor_B
         # Momentum buffers are always stored in fp32 for numerical stability
         state["momentum_A"] = torch.zeros_like(factor_A, dtype=torch.float32)
         state["momentum_B"] = torch.zeros_like(factor_B, dtype=torch.float32)
@@ -237,12 +249,12 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
         state["u_B"] = u_B
 
     def _power_iteration(
-        self, matrix: torch.Tensor, u: torch.Tensor, num_iters: int
+        self, X: torch.Tensor, u: torch.Tensor, num_iters: int
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Estimate the largest singular value using power iteration.
 
         Args:
-            matrix: The matrix to estimate largest singular value for (shape: p × q)
+            X: The matrix to estimate largest singular value for
             u: The current approximation of the dominant left singular vector
             num_iters: Number of power iteration steps
 
@@ -250,5 +262,5 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
             Tuple of (largest singular value, updated_u)
         """
         # power_iteration returns (sigma, u, v) but Spectron only needs sigma and u (left singular vector)
-        sigma, u, _v = power_iteration(matrix, u, k=num_iters)
+        sigma, u, _v = power_iteration(X, u, k=num_iters)
         return sigma, u
