@@ -175,8 +175,9 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 # Compute gradients for A and B from parameter gradient
                 # Using chain rule: ∂L/∂A = ∂L/∂W @ B, ∂L/∂B = ∂L/∂W^T @ A
-                grad_A = grad @ factor_B  # shape: (m, r)
-                grad_B = grad.mT @ factor_A  # shape: (n, r)
+                with utils.fp32_matmul_precision("highest"):
+                    grad_A = grad @ factor_B  # shape: (m, r)
+                    grad_B = grad.mT @ factor_A  # shape: (n, r)
 
                 # Apply weight decay
                 self._apply_weight_decay_inplace(factor_A, grad_A, group["lr"], group["weight_decay"])
@@ -187,13 +188,13 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 momentum_B.lerp_(grad_B, 1 - group["momentum_beta"])
 
                 # Orthogonalize momentum using Newton-Schulz
-                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                with utils.fp32_matmul_precision("highest"):
                     orth_momentum_A = self.scaled_orthogonalize_fn(momentum_A)
                     orth_momentum_B = self.scaled_orthogonalize_fn(momentum_B)
 
-                # Estimate spectral radius using power iteration (Algorithm 3)
-                sigma_A, u_A = self._power_iteration(factor_A, u_A, self.num_power_iter)
-                sigma_B, u_B = self._power_iteration(factor_B, u_B, self.num_power_iter)
+                    # Estimate spectral radius using power iteration
+                    sigma_A, u_A = self._power_iteration(factor_A, u_A, self.num_power_iter)
+                    sigma_B, u_B = self._power_iteration(factor_B, u_B, self.num_power_iter)
 
                 # Update power iteration vectors
                 state["u_A"] = u_A
@@ -207,7 +208,8 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 factor_B.add_(orth_momentum_B, alpha=-scaled_lr)
 
                 # Reconstruct full weight matrix: W = A @ B^T
-                p.copy_(factor_A @ factor_B.mT)
+                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                    p.copy_(factor_A @ factor_B.mT)
 
         return loss
 
