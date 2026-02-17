@@ -176,7 +176,6 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 # Compute gradients for A and B from parameter gradient
                 # Using chain rule: ∂L/∂A = ∂L/∂W @ B, ∂L/∂B = ∂L/∂W^T @ A
-                # grad is always fp32, so no cast needed
                 grad_A = grad @ factor_B  # shape: (m, r)
                 grad_B = grad.mT @ factor_A  # shape: (n, r)
 
