@@ -25,58 +25,10 @@ from emerging_optimizers import registry, utils
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
 from emerging_optimizers.utils import FP32MatmulPrecT
+from emerging_optimizers.utils.eig import power_iteration
 
 
-__all__ = ["Spectron", "power_iteration"]
-
-
-def power_iteration(
-    W: torch.Tensor,
-    u: torch.Tensor,
-    k: int = 1,
-    eps: float = 1e-8,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Approximate largest singular value and left singular vector using power iteration.
-
-    Implements Algorithm 3 from the Spectron paper. This method iteratively refines
-    estimates of the dominant singular value and corresponding left singular vector
-    of a matrix W.
-
-    Args:
-        W: Matrix of shape (p, q) to analyze
-        u: Initial left singular vector of shape (p,), should be normalized
-        k: Number of power iteration steps. Default: 1
-        eps: Small constant for numerical stability. Default: 1e-8
-
-    Returns:
-        Tuple of (sigma, u) where:
-            - sigma: Approximation of the largest singular value (scalar tensor)
-            - u: Updated left singular vector of shape (p,)
-    """
-    # Ensure initial normalization
-    u = u / u.norm(p=2).clamp_min(eps)
-
-    # Power iteration loop
-    for _ in range(k):
-        # v ← W^T u (right vector)
-        v = W.mT @ u
-
-        # v ← v / ||v||_2 (normalize right vector)
-        v = v / v.norm(p=2).clamp_min(eps)
-
-        # u ← W v (left vector)
-        u = W @ v
-
-        # u ← u / ||u||_2 (normalize left vector)
-        u = u / u.norm(p=2).clamp_min(eps)
-
-    # σ ← u^T W v (Rayleigh quotient approximation)
-    v = W.mT @ u
-    v = v / v.norm(p=2).clamp_min(eps)
-    sigma = u @ (W @ v)
-
-    # Return σ and u
-    return sigma, u
+__all__ = ["Spectron"]
 
 
 @registry.register_optimizer("spectron")
