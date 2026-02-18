@@ -33,10 +33,10 @@ class SinkhornMuon(muon.Muon):
     The Sinkhorn-Knopp mapping is an iterative technique for normalizing the rows and columns of a matrix to sum to 1.
 
     Warning:
-        This optimizer requires that all parameters are initialized as doubly-stochastic matrices
-        (non-negative entries with row and column sums equal to 1) **before** the optimizer is instantiated.
+        This optimizer only supports square 2D parameters, since doubly-stochastic matrices
+        (non-negative entries with row and column sums equal to 1) are only well-defined for square matrices.
+        All parameters must be initialized as doubly-stochastic matrices **before** the optimizer is instantiated.
         The optimizer will validate these constraints during initialization and raise ValueError if not satisfied.
-        You must initialize your model weights appropriately before creating the optimizer instance.
 
     Args:
         *args: Arguments passed to Muon.
@@ -75,6 +75,13 @@ class SinkhornMuon(muon.Muon):
                     raise ValueError(
                         f"{self.__class__.__name__} only supports 2D parameters, "
                         f"but got parameter with shape {p.shape} (dim={p.dim()})"
+                    )
+                # Validate parameter is square
+                if p.shape[0] != p.shape[1]:
+                    raise ValueError(
+                        f"{self.__class__.__name__} only supports square matrices, "
+                        f"but got parameter with shape {p.shape}. "
+                        f"Doubly-stochastic matrices are only well-defined for square matrices."
                     )
                 # Validate that parameter is close to doubly-stochastic.
                 # A doubly-stochastic matrix has non-negative entries with row sums and column sums equal to 1.

@@ -33,8 +33,8 @@ class TestSinkhornMapper(parameterized.TestCase):
 
     @parameterized.parameters(
         (1023, 1023),
-        (2047, 4095),
-        (4095, 2047),
+        (2047, 2047),
+        (4095, 4095),
     )
     def test_output_is_doubly_stochastic(self, num_rows, num_cols):
         """After sufficient iterations the output should be approximately doubly stochastic (rows and columns each sum to ~1)."""
@@ -64,8 +64,8 @@ class TestSinkhornMapper(parameterized.TestCase):
 
     @parameterized.parameters(
         (5, 5),
-        (7, 11),
-        (13, 9),
+        (7, 7),
+        (13, 13),
     )
     def test_output_is_exactly_doubly_stochastic_with_integer_input(self, num_rows, num_cols):
         """With integer inputs and sufficient iterations, output should be exactly doubly stochastic."""
@@ -124,7 +124,7 @@ class TestSinkhornMapper(parameterized.TestCase):
 
     @parameterized.parameters(
         (3, 5, 5),
-        (3, 7, 6),
+        (3, 7, 7),
     )
     def test_batched_input(self, batch, num_rows, num_cols):
         """SinkhornMapper should work on batched (3D) inputs, normalizing the last two dims."""
@@ -180,7 +180,7 @@ class TestSinkhornMuon(parameterized.TestCase):
     """Tests for the SinkhornMuon optimizer."""
 
     @parameterized.product(
-        shape=[(5, 7), (15, 15), (31, 63)],
+        shape=[(5, 5), (15, 15), (31, 31)],
         weight_decay_method=["decoupled", "independent", "l2"],
         use_nesterov=[True, False],
     )
@@ -200,6 +200,12 @@ class TestSinkhornMuon(parameterized.TestCase):
             use_nesterov=use_nesterov,
         )
         opt.step()
+
+    def test_non_square_parameter_raises(self) -> None:
+        """Non-square parameters should raise ValueError."""
+        test_param = nn.Parameter(torch.randn(5, 7, device=FLAGS.device, dtype=torch.float32))
+        with self.assertRaises(ValueError):
+            SinkhornMuon([test_param])
 
     def test_invalid_num_iters_raises(self) -> None:
         """num_iters < 1 should raise ValueError."""
