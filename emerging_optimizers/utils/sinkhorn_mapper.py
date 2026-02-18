@@ -60,6 +60,7 @@ class SinkhornMapper:
         # For non-square matrices (M x N), we scale the shorter dimension so that
         # rows sum to N/M and cols sum to 1.0 (if N > M), or
         # rows sum to 1.0 and cols sum to M/N (if M > N).
+        # See chapter 4 of https://arxiv.org/abs/1803.00567.
         # For square matrices, both targets are 1.0 (standard doubly-stochastic).
         M, N = result.shape[-2], result.shape[-1]
         if N > M:
