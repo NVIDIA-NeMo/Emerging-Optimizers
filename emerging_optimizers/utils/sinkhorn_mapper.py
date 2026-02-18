@@ -58,7 +58,10 @@ class SinkhornMapper:
         """
         result = x if inplace else x.clone()
 
-        # Enforce positivity via exp with numerical stability (log-sum-exp trick).
+        # Enforce positivity via exp with numerical stability.
+        # Subtract global max before exp to prevent overflow (log-sum-exp trick).
+        # The normalization step will scale the result, so subtracting any max (global, row, or column)
+        # is sufficient for numerical stability.
         result.sub_(result.max()).exp_()
 
         # Determine normalization targets based on aspect ratio.
