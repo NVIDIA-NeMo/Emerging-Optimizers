@@ -34,13 +34,13 @@ class SinkhornMapper:
     Based on Deepseek's Manifold-Constrained Hyperconnections (https://arxiv.org/abs/2512.24880)
 
     Args:
-        sinkhorn_iters: The number of iterations to run the Sinkhorn-Knopp mapping.
-        epsilon: The epsilon value to use for the Sinkhorn-Knopp mapping for numerical stability.
+        num_iters: The number of iterations to run the Sinkhorn-Knopp mapping.
+        eps: The epsilon value to use for the Sinkhorn-Knopp mapping for numerical stability.
     """
 
-    def __init__(self, sinkhorn_iters: int = 20, epsilon: float = 1e-8):
-        self.sinkhorn_iters = sinkhorn_iters
-        self.epsilon = epsilon
+    def __init__(self, num_iters: int = 20, eps: float = 1e-8):
+        self.num_iters = num_iters
+        self.eps = eps
 
     @torch.no_grad()
     def _sinkhorn_map(self, x: torch.Tensor, inplace: bool = False) -> torch.Tensor:
@@ -65,11 +65,11 @@ class SinkhornMapper:
         result.exp_()
 
         # Iterative normalization of rows and columns
-        for _ in range(self.sinkhorn_iters):
+        for _ in range(self.num_iters):
             # Normalize columns (along row dimension, making each column sum to 1)
-            F.normalize(result, p=1, dim=-2, eps=self.epsilon, out=result)
+            F.normalize(result, p=1, dim=-2, eps=self.eps, out=result)
             # Normalize rows (along column dimension, making each row sum to 1)
-            F.normalize(result, p=1, dim=-1, eps=self.epsilon, out=result)
+            F.normalize(result, p=1, dim=-1, eps=self.eps, out=result)
 
         return result
 

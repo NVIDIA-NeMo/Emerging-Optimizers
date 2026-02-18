@@ -40,7 +40,7 @@ class TestSinkhornMapper(parameterized.TestCase):
         """After sufficient iterations the output should be approximately doubly stochastic
         (rows and columns each sum to ~1)."""
         x = torch.randn(rows, cols, device=FLAGS.device, dtype=torch.float32)
-        x = SinkhornMapper(sinkhorn_iters=50)(x)
+        x = SinkhornMapper(num_iters=50)(x)
 
         # All entries should be non-negative (they come from exp then normalization)
         self.assertTrue((x >= 0).all().item())
@@ -71,15 +71,15 @@ class TestSinkhornMapper(parameterized.TestCase):
     def test_output_is_non_negative(self, rows, cols):
         """Output entries should always be non-negative since they originate from exp."""
         x = torch.randn(rows, cols, device=FLAGS.device, dtype=torch.float32)
-        x = SinkhornMapper(sinkhorn_iters=50)(x)
+        x = SinkhornMapper(num_iters=50)(x)
         self.assertTrue((x >= 0).all().item())
 
     def test_more_iterations_improves_convergence(self):
         """More iterations should yield lower variance in row/column sums."""
         x = torch.randn(8, 8, device=FLAGS.device, dtype=torch.float32)
 
-        x_1 = SinkhornMapper(sinkhorn_iters=1)(x.clone())
-        x_50 = SinkhornMapper(sinkhorn_iters=50)(x.clone())
+        x_1 = SinkhornMapper(num_iters=1)(x.clone())
+        x_50 = SinkhornMapper(num_iters=50)(x.clone())
 
         row_var_1 = x_1.sum(dim=-1).var().item()
         col_var_1 = x_1.sum(dim=-2).var().item()
@@ -96,7 +96,7 @@ class TestSinkhornMapper(parameterized.TestCase):
     def test_batched_input(self, batch, rows, cols):
         """SinkhornMapper should work on batched (3D) inputs, normalizing the last two dims."""
         x = torch.randn(batch, rows, cols, device=FLAGS.device, dtype=torch.float32)
-        x = SinkhornMapper(sinkhorn_iters=30)(x)
+        x = SinkhornMapper(num_iters=30)(x)
 
         self.assertEqual(x.shape, (batch, rows, cols))
         # Check each batch element is approximately doubly stochastic
@@ -122,7 +122,7 @@ class TestSinkhornMapper(parameterized.TestCase):
     )
     def test_inplace_modes(self, rows, cols):
         """Test both inplace=False and inplace=True modes produce same results."""
-        mapper = SinkhornMapper(sinkhorn_iters=20)
+        mapper = SinkhornMapper(num_iters=20)
 
         # Test inplace=False: input should not be modified
         x_original = torch.randn(rows, cols, device=FLAGS.device, dtype=torch.float32)
@@ -163,32 +163,32 @@ class TestSinkhornMuon(parameterized.TestCase):
         )
         opt.step()
 
-    def test_invalid_sinkhorn_iters_raises(self) -> None:
-        """sinkhorn_iters < 1 should raise ValueError."""
+    def test_invalid_num_iters_raises(self) -> None:
+        """num_iters < 1 should raise ValueError."""
         test_param = nn.Parameter(torch.randn(4, 4, device=FLAGS.device, dtype=torch.float32))
         with self.assertRaises(ValueError):
-            SinkhornMuon([test_param], sinkhorn_iters=0)
+            SinkhornMuon([test_param], num_iters=0)
 
-    def test_invalid_sinkhorn_eps_raises(self) -> None:
-        """sinkhorn_eps <= 0 should raise ValueError."""
+    def test_invalid_eps_raises(self) -> None:
+        """eps <= 0 should raise ValueError."""
         test_param = nn.Parameter(torch.randn(4, 4, device=FLAGS.device, dtype=torch.float32))
         with self.assertRaises(ValueError):
-            SinkhornMuon([test_param], sinkhorn_eps=0.0)
+            SinkhornMuon([test_param], eps=0.0)
         with self.assertRaises(ValueError):
-            SinkhornMuon([test_param], sinkhorn_eps=-1e-8)
+            SinkhornMuon([test_param], eps=-1e-8)
 
     def test_zero_lr_only_weight_decay(self) -> None:
         """With lr=0 and independent weight decay, weight decay + sinkhorn should be applied."""
         shape = (8, 8)
         weight_decay = 0.25
-        sinkhorn_iters = 20
-        sinkhorn_eps = 1e-8
+        num_iters = 20
+        eps = 1e-8
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=FLAGS.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
         # With lr=0, only weight decay is applied, then sinkhorn mapping runs on top
         expected_param = (1 - weight_decay) * test_param.data.clone()
-        expected_param = SinkhornMapper(sinkhorn_iters=sinkhorn_iters, epsilon=sinkhorn_eps)(expected_param)
+        expected_param = SinkhornMapper(num_iters=num_iters, eps=eps)(expected_param)
 
         opt = SinkhornMuon(
             [test_param],
@@ -196,8 +196,8 @@ class TestSinkhornMuon(parameterized.TestCase):
             weight_decay=weight_decay,
             weight_decay_method="independent",
             momentum_beta=0.0,
-            sinkhorn_iters=sinkhorn_iters,
-            sinkhorn_eps=sinkhorn_eps,
+            num_iters=num_iters,
+            eps=eps,
         )
         opt.step()
 

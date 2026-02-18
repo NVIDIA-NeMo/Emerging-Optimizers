@@ -32,11 +32,17 @@ class SinkhornMuon(muon.Muon):
     This optimizer extends Muon by performing a Sinkhorn-Knopp mapping after the weight update.
     The Sinkhorn-Knopp mapping is an iterative technique for normalizing the rows and columns of a matrix to sum to 1.
 
+    Warning:
+        This optimizer requires that all parameters are initialized as doubly-stochastic matrices
+        (non-negative entries with row and column sums equal to 1) **before** the optimizer is instantiated.
+        The optimizer will validate these constraints during initialization and raise ValueError if not satisfied.
+        You must initialize your model weights appropriately before creating the optimizer instance.
+
     Args:
         *args: Arguments passed to Muon.
         **kwargs: Keyword arguments passed to Muon.
-        sinkhorn_iters: The number of iterations to run the Sinkhorn-Knopp mapping.
-        sinkhorn_eps: The epsilon value to use for the Sinkhorn-Knopp mapping.
+        num_iters: The number of iterations to run the Sinkhorn-Knopp mapping.
+        eps: The epsilon value to use for the Sinkhorn-Knopp mapping.
         doubly_stochastic_tolerance: Tolerance for validating that parameters are close to
             doubly-stochastic. Defaults to 0.1.
     """
@@ -44,22 +50,22 @@ class SinkhornMuon(muon.Muon):
     def __init__(
         self,
         *args: Any,
-        sinkhorn_iters: int = 20,
-        sinkhorn_eps: float = 1e-8,
+        num_iters: int = 20,
+        eps: float = 1e-8,
         doubly_stochastic_tolerance: float = 0.1,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
 
         # Validate sinkhorn mapper parameters
-        if sinkhorn_iters < 1:
-            raise ValueError(f"sinkhorn_iters must be at least 1, got {sinkhorn_iters}")
-        if sinkhorn_eps <= 0:
-            raise ValueError(f"sinkhorn_eps must be positive, got {sinkhorn_eps}")
+        if num_iters < 1:
+            raise ValueError(f"num_iters must be at least 1, got {num_iters}")
+        if eps <= 0:
+            raise ValueError(f"eps must be positive, got {eps}")
         if doubly_stochastic_tolerance <= 0:
             raise ValueError(f"doubly_stochastic_tolerance must be positive, got {doubly_stochastic_tolerance}")
 
-        self.sinkhorn_mapper = SinkhornMapper(sinkhorn_iters=sinkhorn_iters, epsilon=sinkhorn_eps)
+        self.sinkhorn_mapper = SinkhornMapper(num_iters=num_iters, eps=eps)
         self.doubly_stochastic_tolerance = doubly_stochastic_tolerance
 
         for group in self.param_groups:
