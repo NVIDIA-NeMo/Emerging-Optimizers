@@ -18,9 +18,10 @@ from typing import Generator, Literal
 import torch
 
 from .eig import *
+from .sinkhorn_mapper import *
 
 
-__all__ = ["fp32_matmul_precision", "get_pg_size", "get_pg_rank", "FP32MatmulPrecT"]
+__all__ = ["fp32_matmul_precision", "get_pg_size", "get_pg_rank", "FP32MatmulPrecT", "SinkhornMapper"]
 
 FP32MatmulPrecT = Literal["highest", "high", "medium"]
 

@@ -175,7 +175,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # perform weight update with pre and post weight update functions for subclass customization
                 self.pre_weight_update_fn_inplace(p, orth_grad)
                 p.add_(orth_grad, alpha=-group["lr"])
-                self.post_weight_update_fn_inplace(p, orth_grad)
+                self.post_weight_update_fn_inplace(p)
 
         return loss
 
@@ -222,7 +222,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         """
         pass
 
-    def post_weight_update_fn_inplace(self, p: torch.Tensor, update: torch.Tensor) -> None:
+    def post_weight_update_fn_inplace(self, p: torch.Tensor) -> None:
         """Function called after the final weight update.
 
         Subclasses can override this to implement custom behavior after the weight update.
@@ -233,7 +233,6 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         Args:
             p: The parameter tensor (already updated).
-            update: The orthogonalized gradient tensor that was applied.
         """
         pass
 
