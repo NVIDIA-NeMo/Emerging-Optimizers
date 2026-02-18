@@ -27,6 +27,7 @@ from emerging_optimizers.utils import FP32MatmulPrecT
 
 __all__ = ["PolarGrad"]
 
+
 @registry.register_optimizer("polargrad")
 class PolarGrad(OrthogonalizedOptimizer):
     """PolarGrad: Polar Gradient Methods.
@@ -43,10 +44,12 @@ class PolarGrad(OrthogonalizedOptimizer):
     References:
         - *PolarGrad: A Class of Matrix-Gradient Optimizers from a Unifying Preconditioning Perspective.* arXiv:2505.21799 (2025).
           [`arXiv:2505.21799 <https://arxiv.org/abs/2505.21799>`_]
+        - Lau, T. T.-K. *PolarGrad Optimizer Implementation.*
+          [`GitHub <https://github.com/timlautk/polargrad/blob/main/polar_grad.py>`_]
 
     Warning:
         - This optimizer requires that all parameters passed in are 2D.
-        - It should not be used for the embedding layer, the final fully connected layer, or any 1-D
+        - It should not be used for the embedding layer, the final fully connected layer (with the Newton-Schulz iteration), or any 1-D
           parameters; those can all be optimized by a standard method (e.g., AdamW).
 
     Args:
