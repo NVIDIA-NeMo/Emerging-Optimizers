@@ -112,4 +112,4 @@ class SinkhornMuon(muon.Muon):
         Args:
             p: The parameter tensor (already updated).
         """
-        p.copy_(self.sinkhorn_mapper(p))
+        self.sinkhorn_mapper(p, inplace=True)
