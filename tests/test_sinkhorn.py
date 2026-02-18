@@ -189,7 +189,7 @@ class TestSinkhornMuon(parameterized.TestCase):
         # Initialize parameter as doubly-stochastic using SinkhornMapper
         init_data = torch.randint(1, 10, shape, dtype=torch.float32, device=FLAGS.device)
         test_param = nn.Parameter(SinkhornMapper(num_iters=50)(init_data))
-        
+
         # Create gradient that is also doubly-stochastic
         grad_data = torch.randint(1, 10, shape, dtype=torch.float32, device=FLAGS.device)
         test_param.grad = SinkhornMapper(num_iters=50)(grad_data)
@@ -231,11 +231,11 @@ class TestSinkhornMuon(parameterized.TestCase):
         weight_decay = 0.25
         num_iters = 20
         eps = 1e-8
-        
+
         # Initialize parameter as doubly-stochastic
         init_data = torch.randint(1, 10, shape, dtype=torch.float32, device=FLAGS.device)
         test_param = nn.Parameter(SinkhornMapper(num_iters=50)(init_data))
-        
+
         # Create gradient that is also doubly-stochastic
         grad_data = torch.randint(1, 10, shape, dtype=torch.float32, device=FLAGS.device)
         test_param.grad = SinkhornMapper(num_iters=50)(grad_data)
