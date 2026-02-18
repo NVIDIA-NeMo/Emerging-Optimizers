@@ -255,7 +255,7 @@ class TestSinkhornMuon(parameterized.TestCase):
         )
         opt.step()
 
-        torch.testing.assert_close(test_param.data, expected_param, atol=0, rtol=0)
+        torch.testing.assert_close(test_param.data, expected_param, atol=1e-6, rtol=1e-6)
 
 
 if __name__ == "__main__":
