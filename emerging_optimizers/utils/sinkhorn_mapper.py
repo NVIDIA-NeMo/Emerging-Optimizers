@@ -29,8 +29,6 @@ class SinkhornMapper:
     The Sinkhorn-Knopp mapping is an iterative technique for normalizing the rows and columns of a matrix to sum to 1:
     Input -> [Exp] -> [Iterative Row/Col Normalization]
 
-    Returns a new tensor with the Sinkhorn-Knopp mapping applied. The input tensor is not modified.
-
     Based on Deepseek's Manifold-Constrained Hyperconnections (https://arxiv.org/abs/2512.24880)
 
     Args:
@@ -82,6 +80,6 @@ class SinkhornMapper:
             inplace: If True, modify x in place. If False, work on a copy.
 
         Returns:
-            A new tensor with the Sinkhorn-Knopp mapping applied. The input tensor is not modified.
+            The tensor with the Sinkhorn-Knopp mapping applied (modified in place if inplace=True, otherwise a new tensor).
         """
         return self._sinkhorn_map(x, inplace=inplace)
