@@ -47,6 +47,13 @@ class Spel(OrthogonalizedOptimizer):
     updated weights onto the Stiefel manifold, keeping parameters on (or near) the orthogonal
     manifold. Both operations admit scalable implementations via fast matrix sign computations.
 
+    Note:
+        Weight decay still has an effect despite the re-orthogonalization. Before projection,
+        :math:`(1 - \eta_t*\lambda) \, x_t - \eta_t \, \text{{msign}}(\cdot)` acts as a convex-like
+        linear combination that rebalances the proportion of the previous weight and the new update.
+        The outer :math:`\text{{msign}}` then re-orthogonalizes this mixture, so weight decay controls
+        the relative influence of the old parameters versus the update direction.
+
     References:
         - *Manifold Constrained Steepest Descent.* arXiv:2601.21487 (2026).
           [`arXiv:2601.21487 <https://arxiv.org/abs/2601.21487>`_]
