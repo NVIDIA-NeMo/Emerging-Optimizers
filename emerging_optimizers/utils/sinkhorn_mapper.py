@@ -29,6 +29,8 @@ class SinkhornMapper:
     The Sinkhorn-Knopp mapping is an iterative technique for normalizing the rows and columns of a matrix:
     Input -> [Exp] -> [Iterative Row/Col Normalization]
 
+    Supports batched inputs (3D+). The mapping operates on the last two dimensions.
+
     For an M×N matrix, the normalization targets are:
         - Square (M=N): row sums = 1.0, col sums = 1.0 (standard doubly-stochastic)
         - Wide (N>M): row sums = N/M, col sums = 1.0
@@ -50,12 +52,16 @@ class SinkhornMapper:
         """Apply Sinkhorn-Knopp mapping to the input tensor.
 
         Args:
-            x: Input tensor to apply the mapping to.
+            x: Input tensor to apply the mapping to. Must be at least 2D. Batched inputs (3D+) are supported.
             inplace: If True, modify x in place. If False, work on a copy.
 
         Returns:
             The tensor with the Sinkhorn-Knopp mapping applied.
         """
+        if x.dim() < 2:
+            raise ValueError(
+                f"{self.__class__.__name__} requires at least a 2D tensor, got {x.dim()}D with shape {x.shape}"
+            )
         result = x if inplace else x.clone()
 
         # Enforce positivity via exp with numerical stability.
