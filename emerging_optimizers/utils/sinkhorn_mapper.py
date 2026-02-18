@@ -51,23 +51,35 @@ class SinkhornMapper:
         Returns:
             The tensor with the Sinkhorn-Knopp mapping applied.
         """
-        # Work on x directly if inplace, otherwise clone
         result = x if inplace else x.clone()
 
-        # Enforce positivity via exp with numerical stability.
-        # Subtract global max before exp to prevent overflow (log-sum-exp trick).
-        # The normalization step will scale the result, so subtracting any max (global, row, or column)
-        # is sufficient for numerical stability.
-        global_max = result.max()
-        result.sub_(global_max)
-        result.exp_()
+        # Enforce positivity via exp with numerical stability (log-sum-exp trick).
+        result.sub_(result.max()).exp_()
+
+        # Determine normalization targets based on aspect ratio.
+        # For non-square matrices (M x N), we scale the shorter dimension so that
+        # rows sum to N/M and cols sum to 1.0 (if N > M), or
+        # rows sum to 1.0 and cols sum to M/N (if M > N).
+        # For square matrices, both targets are 1.0 (standard doubly-stochastic).
+        M, N = result.shape[-2], result.shape[-1]
+        if N > M:
+            row_target = N / M
+            col_target = 1.0
+        else:
+            row_target = 1.0
+            col_target = M / N
 
         # Iterative normalization of rows and columns
         for _ in range(self.num_iters):
-            # Normalize columns (along row dimension, making each column sum to 1)
+            # Normalize columns (along row dimension)
             F.normalize(result, p=1, dim=-2, eps=self.eps, out=result)
-            # Normalize rows (along column dimension, making each row sum to 1)
+            if col_target != 1.0:
+                result.mul_(col_target)
+
+            # Normalize rows (along column dimension)
             F.normalize(result, p=1, dim=-1, eps=self.eps, out=result)
+            if row_target != 1.0:
+                result.mul_(row_target)
 
         return result
 

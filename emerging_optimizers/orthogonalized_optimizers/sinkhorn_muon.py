@@ -30,21 +30,25 @@ class SinkhornMuon(muon.Muon):
     """Sinkhorn-Muon optimizer
 
     This optimizer extends Muon by performing a Sinkhorn-Knopp mapping after the weight update.
-    The Sinkhorn-Knopp mapping is an iterative technique for normalizing the rows and columns of a matrix to sum to 1.
+    The Sinkhorn-Knopp mapping is an iterative technique for normalizing the rows and columns of a matrix.
+
+    For an M×N matrix, the Sinkhorn-Knopp mapping normalizes to:
+        - Square (M=N): row sums = 1.0, col sums = 1.0 (standard doubly-stochastic)
+        - Wide (N>M): row sums = N/M, col sums = 1.0
+        - Tall (M>N): row sums = 1.0, col sums = M/N
 
     Warning:
-        This optimizer only supports square 2D parameters, since doubly-stochastic matrices
-        (non-negative entries with row and column sums equal to 1) are only well-defined for square matrices.
-        All parameters must be initialized as doubly-stochastic matrices **before** the optimizer is instantiated.
-        The optimizer will validate these constraints during initialization and raise ValueError if not satisfied.
+        All parameters must be initialized with the Sinkhorn-Knopp mapping applied **before**
+        the optimizer is instantiated. The optimizer validates these constraints during initialization
+        and raises ValueError if not satisfied.
 
     Args:
         *args: Arguments passed to Muon.
         **kwargs: Keyword arguments passed to Muon.
         num_iters: The number of iterations to run the Sinkhorn-Knopp mapping.
         eps: The epsilon value to use for the Sinkhorn-Knopp mapping.
-        doubly_stochastic_tolerance: Tolerance for validating that parameters are close to
-            doubly-stochastic. Defaults to 0.1.
+        doubly_stochastic_tolerance: Tolerance for validating that parameters satisfy
+            Sinkhorn-Knopp normalization constraints. Defaults to 0.1.
     """
 
     def __init__(
@@ -76,40 +80,40 @@ class SinkhornMuon(muon.Muon):
                         f"{self.__class__.__name__} only supports 2D parameters, "
                         f"but got parameter with shape {p.shape} (dim={p.dim()})"
                     )
-                # Validate parameter is square
-                if p.shape[0] != p.shape[1]:
-                    raise ValueError(
-                        f"{self.__class__.__name__} only supports square matrices, "
-                        f"but got parameter with shape {p.shape}. "
-                        f"Doubly-stochastic matrices are only well-defined for square matrices."
-                    )
-                # Validate that parameter is close to doubly-stochastic.
-                # A doubly-stochastic matrix has non-negative entries with row sums and column sums equal to 1.
+                # Validate Sinkhorn-Knopp normalization constraints.
+                # Expected targets depend on aspect ratio (matching SinkhornMapper logic).
+                M, N = p.shape[-2], p.shape[-1]
+                if N > M:
+                    row_target = N / M
+                    col_target = 1.0
+                else:
+                    row_target = 1.0
+                    col_target = M / N
 
                 # Check non-negativity
                 if (p < 0).any():
                     min_val = p.min().item()
                     raise ValueError(
                         f"Parameter with shape {p.shape} contains negative values (min={min_val:.6f}). "
-                        f"Doubly-stochastic matrices must have non-negative entries."
+                        f"Sinkhorn-normalized matrices must have non-negative entries."
                     )
 
                 # Check row and column sum constraints
                 row_sums = p.sum(dim=-1)
                 col_sums = p.sum(dim=-2)
-                max_row_deviation = (row_sums - 1.0).abs().max().item()
-                max_col_deviation = (col_sums - 1.0).abs().max().item()
+                max_row_deviation = (row_sums - row_target).abs().max().item()
+                max_col_deviation = (col_sums - col_target).abs().max().item()
 
                 if (
                     max_row_deviation > self.doubly_stochastic_tolerance
                     or max_col_deviation > self.doubly_stochastic_tolerance
                 ):
                     raise ValueError(
-                        f"Parameter with shape {p.shape} is not close to doubly-stochastic. "
-                        f"Max row sum deviation: {max_row_deviation:.6f}, "
-                        f"max column sum deviation: {max_col_deviation:.6f}. "
-                        f"Expected deviations < {self.doubly_stochastic_tolerance}. "
-                        f"Please initialize parameters as doubly-stochastic matrices."
+                        f"Parameter with shape {p.shape} is not properly Sinkhorn-normalized. "
+                        f"Expected row sums ≈ {row_target:.4f}, max deviation: {max_row_deviation:.6f}. "
+                        f"Expected col sums ≈ {col_target:.4f}, max deviation: {max_col_deviation:.6f}. "
+                        f"Tolerance: {self.doubly_stochastic_tolerance}. "
+                        f"Please initialize parameters using SinkhornMapper."
                     )
 
     @override
