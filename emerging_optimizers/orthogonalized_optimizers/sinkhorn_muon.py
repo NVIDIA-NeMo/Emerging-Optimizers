@@ -59,15 +59,15 @@ class SinkhornMuon(muon.Muon):
         doubly_stochastic_tolerance: float = 0.1,
         **kwargs: Any,
     ) -> None:
-        super().__init__(*args, **kwargs)
-
-        # Validate sinkhorn mapper parameters
+        # Validate sinkhorn mapper parameters before parent initialization
         if num_iters < 1:
             raise ValueError(f"num_iters must be at least 1, got {num_iters}")
         if eps <= 0:
             raise ValueError(f"eps must be positive, got {eps}")
         if doubly_stochastic_tolerance <= 0:
             raise ValueError(f"doubly_stochastic_tolerance must be positive, got {doubly_stochastic_tolerance}")
+
+        super().__init__(*args, **kwargs)
 
         self.sinkhorn_mapper = SinkhornMapper(num_iters=num_iters, eps=eps)
         self.doubly_stochastic_tolerance = doubly_stochastic_tolerance
