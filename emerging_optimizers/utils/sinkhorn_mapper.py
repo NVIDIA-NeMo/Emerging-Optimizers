@@ -60,7 +60,7 @@ class SinkhornMapper:
         # Subtract global max before exp to prevent overflow (log-sum-exp trick).
         # The normalization step will scale the result, so subtracting any max (global, row, or column)
         # is sufficient for numerical stability.
-        global_max = x.max()
+        global_max = result.max()
         result.sub_(global_max)
         result.exp_()
 
