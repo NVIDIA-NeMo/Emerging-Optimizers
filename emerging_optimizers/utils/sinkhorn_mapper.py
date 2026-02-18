@@ -26,8 +26,13 @@ __all__ = [
 class SinkhornMapper:
     """Applies the Sinkhorn-Knopp mapping to the input tensor.
 
-    The Sinkhorn-Knopp mapping is an iterative technique for normalizing the rows and columns of a matrix to sum to 1:
+    The Sinkhorn-Knopp mapping is an iterative technique for normalizing the rows and columns of a matrix:
     Input -> [Exp] -> [Iterative Row/Col Normalization]
+
+    For an M×N matrix, the normalization targets are:
+        - Square (M=N): row sums = 1.0, col sums = 1.0 (standard doubly-stochastic)
+        - Wide (N>M): row sums = N/M, col sums = 1.0
+        - Tall (M>N): row sums = 1.0, col sums = M/N
 
     Based on Deepseek's Manifold-Constrained Hyperconnections (https://arxiv.org/abs/2512.24880)
 
