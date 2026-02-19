@@ -108,9 +108,7 @@ class Spel(OrthogonalizedOptimizer):
                 use_syrk = False
 
         def scaled_orthogonalize_fn(X: torch.Tensor) -> torch.Tensor:
-            logging.debug(
-                f"Orthogonalizing with {num_ns_steps} steps, {coefficient_type} coefficient"
-            )
+            logging.debug(f"Orthogonalizing with {num_ns_steps} steps, {coefficient_type} coefficient")
             return muon_utils.newton_schulz(
                 X,
                 steps=num_ns_steps,

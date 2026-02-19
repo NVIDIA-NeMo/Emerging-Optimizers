@@ -20,6 +20,7 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers.orthogonalized_optimizers import spel
 
+
 flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
 
 FLAGS = flags.FLAGS
