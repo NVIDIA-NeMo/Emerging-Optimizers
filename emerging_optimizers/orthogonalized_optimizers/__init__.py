@@ -20,3 +20,4 @@ from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer impo
 from emerging_optimizers.orthogonalized_optimizers.polargrad import *
 from emerging_optimizers.orthogonalized_optimizers.scion import *
 from emerging_optimizers.orthogonalized_optimizers.spectral_clipping_utils import *
+from emerging_optimizers.orthogonalized_optimizers.spectron import *
