@@ -30,7 +30,7 @@ FLAGS = flags.FLAGS
 class AdaptiveMuonTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(5, 7), (33, 65), (127, 257)],
-        second_moment_method=["adamuon", "normuon"],
+        second_moment_method=["adamuon", "normuon", "namo"],
         use_nesterov=[True, False],
     )
     def test_smoke(self, shape, second_moment_method, use_nesterov) -> None:
@@ -55,6 +55,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
     @parameterized.parameters(
         {"shape": (8, 16), "second_moment_method": "adamuon"},
         {"shape": (16, 8), "second_moment_method": "normuon"},
+        {"shape": (8, 16), "second_moment_method": "namo"},
     )
     def test_second_moment_matches_shapes(self, shape, second_moment_method) -> None:
         """Test that second moment buffers are properly initialized."""
@@ -93,6 +94,9 @@ class AdaptiveMuonTest(parameterized.TestCase):
             expected_shape = list(shape)
             expected_shape[avg_dim] = 1
             self.assertEqual(list(second_moment.shape), expected_shape)
+        elif second_moment_method == "namo":
+            # Scalar buffer
+            self.assertEqual(second_moment.shape, torch.Size([]))
 
     def test_unknown_moment2_method_raise_type_error(self) -> None:
         """Test that AdaptiveMuon raises TypeError for unknown moment2_method."""
