@@ -198,9 +198,7 @@ class AdaptiveMuon(muon.Muon):
             return orth_grad * step_size
 
         elif self.moment2_method == "namo":
-            assert grad_fro_sq is not None and pre_orth_norm is not None, (
-                "NAMO requires grad_fro_sq and pre_orth_norm"
-            )
+            assert grad_fro_sq is not None and pre_orth_norm is not None, "NAMO requires grad_fro_sq and pre_orth_norm"
             # NAMO: Scalar adaptive scaling via Frobenius-norm ratio
             # v_t = β2 * v_{t-1} + (1 - β2) * ||G_t||_F^2
             moment2.lerp_(grad_fro_sq, 1 - beta2)
