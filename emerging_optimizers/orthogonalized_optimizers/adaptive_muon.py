@@ -288,7 +288,7 @@ class AdaptiveMuon(muon.Muon):
                     )
 
                 # perform weight update
-                # scale is applied to have update RMS == 1
+                # scale is applied to have update RMS roughly 1
                 p.add_(update, alpha=-group["lr"])
 
         return loss
