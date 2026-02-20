@@ -253,6 +253,7 @@ class AdaptiveMuon(muon.Muon):
                 )
 
                 # NAMO: capture ||G_t||_F^2 before momentum update
+                grad_fro_sq: torch.Tensor | None = None
                 if self.moment2_method == "namo":
                     grad_fro_sq = torch.linalg.vector_norm(grad).square()
 
