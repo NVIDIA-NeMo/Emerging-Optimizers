@@ -192,7 +192,7 @@ class Spectron(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     orth_momentum_A = self.scaled_orthogonalize_fn(momentum_A)
                     orth_momentum_B = self.scaled_orthogonalize_fn(momentum_B)
 
-                with utils.fp32_matmul_precision("highest"):    
+                with utils.fp32_matmul_precision("highest"):
                     # Estimate spectral radius using power iteration
                     sigma_A, u_A = self._power_iteration(factor_A, u_A, self.num_power_iter)
                     sigma_B, u_B = self._power_iteration(factor_B, u_B, self.num_power_iter)
