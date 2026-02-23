@@ -45,7 +45,7 @@ class PolarGrad(OrthogonalizedOptimizer):
         - *PolarGrad: A Class of Matrix-Gradient Optimizers from a Unifying Preconditioning Perspective.* arXiv:2505.21799 (2025).
           [`arXiv:2505.21799 <https://arxiv.org/abs/2505.21799>`_]
         - Lau, T. T.-K. *PolarGrad Optimizer Implementation.*
-          [`GitHub <https://github.com/timlautk/polargrad/blob/main/polar_grad.py>`_]
+          [`polar_grad.py <https://github.com/timlautk/polargrad/blob/main/polar_grad.py>`_]
 
     Warning:
         - This optimizer requires that all parameters passed in are 2D.
