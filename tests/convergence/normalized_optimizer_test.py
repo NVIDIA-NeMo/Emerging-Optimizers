@@ -22,8 +22,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from emerging_optimizers.riemannian_optimizers.normalized_optimizer import ObliqueAdam, ObliqueSGD
 
 
-# Define command line flags
-flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+flags.DEFINE_enum("device", "cuda", ["cuda"], "Device to run tests on")
 flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 
 FLAGS = flags.FLAGS

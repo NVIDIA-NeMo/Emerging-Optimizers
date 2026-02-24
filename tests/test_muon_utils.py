@@ -23,7 +23,7 @@ from emerging_optimizers import utils
 from emerging_optimizers.orthogonalized_optimizers import muon, muon_utils
 
 
-flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
 flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 FLAGS = flags.FLAGS
 

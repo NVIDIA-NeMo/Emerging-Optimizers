@@ -16,11 +16,19 @@ export CUDA_VISIBLE_DEVICES=0
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 
 error=0
+echo "Random seed runs"
 for test in `find tests -type f -name 'test_*' ! -name '*_cpu.py'`; do
     coverage run -p --source=emerging_optimizers $test --device=cuda -v -2 || error=1
+    coverage run -p --source=emerging_optimizers $test --device=cuda --seed=42 -v -2 || error=1
 done
 
-coverage run -p --source=emerging_optimizers tests/convergence/soap_mnist_test.py -v -2 || error=1
-coverage run -p --source=emerging_optimizers tests/convergence/normalized_optimizer_test.py --device=cuda  -v -2 || error=1
+echo "Fixed seed runs"
+for test in `find tests -type f -name 'test_*' ! -name '*_cpu.py'`; do
+    coverage run -p --source=emerging_optimizers $test --device=cuda --seed=42 -v -2 || error=1
+done
+
+for test in `find tests/convergence -type f -name '*_test.py'`; do
+    coverage run -p --source=emerging_optimizers $test --device=cuda --seed=42 -v -2 || error=1
+done
 
 exit "${error}"

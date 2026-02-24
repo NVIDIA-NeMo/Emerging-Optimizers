@@ -21,7 +21,7 @@ from emerging_optimizers.soap import soap_utils
 from emerging_optimizers.utils import eig as eig_utils
 
 
-flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
 flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 FLAGS = flags.FLAGS
 
