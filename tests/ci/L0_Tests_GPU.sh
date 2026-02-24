@@ -19,7 +19,6 @@ error=0
 echo "Random seed runs"
 for test in `find tests -type f -name 'test_*' ! -name '*_cpu.py'`; do
     coverage run -p --source=emerging_optimizers $test --device=cuda -v -2 || error=1
-    coverage run -p --source=emerging_optimizers $test --device=cuda --seed=42 -v -2 || error=1
 done
 
 echo "Fixed seed runs"
