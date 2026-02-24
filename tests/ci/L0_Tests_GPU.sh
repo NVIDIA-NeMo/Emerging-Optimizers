@@ -19,6 +19,7 @@ error=0
 coverage run -p --source=emerging_optimizers tests/test_muon_utils.py -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_adaptive_muon.py -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_orthogonalized_optimizer.py -v -2 || error=1
+coverage run -p --source=emerging_optimizers tests/test_spectron.py --device=cuda -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_soap_utils.py -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_soap.py -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/soap_mnist_test.py -v -2 || error=1

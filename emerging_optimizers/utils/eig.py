@@ -22,7 +22,58 @@ __all__ = [
     "met_approx_eigvals_criteria",
     "conjugate",
     "orthogonal_iteration",
+    "power_iteration",
 ]
+
+
+def power_iteration(
+    W: torch.Tensor,
+    u: torch.Tensor,
+    k: int = 1,
+    eps: float = 1e-8,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Approximate largest singular value and left/right singular vectors using power iteration.
+
+    Implements Algorithm 3 from the Spectron paper (https://arxiv.org/abs/2602.12429). This method iteratively refines
+    estimates of the dominant singular value and corresponding left and right singular vectors
+    of a matrix W.
+
+    Args:
+        W: Matrix of shape (p, q) to analyze
+        u: Initial left singular vector of shape (p,), should be normalized
+        k: Number of power iteration steps. Default: 1
+        eps: Small constant for numerical stability. Default: 1e-8
+
+    Returns:
+        Tuple of (sigma, u, v) where:
+            - sigma: Approximation of the largest singular value (scalar tensor)
+            - u: Updated left singular vector of shape (p,)
+            - v: Updated right singular vector of shape (q,)
+    """
+    # Ensure initial normalization
+    u = u / u.norm(p=2).clamp_min(eps)
+
+    # Power iteration loop
+    for _ in range(k):
+        # v ← W^T u (right vector)
+        v = W.mT @ u
+
+        # v ← v / ||v||_2 (normalize right vector)
+        v = v / v.norm(p=2).clamp_min(eps)
+
+        # u ← W v (left vector)
+        u = W @ v
+
+        # u ← u / ||u||_2 (normalize left vector)
+        u = u / u.norm(p=2).clamp_min(eps)
+
+    # σ ← u^T W v (Rayleigh quotient approximation)
+    v = W.mT @ u
+    v = v / v.norm(p=2).clamp_min(eps)
+    sigma = u @ (W @ v)
+
+    # Return σ, u, and v
+    return sigma, u, v
 
 
 def eigh_with_fallback(
