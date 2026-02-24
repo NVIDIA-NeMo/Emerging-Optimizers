@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
-from absl import flags, testing
+from absl import flags, logging, testing
 from absl.testing import parameterized
 
 from emerging_optimizers.psgd.psgd_utils import (
@@ -24,9 +24,18 @@ from emerging_optimizers.psgd.psgd_utils import (
 
 
 # Define command line flags
-flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 
 FLAGS = flags.FLAGS
+
+
+def setUpModule() -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(FLAGS.seed)
 
 
 class BalanceQTest(parameterized.TestCase):

@@ -15,7 +15,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from absl import flags
+from absl import flags, logging
 from absl.testing import absltest, parameterized
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -23,9 +23,18 @@ from emerging_optimizers.psgd.psgd import PSGDPro
 
 
 # Define command line flags
-flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 
 FLAGS = flags.FLAGS
+
+
+def setUpModule() -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(FLAGS.seed)
 
 
 class SimpleMLP(nn.Module):
@@ -59,12 +68,7 @@ class PSGDConvergenceTest(parameterized.TestCase):
     """Convergence tests for PSGD optimizer."""
 
     def setUp(self):
-        """Set random seed and device before each test."""
-        # Set seed for PyTorch
-        torch.manual_seed(1234)
-        # Set seed for CUDA if available
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(1234)
+        """Set up test fixtures."""
         self.device = FLAGS.device
 
     def test_quadratic_function_convergence(self):

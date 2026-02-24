@@ -12,16 +12,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import random
+from typing import Any
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from absl import logging
+from absl import app, flags, logging
 from torchvision import datasets, transforms
 
 from emerging_optimizers.soap.soap import SOAP
+
+
+flags.DEFINE_enum("device", "cuda", ["cuda"], "Device to run tests on")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
+FLAGS = flags.FLAGS
 
 
 class SimpleNN(nn.Module):
@@ -71,35 +75,29 @@ def train_step(model, optimizer, data, target, device, batch_idx, max_batches):
     return loss.item()
 
 
-def main() -> None:
-    # Set seeds for reproducibility
-    seed = 42
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
+def main(_: Any) -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(FLAGS.seed)
 
-    # Set up device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = FLAGS.device
     logging.info(f"Using device: {device}")
 
     # Load MNIST dataset
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
-
     train_loader = torch.utils.data.DataLoader(
         datasets.MNIST("./data", train=True, download=True, transform=transform),
         batch_size=256,
         shuffle=True,
     )
 
-    # Initialize models and move to device
     model_soap = SimpleNN().to(device)
     model_adamw = SimpleNN().to(device)
 
-    # Initialize with same weights
     model_adamw.load_state_dict(model_soap.state_dict())
 
-    # Initialize optimizers
     optimizer_soap = SOAP(
         model_soap.parameters(),
         lr=2.05 * config["lr"],
@@ -122,7 +120,6 @@ def main() -> None:
         eps=config["eps"],
     )
 
-    # Train for a few steps
     logging.info("\nStarting training comparison...")
     model_soap.train()
     model_adamw.train()
@@ -163,5 +160,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.info("Starting MNIST optimizer comparison test...")
-    main()
+    app.run(main)

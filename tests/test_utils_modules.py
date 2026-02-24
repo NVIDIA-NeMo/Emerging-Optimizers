@@ -15,12 +15,29 @@
 
 import torch
 import torch.nn as nn
+from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.utils.modules import Conv1dFlatWeights
 
 
+flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
+FLAGS = flags.FLAGS
+
+
+def setUpModule() -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(FLAGS.seed)
+
+
 class TestConv1dFlatWeights(parameterized.TestCase):
+    def setUp(self):
+        self.device = FLAGS.device
+
     @parameterized.product(
         in_channels=[3, 5, 7],
         out_channels=[4, 6, 8],
@@ -30,7 +47,7 @@ class TestConv1dFlatWeights(parameterized.TestCase):
     )
     def test_matches_conv1d(self, in_channels, out_channels, kernel_size, bias, batch_size):
         kwargs = dict(
-            in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, bias=bias, device="cuda"
+            in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, bias=bias, device=self.device
         )
         torch.manual_seed(42)
         conv = nn.Conv1d(**kwargs)
@@ -39,7 +56,7 @@ class TestConv1dFlatWeights(parameterized.TestCase):
 
         self.assertEqual(conv_flat.weight.dim(), 2)
 
-        x = torch.randn(batch_size, in_channels, kernel_size, device="cuda")
+        x = torch.randn(batch_size, in_channels, kernel_size, device=self.device)
         y_ref = conv(x)
         y_test = conv_flat(x)
 
@@ -71,13 +88,13 @@ class TestConv1dFlatWeights(parameterized.TestCase):
     )
     def test_from_conv1d(self, in_channels, out_channels, kernel_size, bias, batch_size):
         kwargs = dict(
-            in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, bias=bias, device="cuda"
+            in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, bias=bias, device=self.device
         )
         torch.manual_seed(42)
         conv = nn.Conv1d(**kwargs)
         torch.manual_seed(42)
         conv_flat = Conv1dFlatWeights.from_conv1d(conv)
-        x = torch.randn(batch_size, in_channels, kernel_size, device="cuda")
+        x = torch.randn(batch_size, in_channels, kernel_size, device=self.device)
         y_ref = conv(x)
         y_test = conv_flat(x)
         torch.testing.assert_close(y_ref, y_test, atol=0, rtol=0)

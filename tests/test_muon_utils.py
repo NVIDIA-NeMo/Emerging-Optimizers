@@ -16,11 +16,24 @@ import math
 from copy import deepcopy
 
 import torch
-from absl import logging
+from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
 from emerging_optimizers.orthogonalized_optimizers import muon, muon_utils
+
+
+flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
+FLAGS = flags.FLAGS
+
+
+def setUpModule() -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(FLAGS.seed)
 
 
 _SM_VERSION = torch.cuda.get_device_capability() if torch.cuda.is_available() else (0, 0)
@@ -60,6 +73,7 @@ class TestMuonUtils(parameterized.TestCase):
     def setUp(self):
         self.prev_precision = torch.get_float32_matmul_precision()
         torch.set_float32_matmul_precision("highest")
+        self.device = FLAGS.device
 
     def tearDown(self):
         torch.set_float32_matmul_precision(self.prev_precision)
@@ -71,7 +85,7 @@ class TestMuonUtils(parameterized.TestCase):
     )
     def test_newtonschulz5_svd_close(self, dim1, dim2):
         shape = (dim1, dim2)
-        x = torch.randn(*shape, device="cuda", dtype=torch.float32)
+        x = torch.randn(*shape, device=self.device, dtype=torch.float32)
         out_zeropowerns = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
         U, _, V = torch.linalg.svd(x, full_matrices=False)
         out_zeropower_svd = (U @ V).float()
@@ -92,7 +106,7 @@ class TestMuonUtils(parameterized.TestCase):
         (256, 512),
     )
     def test_newtonschulz5_close_to_reference(self, dim1, dim2):
-        x = torch.randn(dim1, dim2, device="cuda", dtype=torch.float32)
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
         out_zeropower_test = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
         out_zeropowerns_ref = newton_schulz_ref(
             x,
@@ -112,7 +126,7 @@ class TestMuonUtils(parameterized.TestCase):
         (257, 513),
     )
     def test_newtonschulz_custom_coeff_close_to_reference(self, dim1, dim2):
-        x = 2 ** torch.randint(-10, -5, (dim1, dim2), device="cuda", dtype=torch.float32)
+        x = 2 ** torch.randint(-10, -5, (dim1, dim2), device=self.device, dtype=torch.float32)
 
         test_coefficient_sets = [
             (3, 5, 7),
@@ -146,14 +160,14 @@ class TestMuonUtils(parameterized.TestCase):
         min_dim = min(dim1, dim2)
 
         # Generate proper random orthogonal matrices for SVD structure
-        random_left = torch.randn(dim1, min_dim, device="cuda", dtype=torch.float32)
-        random_right = torch.randn(dim2, min_dim, device="cuda", dtype=torch.float32)
+        random_left = torch.randn(dim1, min_dim, device=self.device, dtype=torch.float32)
+        random_right = torch.randn(dim2, min_dim, device=self.device, dtype=torch.float32)
         # orthogonalize the random matrices using QR decomposition
         u, _ = torch.linalg.qr(random_left)
         v, _ = torch.linalg.qr(random_right)
 
         # Create singular values with terrible condition number (range from 1e6 to 1e-6)
-        singular_values = torch.logspace(6, -6, min_dim, device="cuda", dtype=torch.float32)
+        singular_values = torch.logspace(6, -6, min_dim, device=self.device, dtype=torch.float32)
 
         # Construct the matrix with terrible condition number using proper SVD: U @ diag(S) @ V^T
         # condition number = 1e12
@@ -198,7 +212,7 @@ class TestMuonUtils(parameterized.TestCase):
         (257, 513),
     )
     def test_get_polar_express_9steps_close_to_reference(self, dim1, dim2):
-        x = torch.randn(dim1, dim2, device="cuda", dtype=torch.float32)
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
         out_pe9 = muon_utils.newton_schulz(x, steps=9, coefficient_type="polar_express")
 
         coeff = deepcopy(muon_utils._COEFFICIENT_SETS["polar_express"])
@@ -212,12 +226,15 @@ class TestMuonUtils(parameterized.TestCase):
     f"Correctness of Triton kernel on SM {_SM_VERSION} cannot be guaranteed.",
 )
 class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):
+    def setUp(self):
+        self.device = FLAGS.device
+
     @parameterized.parameters(
         (32, 32),
         (32, 64),
     )
     def test_match_newton_schulz_step_by_gemm(self, dim1, dim2):
-        x = torch.randint(-2, 3, (dim1, dim2), device="cuda", dtype=torch.bfloat16)
+        x = torch.randint(-2, 3, (dim1, dim2), device=self.device, dtype=torch.bfloat16)
         test_out = muon_utils.newton_schulz_step_tsyrk(x, 2**-1, 2**-2, 2**-3)
         test_ref = muon_utils.newton_schulz_step(x, 2**-1, 2**-2, 2**-3)
 
