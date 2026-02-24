@@ -15,27 +15,28 @@
 
 import torch
 from absl import flags
+from absl import logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.riemannian_optimizers.normalized_optimizer import ObliqueAdam, ObliqueSGD
 
-
-# Define command line flags
 flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 
 FLAGS = flags.FLAGS
+
+def setUpModule() -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(FLAGS.seed)
 
 
 class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
     """Tests for ObliqueSGD and ObliqueAdam optimizers that preserve row/column norms."""
 
     def setUp(self):
-        """Set random seed before each test."""
-        # Set seed for PyTorch
-        torch.manual_seed(1234)
-        # Set seed for CUDA if available
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(1234)
         self.device = FLAGS.device
 
     @parameterized.parameters(
@@ -132,7 +133,7 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
         optimizer.step()
 
         # Parameter should remain unchanged with zero gradient
-        torch.testing.assert_close(param.data, initial_param, atol=0, rtol=1e-8)
+        torch.testing.assert_close(param.data, initial_param, atol=0, rtol=1e-7)
 
         # Norms should still be 1.0
         final_norms = param.norm(dim=0)

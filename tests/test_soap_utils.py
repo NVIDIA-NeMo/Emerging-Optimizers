@@ -13,22 +13,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
+from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
 from emerging_optimizers.soap import soap_utils
 from emerging_optimizers.utils import eig as eig_utils
 
+flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
+FLAGS = flags.FLAGS
 
-# Base class for tests requiring seeding for determinism
-class BaseTestCase(parameterized.TestCase):
-    def setUp(self):
-        """Set random seed before each test."""
-        # Set seed for PyTorch
-        torch.manual_seed(42)
-        # Set seed for CUDA if available
+
+def setUpModule() -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
         if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(42)
+            torch.cuda.manual_seed_all(FLAGS.seed)
+
+
+# Base class for tests requiring determinism (seeding is handled by setUpModule when --seed is set)
+class BaseTestCase(parameterized.TestCase):
+    pass
 
 
 class SoapUtilsTest(BaseTestCase):

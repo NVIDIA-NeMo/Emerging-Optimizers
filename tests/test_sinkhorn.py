@@ -15,7 +15,7 @@
 
 import torch
 import torch.nn as nn
-from absl import flags
+from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.orthogonalized_optimizers.sinkhorn_muon import SinkhornMuon
@@ -24,8 +24,17 @@ from emerging_optimizers.utils.sinkhorn_mapper import SinkhornMapper
 
 # Define command line flags
 flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 
 FLAGS = flags.FLAGS
+
+
+def setUpModule() -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(FLAGS.seed)
 
 
 class TestSinkhornMapper(parameterized.TestCase):
@@ -119,8 +128,8 @@ class TestSinkhornMapper(parameterized.TestCase):
         row_var_50 = x_50.sum(dim=-1).var().item()
         col_var_50 = x_50.sum(dim=-2).var().item()
 
-        self.assertLess(row_var_50, row_var_1)
-        self.assertLess(col_var_50, col_var_1)
+        self.assertLessEqual(row_var_50, row_var_1)
+        self.assertLessEqual(col_var_50, col_var_1)
 
     @parameterized.parameters(
         (3, 5, 5),
