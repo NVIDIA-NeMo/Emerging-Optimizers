@@ -21,6 +21,7 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
 
+
 flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
 flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 FLAGS = flags.FLAGS

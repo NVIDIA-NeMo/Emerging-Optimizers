@@ -29,6 +29,7 @@ flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 
 FLAGS = flags.FLAGS
 
+
 def setUpModule() -> None:
     if FLAGS.seed is not None:
         logging.info("Setting random seed to %d", FLAGS.seed)

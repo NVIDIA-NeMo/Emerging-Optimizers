@@ -14,16 +14,17 @@
 # limitations under the License.
 
 import torch
-from absl import flags
-from absl import logging
+from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.riemannian_optimizers.normalized_optimizer import ObliqueAdam, ObliqueSGD
+
 
 flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
 flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 
 FLAGS = flags.FLAGS
+
 
 def setUpModule() -> None:
     if FLAGS.seed is not None:

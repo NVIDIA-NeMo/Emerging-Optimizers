@@ -22,6 +22,7 @@ from absl.testing import absltest, parameterized
 from emerging_optimizers import utils
 from emerging_optimizers.orthogonalized_optimizers import muon, muon_utils
 
+
 flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
 flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 FLAGS = flags.FLAGS
@@ -33,8 +34,6 @@ def setUpModule() -> None:
         torch.manual_seed(FLAGS.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(FLAGS.seed)
-
-
 
 
 _SM_VERSION = torch.cuda.get_device_capability() if torch.cuda.is_available() else (0, 0)

@@ -18,6 +18,7 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers import triton_kernels
 
+
 flags.DEFINE_enum("device", "cuda", ["cuda"], "Device to run tests on")
 flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 FLAGS = flags.FLAGS
@@ -29,6 +30,7 @@ def setUpModule() -> None:
         torch.manual_seed(FLAGS.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(FLAGS.seed)
+
 
 class TsyrkTest(parameterized.TestCase):
     def setUp(self):

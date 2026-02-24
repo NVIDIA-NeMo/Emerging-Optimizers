@@ -21,6 +21,7 @@ from absl.testing import absltest, parameterized
 from emerging_optimizers.orthogonalized_optimizers import mop, muon, muon_hyperball, scion
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
+
 flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
 flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 FLAGS = flags.FLAGS
