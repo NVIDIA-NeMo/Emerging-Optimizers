@@ -21,17 +21,19 @@ coverage run -p --source=emerging_optimizers tests/test_adaptive_muon.py -v -2 |
 coverage run -p --source=emerging_optimizers tests/test_orthogonalized_optimizer.py -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_soap_utils.py -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_soap.py -v -2 || error=1
-coverage run -p --source=emerging_optimizers tests/soap_mnist_test.py -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=cuda -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_spectral_clipping_utils.py -v -2  || error=1
 coverage run -p --source=emerging_optimizers tests/test_triton_kernels.py TsyrkIntegerInputTest -v -2  || error=1
 coverage run -p --source=emerging_optimizers tests/test_normalized_optimizer.py --device=cuda  -v -2 || error=1
-coverage run -p --source=emerging_optimizers tests/normalized_optimizer_convergence_test.py --device=cuda  -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_psgd_contractions.py --device=cuda  -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_psgd_utils.py --device=cuda  -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_psgd_convergence.py --device=cuda  -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_utils_modules.py -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_registry.py -v -2 || error=1
 coverage run -p --source=emerging_optimizers tests/test_sinkhorn.py --device=cuda -v -2 || error=1
+
+
+coverage run -p --source=emerging_optimizers tests/convergence/soap_mnist_test.py -v -2 || error=1
+coverage run -p --source=emerging_optimizers tests/convergence/normalized_optimizer_test.py --device=cuda  -v -2 || error=1
 
 exit "${error}"
