@@ -76,6 +76,7 @@ class PolarGrad(OrthogonalizedOptimizer):
         extra_scale_factor: float = 1.0,
     ) -> None:
         if num_ns_steps < 0:
+            # 0 NS steps is allowed for some tests to bypass Newton-Schulz iterations and have exact match.
             raise ValueError(f"num_ns_steps must be positive, got {num_ns_steps}")
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
