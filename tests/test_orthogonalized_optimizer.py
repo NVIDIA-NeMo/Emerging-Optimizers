@@ -18,7 +18,7 @@ import torch.nn as nn
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.orthogonalized_optimizers import mop, muon, muon_hyperball, scion
+from emerging_optimizers.orthogonalized_optimizers import mop, muon, muon_hyperball, polargrad, scion
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
 
@@ -370,6 +370,52 @@ class MuonHyperballTest(parameterized.TestCase):
 
         with self.assertRaises(ValueError):
             muon_hyperball.MuonHyperball([test_param], lr=0.01)
+
+
+class PolarGradTest(parameterized.TestCase):
+    def setUp(self):
+        self.device = FLAGS.device
+
+    @parameterized.product(
+        shape=[(5, 7), (33, 65), (127, 257)],
+        extra_scale_factor=[1.0, 0.2],
+    )
+    def test_smoke(self, shape, extra_scale_factor) -> None:
+        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=self.device))
+        test_param.grad = torch.randint_like(test_param, -5, 5)
+
+        polargrad_opt = polargrad.PolarGrad(
+            [test_param],
+            extra_scale_factor=extra_scale_factor,
+        )
+        polargrad_opt.step()
+
+    @parameterized.product(
+        shape=[(4, 8), (16, 16), (32, 64), (13, 17)],
+        extra_scale_factor=[0.25, 0.125],
+    )
+    def test_orthogonalize_fn_matches_ref(self, shape, extra_scale_factor) -> None:
+        dummy_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=self.device))
+        dummy_grad = torch.full(shape, 0.5, dtype=torch.float32, device=self.device)
+
+        # Set num_ns_steps to 0 to skip Newton-Schulz iterations and only normalize the input gradient.
+        polargrad_opt = polargrad.PolarGrad([dummy_param], num_ns_steps=0, extra_scale_factor=extra_scale_factor)
+        norm_grad = torch.nn.functional.normalize(dummy_grad, p=2, dim=(-2, -1), eps=1e-7)
+
+        # Assert normalization took effect
+        self.assertFalse((norm_grad == 1).all())
+
+        ref_scale = (norm_grad * dummy_grad).sum()
+        ref_out = norm_grad * ref_scale * extra_scale_factor
+
+        test_out = polargrad_opt.scaled_orthogonalize_fn(dummy_grad)
+
+        torch.testing.assert_close(
+            ref_out,
+            test_out,
+            atol=0,
+            rtol=0,
+        )
 
 
 if __name__ == "__main__":
