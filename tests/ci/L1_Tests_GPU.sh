@@ -15,15 +15,9 @@ export CUDA_VISIBLE_DEVICES=0
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 
 error=0
-python tests/test_muon_utils.py || error=1
-python tests/test_adaptive_muon.py || error=1
-python tests/test_orthogonalized_optimizer.py || error=1
-python tests/test_soap_utils.py || error=1
-python tests/test_soap.py || error=1
-python tests/test_scalar_optimizers.py --device=cuda || error=1
-python tests/test_spectral_clipping_utils.py || error=1
-python tests/test_triton_kernels.py || error=1
-python tests/test_normalized_optimizer.py
-python tests/normalized_optimizer_convergence_test.py || error=1
+for test in `find tests/convergence -type f -name '*_test.py'`; do
+    echo "Running $test with fixed seed"
+    python $test --device=cuda --seed=42 -v -2 || error=1
+done
 
 exit "${error}"
