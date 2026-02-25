@@ -75,8 +75,8 @@ class PolarGrad(OrthogonalizedOptimizer):
         num_ns_steps: int = 5,
         extra_scale_factor: float = 1.0,
     ) -> None:
-        if num_ns_steps < 1:
-            raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
+        if num_ns_steps < 0:
+            raise ValueError(f"num_ns_steps must be positive, got {num_ns_steps}")
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
