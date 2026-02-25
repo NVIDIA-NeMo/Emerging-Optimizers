@@ -128,8 +128,13 @@ class TestSinkhornMapper(parameterized.TestCase):
         row_var_50 = x_50.sum(dim=-1).var().item()
         col_var_50 = x_50.sum(dim=-2).var().item()
 
-        self.assertLessEqual(row_var_50, row_var_1)
-        self.assertLessEqual(col_var_50, col_var_1)
+        # There is a chance that both values are tiny effectively zero but failing the assertLess.
+        # Exclude these cases from the assertion.
+        eps = 1e-10
+        if abs(row_var_1) > eps:
+            self.assertLess(row_var_50, row_var_1)
+        if abs(col_var_1) > eps:
+            self.assertLess(col_var_50, col_var_1)
 
     @parameterized.parameters(
         (3, 5, 5),
