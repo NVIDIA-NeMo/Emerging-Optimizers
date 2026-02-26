@@ -213,7 +213,7 @@ def newton_schulz_tp(
     coefficient_type: NSCoeffT,
     tp_group: torch.distributed.ProcessGroup,
     partition_dim: int | None = None,
-    mode: Literal["duplicated", "distributed"] = "duplicated",
+    tp_mode: Literal["duplicated", "distributed"] = "duplicated",
 ) -> torch.Tensor:
     """Tensor Parallel Newton-Schulz iteration.
 
@@ -230,7 +230,7 @@ def newton_schulz_tp(
         This function is designed to provide tensor parallel support for most common use of Newton-Schulz.
         Many arguments, e.g. custom coefficient sets and custom eps, are not supported.
 
-    ``mode`` can be one of the following:
+    ``tp_mode`` can be one of the following:
         - "duplicated": The input tensor is duplicated and orthogonalized on each rank.
         - "distributed": The input tensor is partitioned along the partition_dim and orthogonalized on each rank.
 
@@ -240,7 +240,7 @@ def newton_schulz_tp(
         coefficient_type: Type of coefficient set to use for the Newton-Schulz iteration.
         partition_dim: The dimension to partition the tensor.
         tp_group: The process group for communication if input is distributed.
-        mode: The mode to use for the Newton-Schulz iteration.
+        tp_mode: The mode to use for the Newton-Schulz iteration.
     """
     if partition_dim is None:
         # Fallback path for non TP params.
@@ -251,14 +251,14 @@ def newton_schulz_tp(
         "coefficient_type": coefficient_type,
     }
 
-    if mode == "duplicated":
+    if tp_mode == "duplicated":
         x_shards = [torch.empty_like(x) for _ in range(tp_group.size())]
         torch.distributed.all_gather(x_shards, x, tp_group)
         global_x = torch.cat(x_shards, dim=partition_dim)
 
         orthogonalized_x = newton_schulz(global_x, tp_group=None, **kwargs)
         output = orthogonalized_x.chunk(tp_group.size(), dim=partition_dim)[tp_group.rank()]
-    elif mode == "distributed":
+    elif tp_mode == "distributed":
         if partition_dim == 0:
             transpose = True
         elif partition_dim == 1:
@@ -267,7 +267,7 @@ def newton_schulz_tp(
             raise ValueError(f"Invalid partition_dim: {partition_dim}")
         output = newton_schulz(x, **kwargs, transpose=transpose, tp_group=tp_group)
     else:
-        raise ValueError(f"Invalid mode: {mode}")
+        raise ValueError(f"Invalid tp_mode: {tp_mode}")
 
     return output
 
