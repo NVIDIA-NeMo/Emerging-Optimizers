@@ -44,7 +44,7 @@ class TestRegistry(parameterized.TestCase):
             def __init__(self, params, lr=0.01):
                 super().__init__(params, lr)
 
-        self.assertIs(registry.get_optimizer("test_optimizer"), TestOptimizer)
+        self.assertIs(registry.get_optimizer_cls("test_optimizer"), TestOptimizer)
 
         with self.assertRaisesRegex(ValueError, "already registered"):
 
@@ -62,15 +62,15 @@ class TestRegistry(parameterized.TestCase):
         ("soap", soap.SOAP),
     )
     def test_get_optimizer(self, opt_name, expected_opt_cls):
-        opt_cls = registry.get_optimizer(opt_name)
+        opt_cls = registry.get_optimizer_cls(opt_name)
         self.assertIs(opt_cls, expected_opt_cls)
 
     def test_raise_error_for_unknown_optimizer(self):
         with self.assertRaisesRegex(ValueError, "not found in the registry"):
-            registry.get_optimizer("unknown_optimizer")
+            registry.get_optimizer_cls("unknown_optimizer")
 
     def test_get_configured_optimizer_smoke(self):
-        opt_cls = registry.get_configured_optimizer("muon", lr=0.01)
+        opt_cls = registry.get_configured_optimizer_cls("muon", lr=0.01)
         assert opt_cls is not muon.Muon
         _ = opt_cls([torch.randn(10, 10)], extra_scale_factor=0.2)
 
