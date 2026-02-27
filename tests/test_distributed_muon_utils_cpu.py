@@ -181,9 +181,9 @@ class TestTensorParallelNewtonSchulz(parameterized.TestCase):
     @parameterized.product(
         shape=((20, 16), (16, 32)),
         partition_dim=(0, 1),
-        mode=("distributed", "duplicated"),
+        tp_mode=("distributed", "duplicated"),
     )
-    def test_1step_close_to_non_distributed(self, shape, partition_dim, mode):
+    def test_1step_close_to_non_distributed(self, shape, partition_dim, tp_mode):
         if shape[partition_dim] % torch.distributed.get_world_size() != 0:
             self.skipTest("Skipping because incompatible shape and world size")
         x = torch.randint(-5, 5, shape, device="cpu", dtype=torch.float32)
@@ -200,7 +200,7 @@ class TestTensorParallelNewtonSchulz(parameterized.TestCase):
             coefficient_type="simple",
             tp_group=torch.distributed.group.WORLD,
             partition_dim=partition_dim,
-            mode=mode,
+            tp_mode=tp_mode,
         )
 
         ref_out = muon_utils.newton_schulz(x, steps=1, coefficient_type="simple")

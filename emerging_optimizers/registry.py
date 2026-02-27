@@ -36,7 +36,7 @@ def register_optimizer(name: str) -> Callable[[type[optim.Optimizer]], type[opti
     return decorator
 
 
-def get_optimizer(name: str) -> type[optim.Optimizer]:
+def get_optimizer_cls(name: str) -> type[optim.Optimizer]:
     """Returns the optimizer class from the registry.
 
     Args:
@@ -55,7 +55,7 @@ def get_optimizer(name: str) -> type[optim.Optimizer]:
     Example:
         >>> from emerging_optimizers.orthogonalized_optimizers import muon
         >>> from emerging_optimizers import registry
-        >>> opt_cls = registry.get_optimizer("muon")
+        >>> opt_cls = registry.get_optimizer_cls("muon")
         >>> opt_cls
         <class 'emerging_optimizers.orthogonalized_optimizers.muon.Muon'>
     """
@@ -80,9 +80,9 @@ def validate_optimizer_args(opt_cls: type, kwargs: dict[str, Any]) -> None:
         )
 
 
-def get_configured_optimizer(name: str, **kwargs: Any) -> Callable[Concatenate[ParamsT, ...], optim.Optimizer]:
+def get_configured_optimizer_cls(name: str, **kwargs: Any) -> Callable[Concatenate[ParamsT, ...], optim.Optimizer]:
     """Returns a callable that creates an optimizer with the given arguments."""
-    opt_cls = get_optimizer(name)
+    opt_cls = get_optimizer_cls(name)
     validate_optimizer_args(opt_cls, kwargs)
 
     return partial(opt_cls, **kwargs)
