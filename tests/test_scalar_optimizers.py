@@ -279,7 +279,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         grad = torch.randn(shape, device=self.device)
         exp_avg = torch.randn_like(grad)
         update_abs = scalar_optimizers.calculate_signum_update(
-            grad, exp_avg, momentum_beta=1, correct_bias=False, use_nesterov=False, step=1, use_shape_scaling=True
+            grad, exp_avg, momentum_beta=0.5, correct_bias=False, use_nesterov=False, step=1, use_shape_scaling=True
         ).abs()
         expected_update = torch.sign(grad).abs() * (2 / (shape[0] + shape[1]))
         torch.testing.assert_close(update_abs, expected_update, atol=0, rtol=0)
