@@ -13,8 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
-from absl import flags, logging
-from absl.testing import absltest, parameterized
+from absl import flags, logging, testing
+from absl.testing import parameterized
 
 from emerging_optimizers import scalar_optimizers
 
@@ -265,8 +265,9 @@ class ScalarOptimizerTest(parameterized.TestCase):
         self, shape, momentum_beta, correct_bias, use_nesterov, step
     ) -> None:
         """Signum output should be +1 or -1 everywhere (the sign of the momentum)."""
-        grad = torch.randn(shape, device=self.device)
-        exp_avg = torch.zeros(shape, device=self.device)
+        # generate random numbers that are not 0 centered
+        grad = torch.rand(shape, device=self.device) - 0.3
+        exp_avg = torch.lerp(torch.randn(shape, device=self.device), grad, 1 - momentum_beta)
 
         update = scalar_optimizers.calculate_signum_update(
             grad, exp_avg, momentum_beta=momentum_beta, correct_bias=correct_bias, use_nesterov=use_nesterov, step=step
@@ -276,14 +277,22 @@ class ScalarOptimizerTest(parameterized.TestCase):
 
     def test_calculate_signum_with_shape_scaling_returns_sign(self) -> None:
         shape = (8, 12)
-        grad = torch.randn(shape, device=self.device)
-        exp_avg = torch.randn_like(grad)
+        momentum_beta = 0.5
+        grad = torch.rand(shape, device=self.device) - 0.3
+        exp_avg = torch.lerp(torch.randn(shape, device=self.device), grad, 1 - momentum_beta)
+
         update_abs = scalar_optimizers.calculate_signum_update(
-            grad, exp_avg, momentum_beta=0.5, correct_bias=False, use_nesterov=False, step=1, use_shape_scaling=True
+            grad,
+            exp_avg,
+            momentum_beta=momentum_beta,
+            correct_bias=False,
+            use_nesterov=False,
+            step=1,
+            use_shape_scaling=True,
         ).abs()
-        expected_update = torch.sign(grad).abs() * (2 / (shape[0] + shape[1]))
+        expected_update = torch.sign(exp_avg).abs() * (2 / (shape[0] + shape[1]))
         torch.testing.assert_close(update_abs, expected_update, atol=0, rtol=0)
 
 
 if __name__ == "__main__":
-    absltest.main()
+    testing.absltest.main()
