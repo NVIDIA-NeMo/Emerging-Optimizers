@@ -72,6 +72,7 @@ def get_eigenbasis_eigh(
 
     if use_adaptive_criteria and adaptive_update_tolerance is None:
         raise ValueError("adaptive_update_tolerance must be provided when use_adaptive_criteria is True")
+    # Tell the type checker that adaptive_update_tolerance is a float from now on.
     adaptive_update_tolerance: float
 
     original_dtype = kronecker_factor_list[0].dtype
@@ -189,6 +190,7 @@ def get_eigenbasis_qr(
     """
     if use_adaptive_criteria and adaptive_update_tolerance is None:
         raise ValueError("adaptive_update_tolerance must be provided when use_adaptive_criteria is True")
+    # Tell the type checker that adaptive_update_tolerance is a float from now on.
     adaptive_update_tolerance: float
 
     original_dtype = exp_avg_sq.dtype
