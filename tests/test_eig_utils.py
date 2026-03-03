@@ -185,6 +185,9 @@ class EigUtilsTest(BaseTestCase):
             force_double=force_double,
         )
 
+        self.assertEqual(L.dtype, x.dtype)
+        self.assertEqual(Q.dtype, x.dtype)
+
         # Reconstructing in double precision to avoid precision loss. The goal is to compare
         # output of eigh.
         reconstructed = Q.double() @ torch.diag(L.double()) @ Q.T.double()
