@@ -46,7 +46,7 @@ def get_eigenbasis_eigh(
         eigenbasis_list: List of orthonormal eigenbases of the kronecker factor matrices
         use_adaptive_criteria: Whether to use update criteria strategy
         adaptive_update_tolerance: Tolerance threshold for the normalized diagonal component of approximated eigenvalue matrix.
-            Must be provided when use_adaptive_criteria is True.
+            If None, defaults to 1e-7, which is appropriate for single precision computations.
         eps: Small offset for numerical stability. If None, uses dtype-appropriate values (1e-7 for float32, 1e-15 for float64)
 
     Returns:
@@ -65,18 +65,10 @@ def get_eigenbasis_eigh(
             ortho_matrices = get_eigenbasis_eigh([k_factor1, k_factor2])
             # ortho_matrices[0] has shape [4, 4] and ortho_matrices[1] has shape [5, 5]
     """
-    # For historical reasons, we allow an empty list of kronecker factors.
-    # Explicitly return an empty list to avoid potential issues.
-    if not kronecker_factor_list:
-        return []
+    if adaptive_update_tolerance is None:
+        adaptive_update_tolerance = 1e-7
 
-    if use_adaptive_criteria and adaptive_update_tolerance is None:
-        raise ValueError("adaptive_update_tolerance must be provided when use_adaptive_criteria is True")
-    # Tell the type checker that adaptive_update_tolerance is a float from now on.
-    adaptive_update_tolerance: float
-
-    original_dtype = kronecker_factor_list[0].dtype
-
+    # cast the kronecker factor matrices to float32 if force_float is True
     casted_matrix_list: TensorList = []
     for kronecker_factor in kronecker_factor_list:
         if kronecker_factor.numel() == 0:
@@ -115,9 +107,6 @@ def get_eigenbasis_eigh(
                 continue
             _, Q = eig_utils.eigh_with_fallback(kronecker_factor, force_double=False, eps=eps)
             updated_eigenbasis_list.append(Q)
-
-    if force_float:
-        updated_eigenbasis_list = [Q.to(original_dtype) for Q in updated_eigenbasis_list]
 
     return updated_eigenbasis_list
 
@@ -184,12 +173,8 @@ def get_eigenbasis_qr(
                 exp_avg_sq
             )
     """
-    if use_adaptive_criteria and adaptive_update_tolerance is None:
-        raise ValueError("adaptive_update_tolerance must be provided when use_adaptive_criteria is True")
-    # Tell the type checker that adaptive_update_tolerance is a float from now on.
-    adaptive_update_tolerance: float
-
-    original_dtype = exp_avg_sq.dtype
+    if adaptive_update_tolerance is None:
+        adaptive_update_tolerance = 1e-7
 
     casted_matrix_list: TensorList = []
     casted_eigenbasis_list: TensorList = []
@@ -207,7 +192,8 @@ def get_eigenbasis_qr(
             casted_matrix_list.append(kronecker_factor)
             casted_eigenbasis_list.append(eigenbasis)
 
-    if force_float:
+    # Cast exp_avg_sq to float in-place if needed
+    if force_float and exp_avg_sq.dtype != torch.float:
         exp_avg_sq = exp_avg_sq.to(torch.float)
 
     updated_eigenbasis_list: TensorList = []
@@ -236,8 +222,9 @@ def get_eigenbasis_qr(
                 exp_avg_sq=exp_avg_sq,
                 power_iter_steps=power_iter_steps,
             )
-            updated_eigenbasis_list.append(Q.to(original_dtype))
+            updated_eigenbasis_list.append(Q)
         else:
-            updated_eigenbasis_list.append(eigenbasis.to(original_dtype))
+            # Do not update eigenbasis matrix
+            updated_eigenbasis_list.append(eigenbasis)
 
     return updated_eigenbasis_list, exp_avg_sq
