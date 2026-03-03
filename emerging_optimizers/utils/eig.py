@@ -97,61 +97,6 @@ def eigh_with_fallback(
     return (L_flipped.to(output_dtype), Q_flipped.to(output_dtype))
 
 
-def eig_orthogonal_iteration(
-    x: Tensor,
-    approx_eigenvectors: Tensor,
-    max_iterations: int = 1,
-    tolerance: float = 0.01,
-) -> tuple[Tensor, Tensor]:
-    """Approximately compute the eigen decomposition
-
-    [DEPRECATED] Use `orthogonal_iteration` instead.
-
-    Orthogonal or subspace iteration uses iterative power iteration and QR decomposition to update the approximated
-    eigenvectors. When the initial estimate is the zero matrix, the eigendecomposition is computed
-    using `eigh_with_fallback`.
-
-    Based on Purifying Shampoo (https://www.arxiv.org/abs/2506.03595), we use an early exit criteria to stop the
-    QR iterations. This generalizes SOAP's algorithm of 1 step of power iteration for updating the eigenbasis.
-
-    Args:
-        x: tensor of shape (n, n) where x is a symmetric or Hermitian matrix.
-        approx_eigenvectors: The current estimate of the eigenvectors of x. If None or a zero matrix,
-            falls back to using `eigh_with_fallback`.
-        max_iterations: The maximum number of iterations to perform.
-        tolerance: The tolerance for determining convergence in terms of the norm of the off-diagonal elements
-            of the approximated eigenvalues.
-
-    Returns:
-        A tuple containing the approximated eigenvalues and eigenvectors matrix of the input matrix A.
-    """
-
-    # Check if x is already a diagonal matrix
-    diag_result = _try_handle_diagonal_matrix(x)
-    if diag_result is not None:
-        return diag_result
-
-    if approx_eigenvectors is None or not approx_eigenvectors.any():
-        return eigh_with_fallback(x, force_double=True)
-
-    # Perform power iteration and QR decomposition iteratively.
-    Q = approx_eigenvectors
-    approx_eigvals = conjugate(x, Q, diag=True)
-    iteration = 0
-    sorted_approx_eigvals: Tensor = approx_eigvals
-    while iteration < max_iterations and not met_approx_eigvals_criteria(x, approx_eigvals, tolerance):
-        power_iteration = x @ Q
-        Q = torch.linalg.qr(power_iteration).Q
-        approx_eigvals = conjugate(x, Q, diag=True)
-        iteration += 1
-        # Sort eigenvalues in descending order and reorder eigenvectors accordingly
-        # Sorting can help mitigate numerical instability since QR decompositions can mix the approximated eigenvectors
-        sorted_approx_eigvals, indices = approx_eigvals.sort(stable=True, descending=True)
-        Q = Q[:, indices]
-
-    return sorted_approx_eigvals, Q
-
-
 def met_approx_eigvals_criteria(
     kronecker_factor: torch.Tensor,
     approx_eigvals: torch.Tensor,
