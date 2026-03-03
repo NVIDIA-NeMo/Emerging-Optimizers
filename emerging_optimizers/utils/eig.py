@@ -29,7 +29,6 @@ def eigh_with_fallback(
     x: Tensor,
     force_double: bool = False,
     eps: float | None = None,
-    output_dtype: torch.dtype | None = None,
 ) -> tuple[Tensor, Tensor]:
     r"""torch.linalg.eigh() function with double precision fallback
 
@@ -43,14 +42,11 @@ def eigh_with_fallback(
         force_double: Force double precision computation. Default False.
         eps: Small offset for numerical stability. If None, uses dtype-appropriate values (1e-7 for float32,
             1e-15 for float64). Default None.
-        output_dtype: Desired output dtype. If None, uses input dtype. Default None.
 
     Returns:
         Eigenvalues and eigenvectors tuple (eigenvalues in descending order).
     """
     input_dtype = x.dtype
-    if output_dtype is None:
-        output_dtype = input_dtype
 
     # Set precision-appropriate epsilon if not provided
     if eps is None:
@@ -66,7 +62,7 @@ def eigh_with_fallback(
         # Sort in descending order for diagonal case
         L_flipped, indices = L.sort(descending=True)
         Q_flipped = Q[:, indices]
-        return (L_flipped.to(output_dtype), Q_flipped.to(output_dtype))
+        return (L_flipped, Q_flipped)
 
     # Add small identity for numerical stability
     eye = torch.eye(
@@ -83,7 +79,7 @@ def eigh_with_fallback(
     try:
         L, Q = torch.linalg.eigh(stabilized_x)
     except (torch.linalg.LinAlgError, RuntimeError) as e:
-        if not force_double:
+        if force_double:
             logging.warning(f"Falling back to double precision: {e}")
             # Fallback to higher precision if the default precision fails
             stabilized_x_fp64 = stabilized_x.to(torch.float64)
@@ -91,10 +87,12 @@ def eigh_with_fallback(
         else:
             raise e
 
+    L = L.to(input_dtype)
+    Q = Q.to(input_dtype)
     # Flip order to descending (`torch.linalg.eigh` returns ascending order by default)
     L_flipped = torch.flip(L, [-1])
     Q_flipped = torch.flip(Q, [-1])
-    return (L_flipped.to(output_dtype), Q_flipped.to(output_dtype))
+    return (L_flipped, Q_flipped)
 
 
 def met_approx_eigvals_criteria(

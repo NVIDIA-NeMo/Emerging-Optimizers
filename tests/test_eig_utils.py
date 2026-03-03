@@ -170,13 +170,11 @@ class EigUtilsTest(BaseTestCase):
     @parameterized.product(
         shape=[(8, 8), (16, 16), (31, 31)],
         force_double=[True, False],
-        output_dtype=[None, torch.float32, torch.float64],
     )
-    def test_eigh_with_fallback_reconstruction(
+    def test_eigh_with_fallback_reconstruction_close_to_original(
         self,
         shape: tuple[int, int],
         force_double: bool,
-        output_dtype: torch.dtype | None,
     ) -> None:
         """Tests that Q @ diag(L) @ Q^T reconstructs the original matrix."""
         x = torch.randn(shape, device=self.device)
@@ -185,20 +183,20 @@ class EigUtilsTest(BaseTestCase):
         L, Q = eig_utils.eigh_with_fallback(
             x,
             force_double=force_double,
-            output_dtype=output_dtype,
         )
         reconstructed = Q @ torch.diag(L) @ Q.T
-        if output_dtype is not None:
-            self.assertEqual(L.dtype, output_dtype)
-            self.assertEqual(Q.dtype, output_dtype)
-            reconstructed = reconstructed.to(output_dtype)
-            x = x.to(output_dtype)
-
         if not force_double:
             atol, rtol = 1e-4, 1e-4
         else:
             atol, rtol = 1e-5, 1e-5
         torch.testing.assert_close(reconstructed, x, atol=atol, rtol=rtol)
+
+    def test_eigh_with_fallback_diagonal_input_smoke(self) -> None:
+        """Tests that eigh_with_fallback works correctly with diagonal input."""
+        x = torch.randn(4, 4, device=self.device)
+        L, Q = eig_utils.eigh_with_fallback(x.diag().diag())
+        self.assertEqual(L.shape, (4,))
+        self.assertEqual(Q.shape, (4, 4))
 
     def test_conjugate_assert_2d_input(self) -> None:
         """Tests the conjugate function."""
