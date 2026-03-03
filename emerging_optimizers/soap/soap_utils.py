@@ -30,7 +30,7 @@ __all__ = [
 
 def get_eigenbasis_eigh(
     kronecker_factor_list: TensorList,
-    convert_to_float: bool = True,
+    force_float: bool = True,
     eigenbasis_list: TensorList | None = None,
     use_adaptive_criteria: bool = False,
     adaptive_update_tolerance: float | None = None,
@@ -65,8 +65,16 @@ def get_eigenbasis_eigh(
             ortho_matrices = get_eigenbasis_eigh([k_factor1, k_factor2])
             # ortho_matrices[0] has shape [4, 4] and ortho_matrices[1] has shape [5, 5]
     """
-    if adaptive_update_tolerance is None:
-        adaptive_update_tolerance = 1e-7
+    # For historical reasons, we allow an empty list of kronecker factors.
+    # Explicitly return an empty list to avoid potential issues.
+    if not kronecker_factor_list:
+        return []
+
+    if use_adaptive_criteria and adaptive_update_tolerance is None:
+        raise ValueError("adaptive_update_tolerance must be provided when use_adaptive_criteria is True")
+    adaptive_update_tolerance: float
+
+    original_dtype = kronecker_factor_list[0].dtype
 
     # cast the kronecker factor matrices to float32 if convert_to_float is True
     casted_matrix_list: TensorList = []
@@ -74,7 +82,7 @@ def get_eigenbasis_eigh(
         if kronecker_factor.numel() == 0:
             casted_matrix_list.append(torch.empty(0, device=kronecker_factor.device))
             continue
-        if convert_to_float:
+        if force_float:
             casted_matrix_list.append(kronecker_factor.to(torch.float))
         else:
             casted_matrix_list.append(kronecker_factor)
@@ -95,7 +103,7 @@ def get_eigenbasis_eigh(
                     kronecker_factor,
                     force_double=False,
                     eps=eps,
-                    output_dtype=torch.float if convert_to_float else None,
+                    output_dtype=torch.float if force_float else None,
                 )
                 updated_eigenbasis_list.append(Q)
             else:
@@ -107,9 +115,12 @@ def get_eigenbasis_eigh(
                 updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
                 continue
             _, Q = eig_utils.eigh_with_fallback(
-                kronecker_factor, force_double=False, eps=eps, output_dtype=torch.float if convert_to_float else None
+                kronecker_factor, force_double=False, eps=eps, output_dtype=torch.float if force_float else None
             )
             updated_eigenbasis_list.append(Q)
+
+    if force_float:
+        updated_eigenbasis_list = [Q.to(original_dtype) for Q in updated_eigenbasis_list]
 
     return updated_eigenbasis_list
 
@@ -118,7 +129,7 @@ def get_eigenbasis_qr(
     kronecker_factor_list: TensorList,
     eigenbasis_list: TensorList,
     exp_avg_sq: torch.Tensor,
-    convert_to_float: bool = True,
+    force_float: bool = True,
     use_adaptive_criteria: bool = False,
     adaptive_update_tolerance: float | None = None,
     power_iter_steps: int = 1,
@@ -131,7 +142,7 @@ def get_eigenbasis_qr(
         kronecker_factor_list: List containing preconditioner (:math:`GG^T` and :math:`G^TG`)
         eigenbasis_list: List containing eigenbases (:math:`Q_L` and :math:`Q_R`)
         exp_avg_sq: inner adam second moment (exp_avg_sq). This tensor is modified in-place.
-        convert_to_float: If True, preconditioner matrices and their corresponding
+        force_float: If True, preconditioner matrices and their corresponding
             orthonormal matrices will be cast to float. Otherwise, they are left in
             their original type.
         use_adaptive_criteria: Whether to use update criteria strategy
@@ -176,8 +187,11 @@ def get_eigenbasis_qr(
                 exp_avg_sq
             )
     """
-    if adaptive_update_tolerance is None:
-        adaptive_update_tolerance = 1e-7
+    if use_adaptive_criteria and adaptive_update_tolerance is None:
+        raise ValueError("adaptive_update_tolerance must be provided when use_adaptive_criteria is True")
+    adaptive_update_tolerance: float
+
+    original_dtype = exp_avg_sq.dtype
 
     casted_matrix_list: TensorList = []
     casted_eigenbasis_list: TensorList = []
@@ -188,15 +202,14 @@ def get_eigenbasis_qr(
             casted_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
             continue
         # Use the argument to decide whether to cast to float.
-        if convert_to_float:
+        if force_float:
             casted_matrix_list.append(kronecker_factor.to(torch.float))
             casted_eigenbasis_list.append(eigenbasis.to(torch.float))
         else:
             casted_matrix_list.append(kronecker_factor)
             casted_eigenbasis_list.append(eigenbasis)
 
-    # Cast exp_avg_sq to float in-place if needed
-    if convert_to_float and exp_avg_sq.dtype != torch.float:
+    if force_float:
         exp_avg_sq = exp_avg_sq.to(torch.float)
 
     updated_eigenbasis_list: TensorList = []
@@ -223,12 +236,14 @@ def get_eigenbasis_qr(
                 eigenbasis=eigenbasis,
                 ind=ind,
                 exp_avg_sq=exp_avg_sq,
-                convert_to_float=convert_to_float,
                 power_iter_steps=power_iter_steps,
             )
             updated_eigenbasis_list.append(Q)
         else:
-            # Do not update eigenbasis matrix
             updated_eigenbasis_list.append(eigenbasis)
+
+        if force_float:
+            Q = Q.to(original_dtype)
+            exp_avg_sq = exp_avg_sq.to(original_dtype)
 
     return updated_eigenbasis_list, exp_avg_sq

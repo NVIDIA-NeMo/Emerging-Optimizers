@@ -131,7 +131,6 @@ def orthogonal_iteration(
     eigenbasis: torch.Tensor,
     ind: int,
     exp_avg_sq: torch.Tensor,
-    convert_to_float: bool,
     power_iter_steps: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Computes the eigenbases of the preconditioner using power iteration and QR decomposition.
@@ -145,9 +144,6 @@ def orthogonal_iteration(
         eigenbasis : Kronecker factor eigenbasis matrix.
         ind : Index for selecting dimension in the exp_avg_sq matrix to apply the sorting order over.
         exp_avg_sq : inner Adam second moment (exp_avg_sq).
-        convert_to_float : If True, preconditioner matrices and their corresponding
-            orthonormal matrices will be cast to float. Otherwise, they are left in
-            their original type. Defaults to False.
         power_iter_steps: Number of power iteration steps to perform before QR decomposition.
             More steps can lead to better convergence but increased computation time.
 
@@ -164,17 +160,12 @@ def orthogonal_iteration(
     # Initialize power iteration after sorting the columns of the eigenbasis matrix according to the descending eigenvalues
     Q = eigenbasis[:, sort_idx]
 
-    #  By default, perform QR decomposition with power iteration with FP32 precision
     # Perform multiple steps of power iteration
     for _ in range(power_iter_steps):
         # Project current eigenbases on kronecker factor
         Q = kronecker_factor @ Q
         # Perform QR to maintain orthogonality between iterations
         Q = torch.linalg.qr(Q).Q
-
-    # When not converting to float, ensure that Q is in the original dtype
-    if not convert_to_float:
-        Q = Q.to(kronecker_factor.dtype)
 
     return Q, exp_avg_sq
 
