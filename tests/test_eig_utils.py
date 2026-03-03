@@ -184,12 +184,15 @@ class EigUtilsTest(BaseTestCase):
             x,
             force_double=force_double,
         )
-        reconstructed = Q @ torch.diag(L) @ Q.T
+
+        # Reconstructing in double precision to avoid precision loss. The goal is to compare
+        # output of eigh.
+        reconstructed = Q.double() @ torch.diag(L.double()) @ Q.T.double()
         if not force_double:
             atol, rtol = 1e-4, 1e-4
         else:
-            atol, rtol = 1e-5, 1e-5
-        torch.testing.assert_close(reconstructed, x, atol=atol, rtol=rtol)
+            atol, rtol = 1e-6, 1e-6
+        torch.testing.assert_close(reconstructed.to(x.dtype), x, atol=atol, rtol=rtol)
 
     def test_eigh_with_fallback_diagonal_input_smoke(self) -> None:
         """Tests that eigh_with_fallback works correctly with diagonal input."""
