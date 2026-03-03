@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -156,6 +156,49 @@ class EigUtilsTest(BaseTestCase):
         # Test 4: Check that Q_new is different from input (transformation occurred)
         # This is a basic check - in practice they should be different due to power iteration
         self.assertFalse(torch.allclose(Q_new, eigenbasis))
+
+    def test_eigh_with_fallback_descending_order(self) -> None:
+        """Tests that eigenvalues are returned in descending order."""
+        x = torch.tensor(
+            [[4.0, 1.0], [1.0, 2.0]],
+            device=self.device,
+        )
+        L, Q = eig_utils.eigh_with_fallback(x)
+        # Eigenvalues should be in descending order
+        self.assertTrue(torch.all(L[:-1] >= L[1:]))
+
+    @parameterized.product(
+        shape=[(8, 8), (16, 16), (31, 31)],
+        force_double=[True, False],
+        output_dtype=[None, torch.float32, torch.float64],
+    )
+    def test_eigh_with_fallback_reconstruction(
+        self,
+        shape: tuple[int, int],
+        force_double: bool,
+        output_dtype: torch.dtype | None,
+    ) -> None:
+        """Tests that Q @ diag(L) @ Q^T reconstructs the original matrix."""
+        x = torch.randn(shape, device=self.device)
+        x = x @ x.T  # symmetric positive semi-definite
+
+        L, Q = eig_utils.eigh_with_fallback(
+            x,
+            force_double=force_double,
+            output_dtype=output_dtype,
+        )
+        reconstructed = Q @ torch.diag(L) @ Q.T
+        if output_dtype is not None:
+            self.assertEqual(L.dtype, output_dtype)
+            self.assertEqual(Q.dtype, output_dtype)
+            reconstructed = reconstructed.to(output_dtype)
+            x = x.to(output_dtype)
+
+        if not force_double:
+            atol, rtol = 1e-4, 1e-4
+        else:
+            atol, rtol = 1e-5, 1e-5
+        torch.testing.assert_close(reconstructed, x, atol=atol, rtol=rtol)
 
     def test_conjugate_assert_2d_input(self) -> None:
         """Tests the conjugate function."""
