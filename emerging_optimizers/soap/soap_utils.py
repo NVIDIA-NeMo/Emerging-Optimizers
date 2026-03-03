@@ -104,7 +104,6 @@ def get_eigenbasis_eigh(
                     kronecker_factor,
                     force_double=False,
                     eps=eps,
-                    output_dtype=torch.float if force_float else None,
                 )
                 updated_eigenbasis_list.append(Q)
             else:
@@ -115,9 +114,7 @@ def get_eigenbasis_eigh(
             if kronecker_factor.numel() == 0:
                 updated_eigenbasis_list.append(torch.empty(0, device=kronecker_factor.device))
                 continue
-            _, Q = eig_utils.eigh_with_fallback(
-                kronecker_factor, force_double=False, eps=eps, output_dtype=torch.float if force_float else None
-            )
+            _, Q = eig_utils.eigh_with_fallback(kronecker_factor, force_double=False, eps=eps)
             updated_eigenbasis_list.append(Q)
 
     if force_float:
