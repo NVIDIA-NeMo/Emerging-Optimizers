@@ -79,7 +79,7 @@ def eigh_with_fallback(
     try:
         L, Q = torch.linalg.eigh(stabilized_x)
     except (torch.linalg.LinAlgError, RuntimeError) as e:
-        if force_double:
+        if not force_double:
             logging.warning(f"Falling back to double precision: {e}")
             # Fallback to higher precision if the default precision fails
             stabilized_x_fp64 = stabilized_x.to(torch.float64)

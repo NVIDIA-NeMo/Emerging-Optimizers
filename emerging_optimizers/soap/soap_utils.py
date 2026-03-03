@@ -40,13 +40,13 @@ def get_eigenbasis_eigh(
 
     Args:
         kronecker_factor_list: Matrix List to compute eigenbases of
-        convert_to_float: If True, preconditioner matrices and their corresponding
+        force_float: If True, preconditioner matrices and their corresponding
             orthonormal matrices will be cast to float. Otherwise, they are left in
             their original type.
         eigenbasis_list: List of orthonormal eigenbases of the kronecker factor matrices
         use_adaptive_criteria: Whether to use update criteria strategy
         adaptive_update_tolerance: Tolerance threshold for the normalized diagonal component of approximated eigenvalue matrix.
-            If None, defaults to 1e-7, which is appropriate for single precision computations.
+            Must be provided when use_adaptive_criteria is True.
         eps: Small offset for numerical stability. If None, uses dtype-appropriate values (1e-7 for float32, 1e-15 for float64)
 
     Returns:
@@ -77,7 +77,6 @@ def get_eigenbasis_eigh(
 
     original_dtype = kronecker_factor_list[0].dtype
 
-    # cast the kronecker factor matrices to float32 if convert_to_float is True
     casted_matrix_list: TensorList = []
     for kronecker_factor in kronecker_factor_list:
         if kronecker_factor.numel() == 0:
@@ -237,12 +236,8 @@ def get_eigenbasis_qr(
                 exp_avg_sq=exp_avg_sq,
                 power_iter_steps=power_iter_steps,
             )
-            updated_eigenbasis_list.append(Q)
+            updated_eigenbasis_list.append(Q.to(original_dtype))
         else:
-            updated_eigenbasis_list.append(eigenbasis)
-
-        if force_float:
-            Q = Q.to(original_dtype)
-            exp_avg_sq = exp_avg_sq.to(original_dtype)
+            updated_eigenbasis_list.append(eigenbasis.to(original_dtype))
 
     return updated_eigenbasis_list, exp_avg_sq

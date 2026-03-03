@@ -466,7 +466,7 @@ def update_eigenbasis_and_momentum(
     use_adaptive_criteria: bool = False,
     adaptive_update_tolerance: float | None = None,
     power_iter_steps: int = 1,
-    convert_to_float: bool = True,
+    force_float: bool = True,
 ) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
     """Updates the eigenbases using QR decomposition and power iteration or eigh.
 
@@ -493,7 +493,7 @@ def update_eigenbasis_and_momentum(
             Only used if use_adaptive_criteria is True.
         power_iter_steps: Number of power iteration steps to perform before QR decomposition.
             More steps can lead to better convergence but increased computation time.
-        convert_to_float: Whether to convert the preconditioner matrices and their corresponding
+        force_float: Whether to convert the preconditioner matrices and their corresponding
             orthonormal matrices to float for amortized computation. Otherwise, they are left in their original type.
 
     Returns:
@@ -526,7 +526,7 @@ def update_eigenbasis_and_momentum(
     if use_eigh:
         updated_eigenbasis_list = soap_utils.get_eigenbasis_eigh(
             kronecker_factor_list,
-            convert_to_float,
+            force_float,
             eigenbasis_list,
             use_adaptive_criteria,
             adaptive_update_tolerance,
@@ -537,7 +537,7 @@ def update_eigenbasis_and_momentum(
             kronecker_factor_list,
             eigenbasis_list,
             exp_avg_sq,
-            convert_to_float,
+            force_float,
             use_adaptive_criteria,
             adaptive_update_tolerance,
             power_iter_steps,
