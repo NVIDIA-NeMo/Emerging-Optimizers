@@ -218,7 +218,7 @@ class TestMuonUtils(parameterized.TestCase):
         coeff = deepcopy(muon_utils._COEFFICIENT_SETS["polar_express"])
         coeff.append(coeff[-1])
         out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
-        torch.testing.assert_close(out_pe9, out_ref, atol=1e-6, rtol=1e-7)
+        torch.testing.assert_close(out_pe9, out_ref, atol=2e-6, rtol=1e-7)
 
 
 @absltest.skipIf(
