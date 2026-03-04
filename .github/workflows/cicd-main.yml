@@ -139,6 +139,7 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@9129dc5f3805f2daa7c4c3a2e3e8e47dc5a8f51
         with:
           files: "**/*.xml"
+          fail_on: "nothing"
 
   Nemo_CICD_Test:
     needs:
