@@ -154,7 +154,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 if p.grad is None:
                     continue
 
-                # Cast grad to float32 here is it is not already in float32 because Kronecker factors need to be
+                # Cast grad to float32 here if it is not already in float32 because Kronecker factors need to be
                 # in float32 for accumulation and decomposition.
                 grad = p.grad.to(torch.float32)
                 state = self.state[p]
