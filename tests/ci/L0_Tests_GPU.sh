@@ -16,8 +16,7 @@ export CUDA_VISIBLE_DEVICES=0
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 
 
-mkdir -p test-results/tests
-mkdir -p test-results/convergence
+mkdir -p test-results/tests/convergence
 
 error=0
 for test in `find tests -type f -name 'test_*' ! -name '*_cpu.py'`; do
