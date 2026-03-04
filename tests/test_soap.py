@@ -214,12 +214,12 @@ class SoapFunctionsTest(parameterized.TestCase):
         orthonormal_matrix_list = [Q_L, Q_R]
 
         projected = soap.precondition(
-            grad=grad,
+            grad,
             eigenbasis_list=orthonormal_matrix_list,
             dims=[[0], [0]],
         )
         recov = soap.precondition(
-            grad=projected,
+            projected,
             eigenbasis_list=orthonormal_matrix_list,
             dims=[[0], [1]],
         )
@@ -294,6 +294,69 @@ class SoapFunctionsTest(parameterized.TestCase):
             else:
                 self.assertTrue(torch.linalg.norm(u_clipped) / math.sqrt(u.numel()) <= max_rms)
 
+    @parameterized.product(  # type: ignore[misc]
+        M=[8, 16, 33],
+        N=[4, 8, 33],
+        use_eigh=[True, False],
+        dtype=[torch.float32],
+    )
+    def test_update_eigenbasis_and_momentum(self, M: int, N: int, use_eigh: bool, dtype: torch.dtype) -> None:
+        """Tests that update_eigenbasis_and_momentum returns valid outputs.
+
+        Verifies output shapes, eigenbasis orthogonality, and that the round-trip
+        projection (original → eigenbasis → original → new eigenbasis) preserves the
+        norm of momentum.
+        """
+        # Create symmetric positive definite kronecker factors
+        g = torch.randn(M, N, device="cuda", dtype=dtype)
+        L = g @ g.T
+        R = g.T @ g
+        kronecker_factor_list = [L, R]
+
+        # Create orthonormal eigenbasis matrices
+        Q_L = torch.linalg.qr(torch.randn(M, M, device="cuda")).Q
+        Q_R = torch.linalg.qr(torch.randn(N, N, device="cuda")).Q
+        eigenbasis_list = [Q_L, Q_R]
+
+        exp_avg_sq = torch.abs(torch.randn(M, N, device="cuda", dtype=dtype))
+        momentum = torch.randn(M, N, device="cuda", dtype=dtype)
+        momentum_norm_before = torch.linalg.norm(momentum)
+
+        updated_eigenbasis_list, updated_momentum, updated_exp_avg_sq = soap.update_eigenbasis_and_momentum(
+            kronecker_factor_list=kronecker_factor_list,
+            eigenbasis_list=eigenbasis_list,
+            exp_avg_sq=exp_avg_sq,
+            momentum=momentum,
+            use_eigh=use_eigh,
+        )
+
+        # Check output shapes
+        self.assertEqual(len(updated_eigenbasis_list), 2)
+        self.assertEqual(updated_eigenbasis_list[0].shape, (M, M))
+        self.assertEqual(updated_eigenbasis_list[1].shape, (N, N))
+        self.assertEqual(updated_momentum.shape, (M, N))
+        self.assertEqual(updated_exp_avg_sq.shape, (M, N))
+
+        # Check eigenbasis orthogonality
+        for Q in updated_eigenbasis_list:
+            identity = torch.eye(Q.shape[0], device=Q.device, dtype=Q.dtype)
+            torch.testing.assert_close(
+                Q.T @ Q,
+                identity,
+                atol=1e-5,
+                rtol=1e-5,
+                msg="Updated eigenbasis is not orthogonal.",
+            )
+
+        # Momentum is projected via orthogonal transforms, so norm should be preserved
+        torch.testing.assert_close(
+            torch.linalg.norm(updated_momentum),
+            momentum_norm_before,
+            atol=1e-5,
+            rtol=1e-5,
+            msg="Momentum norm not preserved after eigenbasis update.",
+        )
+
     @parameterized.parameters(
         (4, 5),
         (3, 3),
@@ -324,10 +387,6 @@ class SoapFunctionsTest(parameterized.TestCase):
 
 
 class SoapTest(parameterized.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        torch.manual_seed(15)
-
     def setUp(self):
         self.default_config = {
             "lr": 0.001,
@@ -373,6 +432,35 @@ class SoapTest(parameterized.TestCase):
         optimizer = REKLS(
             [param],
             lr=self.default_config["lr"],
+        )
+
+        for _ in range(5):
+            param.grad = torch.randn_like(param)
+            optimizer.step()
+            param.grad = None
+
+    @parameterized.parameters(  # type: ignore[misc]
+        {"use_eigh": True},
+        {"use_eigh": False},
+    )
+    def test_use_adaptive_criteria_10steps_smoke(self, use_eigh: bool):
+        param = torch.randn(5, 3, requires_grad=True, device="cuda")
+        optimizer = SOAP(
+            [param],
+            **{**self.default_config, "use_adaptive_criteria": True},
+            use_eigh=use_eigh,
+        )
+
+        for _ in range(10):
+            param.grad = torch.randn_like(param)
+            optimizer.step()
+            param.grad = None
+
+    def test_bfloat16_5steps_smoke(self):
+        param = torch.randn(5, 3, requires_grad=True, device="cuda", dtype=torch.bfloat16)
+        optimizer = SOAP(
+            [param],
+            **self.default_config,
         )
 
         for _ in range(5):

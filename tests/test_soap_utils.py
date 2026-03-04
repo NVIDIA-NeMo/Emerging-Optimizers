@@ -69,9 +69,6 @@ class SoapUtilsTest(BaseTestCase):
             kronecker_factor_list=state["GG"],
             eigenbasis_list=state["Q"],
             exp_avg_sq=state["exp_avg_sq"],
-            force_float=True,
-            use_adaptive_criteria=False,
-            adaptive_update_tolerance=float("inf"),
             power_iter_steps=1,
         )
 
@@ -121,7 +118,7 @@ class SoapUtilsTest(BaseTestCase):
             k_factor = k_factor @ k_factor.T + torch.eye(dim, device=self.device) * 1e-5
             kronecker_factor_list.append(k_factor)
 
-        Q_list = soap_utils.get_eigenbasis_eigh(kronecker_factor_list, force_float=True)
+        Q_list = soap_utils.get_eigenbasis_eigh(kronecker_factor_list)
 
         self.assertEqual(len(Q_list), len(kronecker_factor_list))
 
