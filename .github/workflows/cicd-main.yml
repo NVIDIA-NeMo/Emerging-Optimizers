@@ -112,6 +112,12 @@ jobs:
           azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           runner: ${{ matrix.runner }}
 
+      - name: Publish Test Report
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: "test-results/**/*.xml"
+
   Nemo_CICD_Test:
     needs:
       - pre-flight
