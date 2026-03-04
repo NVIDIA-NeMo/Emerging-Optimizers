@@ -28,8 +28,6 @@ permissions:
   id-token: write
   contents: read
   statuses: write
-  checks: write
-  pull-requests: write
 
 jobs:
   pre-flight:
@@ -126,6 +124,9 @@ jobs:
     needs: [cicd-unit-tests]
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      pull-requests: write
     steps:
       - name: Download Test Results
         uses: actions/download-artifact@v4
