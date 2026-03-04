@@ -227,17 +227,24 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     # Always use eigh for the first eigenbasis update
                     use_eigh = self.use_eigh if state["step"] != self.adam_warmup_steps else True
 
-                    with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
-                        state["Q"], state["exp_avg"], state["exp_avg_sq"] = update_eigenbasis_and_momentum(
-                            kronecker_factor_list=state["GG"],
-                            eigenbasis_list=state.get("Q", None),
-                            exp_avg_sq=state["exp_avg_sq"],
-                            momentum=state["exp_avg"],
-                            use_eigh=use_eigh,
-                            use_adaptive_criteria=self.use_adaptive_criteria,
-                            adaptive_update_tolerance=self.adaptive_update_tolerance,
-                            power_iter_steps=self.power_iter_steps,
+                    # Skip eigenbasis update if use_adaptive_criteria is True and all eigenbases meet the criteria
+                    skip_update = (
+                        self.use_adaptive_criteria
+                        and "Q" in state
+                        and soap_utils.all_eigenbases_met_criteria(
+                            state["GG"], state["Q"], self.adaptive_update_tolerance
                         )
+                    )
+                    if not skip_update:
+                        with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
+                            state["Q"], state["exp_avg"], state["exp_avg_sq"] = update_eigenbasis_and_momentum(
+                                kronecker_factor_list=state["GG"],
+                                eigenbasis_list=state.get("Q", None),
+                                exp_avg_sq=state["exp_avg_sq"],
+                                momentum=state["exp_avg"],
+                                use_eigh=use_eigh,
+                                power_iter_steps=self.power_iter_steps,
+                            )
                 torch.cuda.nvtx.range_pop()
 
                 self._apply_weight_decay_inplace(
@@ -469,8 +476,6 @@ def update_eigenbasis_and_momentum(
     exp_avg_sq: torch.Tensor,
     momentum: torch.Tensor,
     use_eigh: bool = False,
-    use_adaptive_criteria: bool = False,
-    adaptive_update_tolerance: float | None = None,
     power_iter_steps: int = 1,
 ) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
     """Updates the eigenbases using QR decomposition and power iteration or eigh.
@@ -493,9 +498,6 @@ def update_eigenbasis_and_momentum(
             This tensor is modified in-place.
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
             If False, use orthogonal iteration to compute the eigenbasis.
-        use_adaptive_criteria: Whether to use criteria to determine if eigenbasis update is needed
-        adaptive_update_tolerance: Tolerance threshold for the update criteria.
-            Only used if use_adaptive_criteria is True.
         power_iter_steps: Number of power iteration steps to perform before QR decomposition.
             More steps can lead to better convergence but increased computation time.
 
@@ -515,17 +517,6 @@ def update_eigenbasis_and_momentum(
         ...     [L, R], [QL, QR], exp_avg_sq, momentum)
 
     """
-    if use_adaptive_criteria and adaptive_update_tolerance is None:
-        raise TypeError("adaptive_update_tolerance must be provided if use_adaptive_criteria is True")
-
-    adaptive_update_tolerance: float  # Tell type checker it is float from now on
-    if (
-        use_adaptive_criteria
-        and eigenbasis_list is not None
-        and soap_utils.all_eigenbases_met_criteria(kronecker_factor_list, eigenbasis_list, adaptive_update_tolerance)
-    ):
-        return eigenbasis_list, momentum, exp_avg_sq
-
     # Step 1: Project momentum back to the original basis
     torch.cuda.nvtx.range_push("eigenbasis update step 1: precondition")
     momentum = precondition(
