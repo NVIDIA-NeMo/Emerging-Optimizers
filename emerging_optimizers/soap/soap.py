@@ -312,7 +312,7 @@ def init_kronecker_factors(
     it creates a square kronecker factor matrix for each dimension.
 
     Note:
-        The Kronecker factors are always intilizated to float32 as its accumulation and decomposition are not
+        The Kronecker factors are always initialized to float32 as its accumulation and decomposition are not
         safe in lower precisions.
 
     When precondition_1d is:
@@ -357,15 +357,15 @@ def init_kronecker_factors(
     if grad.dim() == 1:
         if not precondition_1d:
             # Skip preconditioning for 1D tensors
-            kronecker_factor_list.append(torch.empty(0, device=grad.device))
+            kronecker_factor_list.append(torch.empty(0, device=grad.device, dtype=torch.float32))
         else:
             # Create a square preconditioner matrix for 1D tensors
             size = grad.shape[0]
-            kronecker_factor_list.append(torch.zeros(size, size, device=grad.device))
+            kronecker_factor_list.append(torch.zeros(size, size, device=grad.device, dtype=torch.float32))
     else:
         # Create a square kronecker factor matrix for each dimension
         for size in grad.shape:
-            kronecker_factor_list.append(torch.zeros(size, size, device=grad.device))
+            kronecker_factor_list.append(torch.zeros(size, size, device=grad.device, dtype=torch.float32))
 
     return kronecker_factor_list
 
