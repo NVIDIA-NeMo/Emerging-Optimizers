@@ -136,7 +136,7 @@ jobs:
           merge-multiple: true
 
       - name: Publish Test Report
-        uses: EnricoMi/publish-unit-test-result-action@9129dc5f3805f2daa7c4c3a2e3e8e47dc5a8f51
+        uses: EnricoMi/publish-unit-test-result-action@v2
         with:
           files: "**/*.xml"
           fail_on: "nothing"
