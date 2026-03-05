@@ -115,12 +115,12 @@ def met_approx_eigvals_criteria(
         tolerance: Tolerance threshold for the normalized diagonal component of approximated eigenvalue matrix.
 
     Returns:
-        perform_update: Whether to update eigenbasis this iteration
+        Whether eigenbasis met criteria and don't need to be updated
     """
     matrix_norm = torch.linalg.norm(kronecker_factor)
     diagonal_norm = torch.linalg.norm(approx_eigvals)
 
-    return diagonal_norm >= (1 - tolerance) * matrix_norm
+    return diagonal_norm <= (1 - tolerance) * matrix_norm
 
 
 def orthogonal_iteration(

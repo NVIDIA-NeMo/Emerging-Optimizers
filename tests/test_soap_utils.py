@@ -176,6 +176,32 @@ class SoapUtilsTest(BaseTestCase):
                 msg=f"Matrix {i} was not properly diagonalized. Off-diagonal norm: {off_diagonal_norm}",
             )
 
+    def test_all_eigenbases_met_criteria_empty_list_returns_true(self) -> None:
+        kronecker_factor_list = []
+        eigenbasis_list = []
+        self.assertTrue(soap_utils.all_eigenbases_met_criteria(kronecker_factor_list, eigenbasis_list))
+
+    @parameterized.parameters(
+        {"N": 4},
+        {"N": 16},
+        {"N": 33},
+    )
+    def test_all_eigenbases_met_criteria_random_eigenbasis_returns_false(self, N: int) -> None:
+        kronecker_factor_list = [torch.randn(N, N, device=self.device)]
+        eigenbasis_list = [torch.randn(N, N, device=self.device)]
+        self.assertFalse(soap_utils.all_eigenbases_met_criteria(kronecker_factor_list, eigenbasis_list))
+
+    @parameterized.parameters(
+        {"N": 4},
+        {"N": 16},
+        {"N": 33},
+    )
+    def test_all_eigenbases_met_criteria_identity_true_eigenbasis_returns_true(self, N: int) -> None:
+        kronecker_factor_list = [torch.randn(N, N, device=self.device)]
+
+        eigenbasis_list = [torch.linalg.eigh(K).eigenvectors for K in kronecker_factor_list]
+        self.assertTrue(soap_utils.all_eigenbases_met_criteria(kronecker_factor_list, eigenbasis_list))
+
 
 if __name__ == "__main__":
     absltest.main()
