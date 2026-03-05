@@ -84,6 +84,7 @@ class SoapFunctionsTest(parameterized.TestCase):
     @classmethod
     def setUpClass(cls):
         torch.manual_seed(13)
+        cls.device = FLAGS.device
 
     def test_init_preconditioner_multidim_tensor_shapes(self) -> None:
         """Tests init_preconditioner with a multi-dimensional tensor."""
@@ -103,7 +104,7 @@ class SoapFunctionsTest(parameterized.TestCase):
     def test_adam_warmup_steps(self, adam_warmup_steps: int) -> None:
         """Tests that adam_warmup_steps causes state["Q"] to be None until the specified steps are completed."""
 
-        param = torch.randn(5, 3, requires_grad=True, device="cuda")
+        param = torch.randn(5, 3, requires_grad=True, device=self.device)
 
         optimizer = SOAP(
             [param],
@@ -214,12 +215,12 @@ class SoapFunctionsTest(parameterized.TestCase):
         orthonormal_matrix_list = [Q_L, Q_R]
 
         projected = soap.precondition(
-            grad=grad,
+            grad,
             eigenbasis_list=orthonormal_matrix_list,
             dims=[[0], [0]],
         )
         recov = soap.precondition(
-            grad=projected,
+            projected,
             eigenbasis_list=orthonormal_matrix_list,
             dims=[[0], [1]],
         )
@@ -282,9 +283,9 @@ class SoapFunctionsTest(parameterized.TestCase):
         """Test that _clip_update_rms works by clipping the update RMS to max_rms in place."""
         # test for 5 different u values
         u_s = [
-            torch.tensor([4.0, -1.0, 1.0, -1.0, 1.0], device="cuda"),
-            torch.tensor([0.2, 0.2, 0.2, 0.2, 0.0], device="cuda"),
-            torch.tensor([0.8, 0.0, 0.0, 0.0, 0.0], device="cuda"),
+            torch.tensor([4.0, -1.0, 1.0, -1.0, 1.0], device=self.device),
+            torch.tensor([0.2, 0.2, 0.2, 0.2, 0.0], device=self.device),
+            torch.tensor([0.8, 0.0, 0.0, 0.0, 0.0], device=self.device),
         ]
         for u in u_s:
             u_clipped = u.clone()
@@ -294,13 +295,75 @@ class SoapFunctionsTest(parameterized.TestCase):
             else:
                 self.assertTrue(torch.linalg.norm(u_clipped) / math.sqrt(u.numel()) <= max_rms)
 
+    @parameterized.product(  # type: ignore[misc]
+        M=[8, 16, 33],
+        N=[4, 8, 33],
+        use_eigh=[True, False],
+    )
+    def test_update_eigenbasis_and_momentum(self, M: int, N: int, use_eigh: bool) -> None:
+        """Tests that update_eigenbasis_and_momentum returns valid outputs.
+
+        Verifies output shapes, eigenbasis orthogonality, and that the round-trip
+        projection (original → eigenbasis → original → new eigenbasis) preserves the
+        norm of momentum.
+        """
+        # Create symmetric positive definite kronecker factors
+        g = torch.randn(M, N, device=self.device)
+        L = g @ g.T
+        R = g.T @ g
+        kronecker_factor_list = [L, R]
+
+        # Create orthonormal eigenbasis matrices
+        Q_L = torch.linalg.qr(torch.randn(M, M, device=self.device)).Q
+        Q_R = torch.linalg.qr(torch.randn(N, N, device=self.device)).Q
+        eigenbasis_list = [Q_L, Q_R]
+
+        exp_avg_sq = torch.abs(torch.randn(M, N, device=self.device))
+        momentum = torch.randn(M, N, device=self.device)
+        momentum_norm_before = torch.linalg.norm(momentum)
+
+        updated_eigenbasis_list, updated_momentum, updated_exp_avg_sq = soap.update_eigenbasis_and_momentum(
+            kronecker_factor_list=kronecker_factor_list,
+            eigenbasis_list=eigenbasis_list,
+            exp_avg_sq=exp_avg_sq,
+            momentum=momentum,
+            use_eigh=use_eigh,
+        )
+
+        # Check output shapes
+        self.assertEqual(len(updated_eigenbasis_list), 2)
+        self.assertEqual(updated_eigenbasis_list[0].shape, (M, M))
+        self.assertEqual(updated_eigenbasis_list[1].shape, (N, N))
+        self.assertEqual(updated_momentum.shape, (M, N))
+        self.assertEqual(updated_exp_avg_sq.shape, (M, N))
+
+        # Check eigenbasis orthogonality
+        for Q in updated_eigenbasis_list:
+            identity = torch.eye(Q.shape[0], device=Q.device, dtype=Q.dtype)
+            torch.testing.assert_close(
+                Q.T @ Q,
+                identity,
+                atol=1e-5,
+                rtol=1e-5,
+                msg="Updated eigenbasis is not orthogonal.",
+            )
+
+        # Momentum is projected via orthogonal transforms, so norm should be preserved
+        torch.testing.assert_close(
+            torch.linalg.norm(updated_momentum),
+            momentum_norm_before,
+            atol=1e-5,
+            rtol=1e-5,
+            msg="Momentum norm not preserved after eigenbasis update.",
+        )
+
     @parameterized.parameters(
         (4, 5),
         (3, 3),
         (5, 4),
     )
     def test_kl_shampoo_update(self, m, n):
-        rand_exp_fn = partial(torch.randint, low=-4, high=-1, dtype=torch.float32, device="cuda")
+        rand_exp_fn = partial(torch.randint, low=-4, high=-1, dtype=torch.float32, device=self.device)
         kronecker_factor_list = [
             2 ** rand_exp_fn(size=(m, m)),
             2 ** rand_exp_fn(size=(n, n)),
@@ -326,7 +389,7 @@ class SoapFunctionsTest(parameterized.TestCase):
 class SoapTest(parameterized.TestCase):
     @classmethod
     def setUpClass(cls):
-        torch.manual_seed(15)
+        cls.device = FLAGS.device
 
     def setUp(self):
         self.default_config = {
@@ -344,7 +407,7 @@ class SoapTest(parameterized.TestCase):
         }
 
     def test_10steps_smoke(self):
-        param = torch.randn(5, 3, requires_grad=True, device="cuda")
+        param = torch.randn(5, 3, requires_grad=True, device=self.device)
         optimizer = SOAP(
             [param],
             **self.default_config,
@@ -356,7 +419,7 @@ class SoapTest(parameterized.TestCase):
             param.grad = None
 
     def test_with_kl_shampoo_10steps_smoke(self):
-        param = torch.randn(5, 3, requires_grad=True, device="cuda")
+        param = torch.randn(5, 3, requires_grad=True, device=self.device)
         optimizer = SOAP(
             [param],
             **self.default_config,
@@ -369,10 +432,39 @@ class SoapTest(parameterized.TestCase):
             param.grad = None
 
     def test_rekls_5steps_smoke(self):
-        param = torch.randn(5, 3, requires_grad=True, device="cuda")
+        param = torch.randn(5, 3, requires_grad=True, device=self.device)
         optimizer = REKLS(
             [param],
             lr=self.default_config["lr"],
+        )
+
+        for _ in range(5):
+            param.grad = torch.randn_like(param)
+            optimizer.step()
+            param.grad = None
+
+    @parameterized.parameters(  # type: ignore[misc]
+        {"use_eigh": True},
+        {"use_eigh": False},
+    )
+    def test_use_adaptive_criteria_10steps_smoke(self, use_eigh: bool):
+        param = torch.randn(5, 3, requires_grad=True, device=self.device)
+        optimizer = SOAP(
+            [param],
+            **{**self.default_config, "use_adaptive_criteria": True},
+            use_eigh=use_eigh,
+        )
+
+        for _ in range(10):
+            param.grad = torch.randn_like(param)
+            optimizer.step()
+            param.grad = None
+
+    def test_bfloat16_5steps_smoke(self):
+        param = torch.randn(5, 3, requires_grad=True, device=self.device, dtype=torch.bfloat16)
+        optimizer = SOAP(
+            [param],
+            **self.default_config,
         )
 
         for _ in range(5):
@@ -387,6 +479,9 @@ class SoapVsReferenceTest(parameterized.TestCase):
     @classmethod
     def setUpClass(cls):
         torch.manual_seed(17)
+        if FLAGS.device == "cpu":
+            cls.skipTest(cls, "SoapVsReferenceTest requires GPU")
+        cls.device = FLAGS.device
 
     @parameterized.product(
         shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
@@ -399,7 +494,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
     ):
         """Test that SOAP optimizer matches reference implementation for basic config."""
         # Create two identical parameters
-        param_test = torch.randint(-2, 3, shape, dtype=torch.float32, device="cuda")
+        param_test = torch.randint(-2, 3, shape, dtype=torch.float32, device=self.device)
         param_ref = param_test.clone()
 
         # NOTE: eps is smaller than usual because reference implementation of Soap applies eps differently than
@@ -457,7 +552,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
         precondition_frequency=[1, 2, 5],
     )
     def test_eigenbasis_matches_reference(self, shape: tuple, num_steps: int, precondition_frequency: int):
-        param_soap = torch.randint(-2, 3, shape, dtype=torch.float32, device="cuda")
+        param_soap = torch.randint(-2, 3, shape, dtype=torch.float32, device=self.device)
         param_ref = param_soap.clone()
 
         # Disable parameter updates, only test kronecker factors and eigenbases

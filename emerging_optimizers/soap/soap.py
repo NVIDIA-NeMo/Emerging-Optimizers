@@ -154,7 +154,9 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 if p.grad is None:
                     continue
 
-                grad = p.grad
+                # Cast grad to float32 here if it is not already in float32 because Kronecker factors need to be
+                # in float32 for accumulation and decomposition.
+                grad = p.grad.to(torch.float32)
                 state = self.state[p]
 
                 if "step" not in state:
@@ -225,17 +227,24 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     # Always use eigh for the first eigenbasis update
                     use_eigh = self.use_eigh if state["step"] != self.adam_warmup_steps else True
 
-                    with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
-                        state["Q"], state["exp_avg"], state["exp_avg_sq"] = update_eigenbasis_and_momentum(
-                            kronecker_factor_list=state["GG"],
-                            eigenbasis_list=state.get("Q", None),
-                            exp_avg_sq=state["exp_avg_sq"],
-                            momentum=state["exp_avg"],
-                            use_eigh=use_eigh,
-                            use_adaptive_criteria=self.use_adaptive_criteria,
-                            adaptive_update_tolerance=self.adaptive_update_tolerance,
-                            power_iter_steps=self.power_iter_steps,
+                    # Skip eigenbasis update if use_adaptive_criteria is True and all eigenbases meet the criteria
+                    skip_update = (
+                        self.use_adaptive_criteria
+                        and "Q" in state
+                        and soap_utils.all_eigenbases_met_criteria(
+                            state["GG"], state["Q"], self.adaptive_update_tolerance
                         )
+                    )
+                    if not skip_update:
+                        with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
+                            state["Q"], state["exp_avg"], state["exp_avg_sq"] = update_eigenbasis_and_momentum(
+                                kronecker_factor_list=state["GG"],
+                                eigenbasis_list=state.get("Q", None),
+                                exp_avg_sq=state["exp_avg_sq"],
+                                momentum=state["exp_avg"],
+                                use_eigh=use_eigh,
+                                power_iter_steps=self.power_iter_steps,
+                            )
                 torch.cuda.nvtx.range_pop()
 
                 self._apply_weight_decay_inplace(
@@ -251,7 +260,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 if state["step"] >= self.adam_warmup_steps:
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         grad_projected = precondition(
-                            grad=grad,
+                            grad,
                             eigenbasis_list=state["Q"],
                             dims=[[0], [0]],
                         )
@@ -274,7 +283,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 if state["step"] >= self.adam_warmup_steps:
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         precond_update = precondition(
-                            grad=adam_update,
+                            adam_update,
                             eigenbasis_list=state.get("Q", None),
                             dims=[[0], [1]],
                         )
@@ -301,6 +310,10 @@ def init_kronecker_factors(
     preconditioning. For 1D tensors (like biases), it can either skip preconditioning
     or create a single square kronecker factor matrix. For higher dimensional tensors,
     it creates a square kronecker factor matrix for each dimension.
+
+    Note:
+        The Kronecker factors are always initialized to float32 (unless default precision is set otherwise) as its
+        accumulation and decomposition are not safe in lower precisions.
 
     When precondition_1d is:
         * False (default):
@@ -463,10 +476,7 @@ def update_eigenbasis_and_momentum(
     exp_avg_sq: torch.Tensor,
     momentum: torch.Tensor,
     use_eigh: bool = False,
-    use_adaptive_criteria: bool = False,
-    adaptive_update_tolerance: float | None = None,
     power_iter_steps: int = 1,
-    force_float: bool = True,
 ) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
     """Updates the eigenbases using QR decomposition and power iteration or eigh.
 
@@ -488,13 +498,8 @@ def update_eigenbasis_and_momentum(
             This tensor is modified in-place.
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
             If False, use orthogonal iteration to compute the eigenbasis.
-        use_adaptive_criteria: Whether to use criteria to determine if eigenbasis update is needed
-        adaptive_update_tolerance: Tolerance threshold for the update criteria.
-            Only used if use_adaptive_criteria is True.
         power_iter_steps: Number of power iteration steps to perform before QR decomposition.
             More steps can lead to better convergence but increased computation time.
-        force_float: Whether to convert the preconditioner matrices and their corresponding
-            orthonormal matrices to float for amortized computation. Otherwise, they are left in their original type.
 
     Returns:
         A tuple containing:
@@ -517,7 +522,7 @@ def update_eigenbasis_and_momentum(
     momentum = precondition(
         momentum,
         eigenbasis_list,
-        dims=[[0], [1]],  # Project back to original space
+        dims=[[0], [1]],
     )
     torch.cuda.nvtx.range_pop()
 
@@ -526,10 +531,6 @@ def update_eigenbasis_and_momentum(
     if use_eigh:
         updated_eigenbasis_list = soap_utils.get_eigenbasis_eigh(
             kronecker_factor_list,
-            force_float,
-            eigenbasis_list,
-            use_adaptive_criteria,
-            adaptive_update_tolerance,
         )
     else:
         # Use QR decomposition and power iteration (orthogonal iteration)
@@ -537,9 +538,6 @@ def update_eigenbasis_and_momentum(
             kronecker_factor_list,
             eigenbasis_list,
             exp_avg_sq,
-            force_float,
-            use_adaptive_criteria,
-            adaptive_update_tolerance,
             power_iter_steps,
         )
     torch.cuda.nvtx.range_pop()
@@ -548,8 +546,8 @@ def update_eigenbasis_and_momentum(
     torch.cuda.nvtx.range_push("eigenbasis update step 3: project momentum")
     momentum = precondition(
         momentum,
-        updated_eigenbasis_list,  # Use the new eigenbases
-        dims=[[0], [0]],  # Project to new eigenbasis
+        updated_eigenbasis_list,
+        dims=[[0], [0]],
     )
     torch.cuda.nvtx.range_pop()
 
@@ -559,7 +557,7 @@ def update_eigenbasis_and_momentum(
 @torch.no_grad()  # type: ignore[misc]
 @torch.compile  # type: ignore[misc]
 def precondition(
-    grad: torch.Tensor,
+    x: torch.Tensor,
     eigenbasis_list: list[torch.Tensor] | None = None,
     dims: list[list[int]] | None = None,
 ) -> torch.Tensor:
@@ -570,7 +568,7 @@ def precondition(
 
 
     Args:
-        grad: Input tensor to be preconditioned
+        x: Input tensor to be preconditioned
         eigenbasis_list: List of eigenbases for preconditioning.
             Each matrix should be a square matrix of eigenvectors.
         dims: Dimensions for tensor contraction. Default is [[0], [0]] which contracts
@@ -578,9 +576,9 @@ def precondition(
             for projecting into the eigenbasis. Use [[0], [1]] for projecting back to original space.
 
     Example:
-        >>> grad = torch.randn(10, 20)
+        >>> x = torch.randn(10, 20)
         >>> Q = torch.randn(10, 10)
-        >>> precondition(grad, [Q], dims=[[0], [0]])
+        >>> precondition(x, [Q], dims=[[0], [0]])
     """
     if dims is None:
         # Pick contraction dims to project to the eigenbasis
@@ -588,13 +586,12 @@ def precondition(
 
     if eigenbasis_list is None:
         # If eigenbases are not provided, return the gradient without any preconditioning
-        return grad
+        return x
 
     for Q in eigenbasis_list:
         if Q.numel() > 0:
-            # Perform in-place contraction
-            grad = torch.tensordot(
-                grad,
+            x = torch.tensordot(
+                x,
                 Q,
                 dims=dims,
             )
@@ -602,10 +599,10 @@ def precondition(
             # Permute gradient dimensions to process the next dimension in the following iteration
             # when preconditioning for the current dimension is skipped (Q is empty), in the case of
             # one-sided preconditioning.
-            permute_order = list(range(1, grad.dim())) + [0]
-            grad = grad.permute(permute_order)
+            permute_order = list(range(1, x.dim())) + [0]
+            x = x.permute(permute_order)
 
-    return grad
+    return x
 
 
 def _is_eigenbasis_update_step(
