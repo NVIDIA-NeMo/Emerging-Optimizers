@@ -13,10 +13,19 @@
 # limitations under the License.
 export TORCH_COMPILE_DISABLE=1
 
+mkdir -p test-results/tests/
+
 error=0
-torchrun --nproc_per_node=8 --no-python coverage run -p tests/test_distributed_muon_utils_cpu.py  -v -2  || error=1
-torchrun --nproc_per_node=4 --no-python coverage run -p tests/test_distributed_muon_utils_cpu.py  -v -2 || error=1
-coverage run -p --source=emerging_optimizers tests/test_scalar_optimizers.py --device=cpu  -v -2 || error=1
-coverage run -p --source=emerging_optimizers tests/test_procrustes_step.py --device=cpu  -v -2 || error=1
+for n in 8 4; do
+    torchrun --nproc_per_node=$n --no-python coverage run -p \
+        tests/test_distributed_muon_utils_cpu.py \
+        --xml_output_file="test-results/tests/test_distributed_muon_utils_cpu_n${n}.xml" \
+        -v -2  || error=1
+done
+
+for test in "tests/test_scalar_optimizers.py" "tests/test_procrustes_step.py"; do
+    report_name="test-results/${test}.xml"
+    coverage run -p --source=emerging_optimizers $test --device=cpu  -v -2 --xml_output_file="$report_name" || error=1
+done
 
 exit "${error}"
