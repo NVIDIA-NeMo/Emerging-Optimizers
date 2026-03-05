@@ -15,20 +15,28 @@ export TORCH_COMPILE_DISABLE=1
 export CUDA_VISIBLE_DEVICES=0
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 
+
+mkdir -p test-results/tests/convergence
+
 error=0
 for test in `find tests -type f -name 'test_*' ! -name '*_cpu.py'`; do
     echo "Running $test with random seed"
-    coverage run -p --source=emerging_optimizers $test --device=cuda -v -2 || error=1
+    report_name="test-results/${test}.xml"
+    coverage run -p --source=emerging_optimizers $test --device=cuda -v -2 --xml_output_file="$report_name" || error=1
 done
 
+fix_seed=42
 for test in `find tests -type f -name 'test_*' ! -name '*_cpu.py'`; do
-    echo "Running $test with fixed seed"
-    coverage run -p --source=emerging_optimizers $test --device=cuda --seed=42 -v -2 || error=1
+    echo "Running $test with fixed seed $fix_seed"
+    report_name="test-results/${test}_seed${fix_seed}.xml"
+    coverage run -p --source=emerging_optimizers $test --device=cuda --seed="$fix_seed" -v -2 --xml_output_file="$report_name" || error=1
 done
 
 for test in `find tests/convergence -type f -name '*_test.py'`; do
     echo "Running $test with fixed seed"
-    coverage run -p --source=emerging_optimizers $test --device=cuda --seed=42 -v -2 || error=1
+    report_name="test-results/${test}_seed${fix_seed}.xml"
+    coverage run -p --source=emerging_optimizers $test --device=cuda --seed="$fix_seed" -v -2 --xml_output_file="$report_name" || error=1
 done
+
 
 exit "${error}"
