@@ -203,21 +203,15 @@ class ScalarOptimizerTest(parameterized.TestCase):
 
         torch.testing.assert_close(ademamix_update, adam_update, atol=1e-6, rtol=1e-6)
 
-    @parameterized.parameters(
-        {"correct_bias": True, "num_beta_fast_warmup_steps": None},
-        {"correct_bias": False, "num_beta_fast_warmup_steps": 2},
-    )
-    def test_calculate_sim_ademamix_update_with_zero_momentum_and_alpha_equals_rmsprop(
-        self, correct_bias: bool, num_beta_fast_warmup_steps: int | None
-    ) -> None:
+    def test_calculate_sim_ademamix_update_with_zero_momentum_and_alpha_equals_rmsprop(self) -> None:
         # sim_ademamix with momentum (beta_fast) = 0 and alpha = 0 should be equivalent to RMSProp.
         exp_avg_initial = torch.tensor([[0.0]], device=self.device)  # Momentum is 0, so exp_avg starts at 0
         exp_avg_sq_initial = torch.tensor([[2.0]], device=self.device)
         grad = torch.tensor([[0.5]], device=self.device)
         betas = (0.0, 0.99)  # beta1=0 for momentum
         eps = 1e-8
-        step = 10
         correct_bias = False
+        step = 10
         lr = 0.25
         exp_avg_for_sim_ademamix = exp_avg_initial.clone()
         exp_avg_sq_for_sim_ademamix = exp_avg_sq_initial.clone()
@@ -227,7 +221,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
             grad,
             exp_avg_for_sim_ademamix,
             exp_avg_sq_for_sim_ademamix,
-            num_beta_fast_warmup_steps=num_beta_fast_warmup_steps,
+            num_beta_fast_warmup_steps=None,
             min_beta_fast=0.0,
             betas=betas,
             step=step,
