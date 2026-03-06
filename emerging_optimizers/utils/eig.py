@@ -115,12 +115,12 @@ def met_approx_eigvals_criteria(
         tolerance: Tolerance threshold for the normalized diagonal component of approximated eigenvalue matrix.
 
     Returns:
-        perform_update: Whether to update eigenbasis this iteration
+        Whether eigenbasis meet criteria and don't need to be updated
     """
     matrix_norm = torch.linalg.norm(kronecker_factor)
     diagonal_norm = torch.linalg.norm(approx_eigvals)
 
-    return diagonal_norm >= (1 - tolerance) * matrix_norm
+    return tolerance * matrix_norm >= (matrix_norm - diagonal_norm)
 
 
 def orthogonal_iteration(
@@ -137,7 +137,7 @@ def orthogonal_iteration(
     to recompute the eigenbases of the preconditioner kronecker factor. Generalizes Vyas et al.'s (SOAP) algorithm of 1 step of power iteration for updating the eigenbasis.
 
     Args:
-        approx_eigenvalue_matrix : Projection of kronecker factor onto the eigenbasis, should be close to diagonal
+        approx_eigvals : Projection of kronecker factor onto the eigenbasis, should be close to diagonal
         kronecker_factor : Kronecker factor matrix.
         eigenbasis : Kronecker factor eigenbasis matrix.
         ind : Index for selecting dimension in the exp_avg_sq matrix to apply the sorting order over.

@@ -153,7 +153,13 @@ class ScalarOptimizerTest(parameterized.TestCase):
         expected_param_val_after_step = initial_param_val_tensor - lr * laprop_update
         torch.testing.assert_close(param.data, expected_param_val_after_step, atol=1e-6, rtol=1e-6)
 
-    def test_calculate_ademamix_update_with_alpha_zero_equals_adam(self) -> None:
+    @parameterized.parameters(
+        {"correct_bias": True, "num_beta_slow_warmup_steps": None},
+        {"correct_bias": False, "num_beta_slow_warmup_steps": 2},
+    )
+    def test_calculate_ademamix_update_with_alpha_zero_equals_adam(
+        self, correct_bias: bool, num_beta_slow_warmup_steps: int | None
+    ) -> None:
         # AdEMAMix with alpha=0 and no beta scheduling should be equivalent to Adam.
         exp_avg_fast_initial = torch.tensor([[1.0]], device=self.device)
         exp_avg_slow_initial = torch.tensor([[1.0]], device=self.device)
@@ -162,7 +168,6 @@ class ScalarOptimizerTest(parameterized.TestCase):
         betas = (0.9, 0.99, 0.999)
         eps = 1e-8
         step = 10
-        correct_bias_manual = True
 
         # Calculate AdEMAMix update
         exp_avg_fast_for_ademamix = exp_avg_fast_initial.clone()
@@ -173,12 +178,12 @@ class ScalarOptimizerTest(parameterized.TestCase):
             exp_avg_fast_for_ademamix,
             exp_avg_slow_for_ademamix,
             exp_avg_sq_for_ademamix,
-            num_beta_slow_warmup_steps=None,
+            num_beta_slow_warmup_steps=num_beta_slow_warmup_steps,
             num_alpha_warmup_steps=None,
             betas=betas,
             step=step,
             eps=eps,
-            correct_bias=correct_bias_manual,
+            correct_bias=correct_bias,
             alpha=0.0,
         )
 
@@ -190,7 +195,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
             exp_avg_for_adam,
             exp_avg_sq_for_adam,
             (betas[0], betas[1]),
-            correct_bias=correct_bias_manual,
+            correct_bias=correct_bias,
             use_nesterov=False,
             step=step,
             eps=eps,
@@ -205,8 +210,8 @@ class ScalarOptimizerTest(parameterized.TestCase):
         grad = torch.tensor([[0.5]], device=self.device)
         betas = (0.0, 0.99)  # beta1=0 for momentum
         eps = 1e-8
-        step = 10
         correct_bias = False
+        step = 10
         lr = 0.25
         exp_avg_for_sim_ademamix = exp_avg_initial.clone()
         exp_avg_sq_for_sim_ademamix = exp_avg_sq_initial.clone()
@@ -237,7 +242,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
             eps=eps,
             weight_decay=0,
             momentum=0,
-            centered=False,
+            centered=correct_bias,
         )
 
         # Manually set RMSProp's internal state
@@ -292,6 +297,41 @@ class ScalarOptimizerTest(parameterized.TestCase):
         ).abs()
         expected_update = torch.sign(exp_avg).abs() * (2 / (shape[0] + shape[1]))
         torch.testing.assert_close(update_abs, expected_update, atol=0, rtol=0)
+
+    def test_calculate_lion_update_returns_sign(self) -> None:
+        """Tests that Lion update returns sign of interpolated momentum."""
+        shape = (8, 12)
+        momentum_beta = 0.9
+        grad = torch.randn(shape, device=self.device)
+        exp_avg = torch.randn(shape, device=self.device)
+        exp_avg_clone = exp_avg.clone()
+
+        update = scalar_optimizers.calculate_lion_update(grad, exp_avg, momentum_beta=momentum_beta)
+
+        # Update should be sign(beta * m + (1 - beta) * g)
+        expected_update = torch.sign(momentum_beta * exp_avg_clone + (1 - momentum_beta) * grad)
+        torch.testing.assert_close(update, expected_update, atol=0, rtol=0)
+
+        # exp_avg should be updated in-place: lerp_(grad, 1 - beta)
+        expected_exp_avg = torch.lerp(exp_avg_clone, grad, 1 - momentum_beta)
+        torch.testing.assert_close(exp_avg, expected_exp_avg, atol=1e-6, rtol=1e-6)
+
+    def test_calculate_lion_update_with_separate_betas(self) -> None:
+        """Tests Lion with different beta1 and beta2."""
+        shape = (4, 6)
+        beta1, beta2 = 0.9, 0.99
+        grad = torch.randn(shape, device=self.device)
+        exp_avg = torch.randn(shape, device=self.device)
+        exp_avg_clone = exp_avg.clone()
+
+        update = scalar_optimizers.calculate_lion_update(grad, exp_avg, momentum_beta=beta1, momentum_beta2=beta2)
+
+        expected_update = torch.sign(beta1 * exp_avg_clone + (1 - beta1) * grad)
+        torch.testing.assert_close(update, expected_update, atol=0, rtol=0)
+
+        # With separate beta2, momentum uses beta2
+        expected_exp_avg = torch.lerp(exp_avg_clone, grad, 1 - beta2)
+        torch.testing.assert_close(exp_avg, expected_exp_avg, atol=1e-6, rtol=1e-6)
 
 
 if __name__ == "__main__":

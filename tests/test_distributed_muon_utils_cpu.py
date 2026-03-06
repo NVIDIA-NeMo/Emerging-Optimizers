@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import sys
 
 import numpy as np
 import torch
@@ -211,6 +212,17 @@ class TestTensorParallelNewtonSchulz(parameterized.TestCase):
 if __name__ == "__main__":
     torch.distributed.init_process_group(backend="gloo")
     torch.set_float32_matmul_precision("highest")
+
+    rank = torch.distributed.get_rank()
+
+    for i, arg in enumerate(sys.argv):
+        if arg.startswith("--xml_output_file="):
+            base, ext = os.path.splitext(arg)
+
+            # Attach rank to the output file name
+            sys.argv[i] = f"{base}_rank{rank}{ext}"
+            break
+
     absltest.main()
 
     torch.distributed.destroy_process_group()
