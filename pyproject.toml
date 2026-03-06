@@ -184,5 +184,6 @@ exclude_also = [
     "if closure",
     "loss = closure",
     "raise .*Error",
+    "@abstractmethod",
 ]
 

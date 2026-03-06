@@ -22,6 +22,11 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.soap import REKLS, SOAP, soap
+from emerging_optimizers.soap.soap import (
+    _clip_update_rms_in_place,
+    _is_eigenbasis_update_step,
+)
+from emerging_optimizers.utils import precondition_schedules
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -35,13 +40,6 @@ def setUpModule() -> None:
         torch.manual_seed(FLAGS.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(FLAGS.seed)
-
-
-from emerging_optimizers.soap.soap import (
-    _clip_update_rms_in_place,
-    _is_eigenbasis_update_step,
-)
-from emerging_optimizers.utils.precondition_schedules import LinearSchedule
 
 
 def kl_shampoo_update_ref(
@@ -254,26 +252,6 @@ class SoapFunctionsTest(parameterized.TestCase):
         optimizer = SOAP([param], lr=1e-3, precondition_frequency=10)
         self.assertEqual(optimizer.precondition_frequency, 10)
 
-    def test_soap_optimizer_class_based_schedule(self) -> None:
-        """Test that SOAP optimizer can be created with class-based precondition frequency schedule."""
-        param = torch.randn(10, 5, requires_grad=True)
-        schedule = LinearSchedule(min_freq=2, max_freq=10, transition_steps=100)
-        optimizer = SOAP([param], lr=1e-3, precondition_frequency=schedule)
-        self.assertTrue(optimizer.precondition_frequency == schedule)
-
-        self.assertEqual(schedule(0), 2)
-        self.assertEqual(schedule(50), 6)
-        self.assertEqual(schedule(100), 10)
-
-        adam_warmup = 1
-
-        self.assertTrue(_is_eigenbasis_update_step(10, adam_warmup, schedule))
-        self.assertFalse(_is_eigenbasis_update_step(11, adam_warmup, schedule))
-        self.assertTrue(_is_eigenbasis_update_step(60, adam_warmup, schedule))
-        self.assertFalse(_is_eigenbasis_update_step(61, adam_warmup, schedule))
-        self.assertTrue(_is_eigenbasis_update_step(120, adam_warmup, schedule))
-        self.assertFalse(_is_eigenbasis_update_step(121, adam_warmup, schedule))
-
     @parameterized.parameters(
         (1.0,),
         (0.0,),
@@ -384,6 +362,83 @@ class SoapFunctionsTest(parameterized.TestCase):
 
         torch.testing.assert_close(kronecker_factor_list[0], kronecker_factor_list_ref[0], atol=1e-6, rtol=1e-6)
         torch.testing.assert_close(kronecker_factor_list[1], kronecker_factor_list_ref[1], atol=1e-6, rtol=1e-6)
+
+
+class ScheduleTest(parameterized.TestCase):
+    def test_soap_optimizer_class_with_linear_schedule(self) -> None:
+        """Test that SOAP optimizer can be created with class-based precondition frequency schedule."""
+        param = torch.randn(10, 5, requires_grad=True)
+        schedule = precondition_schedules.LinearSchedule(min_freq=2, max_freq=10, transition_steps=100)
+        optimizer = SOAP([param], lr=1e-3, precondition_frequency=schedule)
+        self.assertTrue(optimizer.precondition_frequency == schedule)
+
+        self.assertEqual(schedule(0), 2)
+        self.assertEqual(schedule(50), 6)
+        self.assertEqual(schedule(100), 10)
+
+        adam_warmup = 1
+
+        self.assertTrue(_is_eigenbasis_update_step(10, adam_warmup, schedule))
+        self.assertFalse(_is_eigenbasis_update_step(11, adam_warmup, schedule))
+        self.assertTrue(_is_eigenbasis_update_step(60, adam_warmup, schedule))
+        self.assertFalse(_is_eigenbasis_update_step(61, adam_warmup, schedule))
+        self.assertTrue(_is_eigenbasis_update_step(120, adam_warmup, schedule))
+        self.assertFalse(_is_eigenbasis_update_step(121, adam_warmup, schedule))
+
+        self.assertFalse(_is_eigenbasis_update_step(2, 10, schedule))
+
+    def test_cosine_schedule(self) -> None:
+        schedule = precondition_schedules.CosineSchedule(min_freq=1, max_freq=50, transition_steps=100)
+
+        # At step 0 (start of cosine), progress=1.0 so freq = max - (max-min)*1 = min
+        self.assertEqual(schedule(0), 1)
+
+        # At midpoint, progress=0.5 so freq = max - (max-min)*0.5 = max/2
+        self.assertEqual(schedule(50), 25)
+
+        # At full period, wraps back: progress=1.0 so freq = min
+        self.assertEqual(schedule(100), 1)
+
+        # Before start_step returns min_freq
+        schedule_delayed = precondition_schedules.CosineSchedule(
+            min_freq=5, max_freq=50, transition_steps=100, start_step=10
+        )
+        self.assertEqual(schedule_delayed(5), 5)
+
+        # Negative step raises
+        with self.assertRaises(ValueError):
+            schedule(-1)
+
+        # Invalid init raises
+        with self.assertRaises(ValueError):
+            precondition_schedules.CosineSchedule(min_freq=1, max_freq=50, transition_steps=0)
+
+    def test_step_schedule(self) -> None:
+        schedule = precondition_schedules.StepSchedule({0: 1, 100: 5, 500: 20})
+
+        self.assertEqual(schedule(0), 1)
+        self.assertEqual(schedule(50), 1)
+        self.assertEqual(schedule(100), 5)
+        self.assertEqual(schedule(250), 5)
+        self.assertEqual(schedule(500), 20)
+        self.assertEqual(schedule(10000), 20)
+
+        # Before start_step returns min_freq
+        schedule_delayed = precondition_schedules.StepSchedule({0: 2, 100: 10}, start_step=50)
+        self.assertEqual(schedule_delayed(25), 2)
+        self.assertEqual(schedule_delayed(100), 10)
+
+        # Empty dict raises
+        with self.assertRaises(ValueError):
+            precondition_schedules.StepSchedule({})
+
+        # Invalid frequency raises
+        with self.assertRaises(ValueError):
+            precondition_schedules.StepSchedule({0: 0})
+
+        # Negative step key raises
+        with self.assertRaises(ValueError):
+            precondition_schedules.StepSchedule({-1: 5})
 
 
 class SoapTest(parameterized.TestCase):
