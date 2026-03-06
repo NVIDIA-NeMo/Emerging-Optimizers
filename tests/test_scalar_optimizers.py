@@ -178,7 +178,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
             exp_avg_fast_for_ademamix,
             exp_avg_slow_for_ademamix,
             exp_avg_sq_for_ademamix,
-            num_beta_slow_warmup_steps=num_beta_fast_warmup_steps,
+            num_beta_slow_warmup_steps=num_beta_slow_warmup_steps,
             num_alpha_warmup_steps=None,
             betas=betas,
             step=step,
