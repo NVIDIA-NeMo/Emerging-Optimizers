@@ -154,11 +154,11 @@ class ScalarOptimizerTest(parameterized.TestCase):
         torch.testing.assert_close(param.data, expected_param_val_after_step, atol=1e-6, rtol=1e-6)
 
     @parameterized.parameters(
-        {"correct_bias": True, "num_beta_fast_warmup_steps": None},
-        {"correct_bias": False, "num_beta_fast_warmup_steps": 2},
+        {"correct_bias": True, "num_beta_slow_warmup_steps": None},
+        {"correct_bias": False, "num_beta_slow_warmup_steps": 2},
     )
     def test_calculate_ademamix_update_with_alpha_zero_equals_adam(
-        self, correct_bias: bool, num_beta_fast_warmup_steps: int | None
+        self, correct_bias: bool, num_beta_slow_warmup_steps: int | None
     ) -> None:
         # AdEMAMix with alpha=0 and no beta scheduling should be equivalent to Adam.
         exp_avg_fast_initial = torch.tensor([[1.0]], device=self.device)
