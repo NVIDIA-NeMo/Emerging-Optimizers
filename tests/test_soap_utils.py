@@ -134,7 +134,7 @@ class SoapUtilsTest(BaseTestCase):
         kronecker_factor_list = []
         for dim in dims:
             if dim == 0:
-                kronecker_factor_list.append(torch.empty(0))
+                kronecker_factor_list.append(torch.empty(0, 0))
                 continue
 
             k_factor = torch.randn(dim, dim, device=self.device)
@@ -148,7 +148,7 @@ class SoapUtilsTest(BaseTestCase):
         for i, Q in enumerate(Q_list):
             orig_dim = dims[i]
             if orig_dim == 0:
-                self.assertEqual(Q.shape, (0,))
+                self.assertEqual(Q.shape, (0, 0))
                 continue
 
             self.assertEqual(Q.shape, (orig_dim, orig_dim))
