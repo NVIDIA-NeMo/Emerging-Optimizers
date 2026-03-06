@@ -198,7 +198,7 @@ class SoapUtilsTest(BaseTestCase):
     )
     def test_all_eigenbases_met_criteria_true_eigenbasis_returns_true(self, N: int) -> None:
         g = torch.randn(N, N, device=self.device)
-        K_sym = g @ g.T + torch.eye(N, device=self.device) * 1e-5  # symmetric PSD
+        K_sym = g @ g.T
         kronecker_factor_list = [K_sym]
 
         eigenbasis_list = [torch.linalg.eigh(K_sym).eigenvectors]
