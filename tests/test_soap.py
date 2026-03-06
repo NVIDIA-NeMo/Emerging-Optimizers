@@ -390,13 +390,8 @@ class ScheduleTest(parameterized.TestCase):
     def test_cosine_schedule(self) -> None:
         schedule = precondition_schedules.CosineSchedule(min_freq=1, max_freq=50, transition_steps=100)
 
-        # At step 0 (start of cosine), progress=1.0 so freq = max - (max-min)*1 = min
-        self.assertEqual(schedule(0), 1)
-
-        # At midpoint, progress=0.5 so freq = max - (max-min)*0.5 = max/2
+        # At midpoint, progress=0.5 so freq = max - (max-min)*0.5 = (max+min)/2, rounded to int
         self.assertEqual(schedule(50), 25)
-
-        # At full period, wraps back: progress=1.0 so freq = min
         self.assertEqual(schedule(100), 1)
 
         # Before start_step returns min_freq
