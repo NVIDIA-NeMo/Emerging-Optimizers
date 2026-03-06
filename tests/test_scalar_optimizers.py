@@ -305,6 +305,41 @@ class ScalarOptimizerTest(parameterized.TestCase):
         expected_update = torch.sign(exp_avg).abs() * (2 / (shape[0] + shape[1]))
         torch.testing.assert_close(update_abs, expected_update, atol=0, rtol=0)
 
+    def test_calculate_lion_update_returns_sign(self) -> None:
+        """Tests that Lion update returns sign of interpolated momentum."""
+        shape = (8, 12)
+        momentum_beta = 0.9
+        grad = torch.randn(shape, device=self.device)
+        exp_avg = torch.randn(shape, device=self.device)
+        exp_avg_clone = exp_avg.clone()
+
+        update = scalar_optimizers.calculate_lion_update(grad, exp_avg, momentum_beta=momentum_beta)
+
+        # Update should be sign(beta * m + (1 - beta) * g)
+        expected_update = torch.sign(momentum_beta * exp_avg_clone + (1 - momentum_beta) * grad)
+        torch.testing.assert_close(update, expected_update, atol=0, rtol=0)
+
+        # exp_avg should be updated in-place: lerp_(grad, 1 - beta)
+        expected_exp_avg = torch.lerp(exp_avg_clone, grad, 1 - momentum_beta)
+        torch.testing.assert_close(exp_avg, expected_exp_avg, atol=1e-6, rtol=1e-6)
+
+    def test_calculate_lion_update_with_separate_betas(self) -> None:
+        """Tests Lion with different beta1 and beta2."""
+        shape = (4, 6)
+        beta1, beta2 = 0.9, 0.99
+        grad = torch.randn(shape, device=self.device)
+        exp_avg = torch.randn(shape, device=self.device)
+        exp_avg_clone = exp_avg.clone()
+
+        update = scalar_optimizers.calculate_lion_update(grad, exp_avg, momentum_beta=beta1, momentum_beta2=beta2)
+
+        expected_update = torch.sign(beta1 * exp_avg_clone + (1 - beta1) * grad)
+        torch.testing.assert_close(update, expected_update, atol=0, rtol=0)
+
+        # With separate beta2, momentum uses beta2
+        expected_exp_avg = torch.lerp(exp_avg_clone, grad, 1 - beta2)
+        torch.testing.assert_close(exp_avg, expected_exp_avg, atol=1e-6, rtol=1e-6)
+
 
 if __name__ == "__main__":
     testing.absltest.main()
