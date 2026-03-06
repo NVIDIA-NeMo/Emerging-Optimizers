@@ -299,19 +299,19 @@ class ScalarOptimizerTest(parameterized.TestCase):
     def test_calculate_lion_update_returns_sign(self) -> None:
         """Tests that Lion update returns sign of interpolated momentum."""
         shape = (8, 12)
-        momentum = 0.9
+        beta = 0.9
         grad = torch.randn(shape, device=self.device)
         exp_avg = torch.randn(shape, device=self.device)
         exp_avg_clone = exp_avg.clone()
 
-        update = scalar_optimizers.calculate_lion_update(grad, exp_avg, momentum=momentum)
+        update = scalar_optimizers.calculate_lion_update(grad, exp_avg, betas=(beta, beta))
 
         # Update should be sign(beta * m + (1 - beta) * g)
-        expected_update = torch.sign(momentum * exp_avg_clone + (1 - momentum) * grad)
+        expected_update = torch.sign(beta * exp_avg_clone + (1 - beta) * grad)
         torch.testing.assert_close(update, expected_update, atol=0, rtol=0)
 
         # exp_avg should be updated in-place: lerp_(grad, 1 - beta)
-        expected_exp_avg = torch.lerp(exp_avg_clone, grad, 1 - momentum)
+        expected_exp_avg = torch.lerp(exp_avg_clone, grad, 1 - beta)
         torch.testing.assert_close(exp_avg, expected_exp_avg, atol=1e-6, rtol=1e-6)
 
     def test_calculate_lion_update_with_separate_betas(self) -> None:
@@ -322,7 +322,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         exp_avg = torch.randn(shape, device=self.device)
         exp_avg_clone = exp_avg.clone()
 
-        update = scalar_optimizers.calculate_lion_update(grad, exp_avg, momentum=beta1, momentum2=beta2)
+        update = scalar_optimizers.calculate_lion_update(grad, exp_avg, betas=(beta1, beta2))
 
         expected_update = torch.sign(beta1 * exp_avg_clone + (1 - beta1) * grad)
         torch.testing.assert_close(update, expected_update, atol=0, rtol=0)
