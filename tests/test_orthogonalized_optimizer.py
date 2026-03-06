@@ -42,10 +42,10 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
     @parameterized.product(
         weight_decay_method=["decoupled", "independent", "l2"],
         shape=[(5, 7), (33, 65), (127, 257)],
-        use_nesterov=[True, False],
+        nesterov=[True, False],
         fp32_matmul_prec=["highest", "medium", "low"],
     )
-    def test_smoke(self, weight_decay_method, shape, use_nesterov, fp32_matmul_prec) -> None:
+    def test_smoke(self, weight_decay_method, shape, nesterov, fp32_matmul_prec) -> None:
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=self.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
@@ -54,7 +54,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             lr=2,
             momentum_beta=0,
             weight_decay=0.5,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
         )
@@ -78,7 +78,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             [test_param],
             lr=2,
             momentum_beta=0,
-            use_nesterov=False,
+            nesterov=False,
             weight_decay=0.5,
             weight_decay_method="decoupled",
             fp32_matmul_prec="highest",
@@ -119,7 +119,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             [test_param],
             lr=2.0,
             momentum_beta=0.5,
-            use_nesterov=False,
+            nesterov=False,
             weight_decay=0.0,
             weight_decay_method="l2",
             fp32_matmul_prec="highest",
@@ -169,7 +169,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             [test_param],
             lr=-1,
             momentum_beta=0,
-            use_nesterov=False,
+            nesterov=False,
             weight_decay=0.0,
             weight_decay_method="l2",
             fp32_matmul_prec="highest",
@@ -195,9 +195,9 @@ class MuonTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(5, 7), (33, 65), (127, 257)],
         weight_decay_method=["decoupled", "independent", "l2"],
-        use_nesterov=[True, False],
+        nesterov=[True, False],
     )
-    def test_smoke(self, shape, weight_decay_method, use_nesterov) -> None:
+    def test_smoke(self, shape, weight_decay_method, nesterov) -> None:
         """Smoke test Muon optimizer.
         Most functionality of muon is tested in muon_utils. This test only entures everything run through
         the optimizer class.
@@ -205,7 +205,7 @@ class MuonTest(parameterized.TestCase):
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=self.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
-        muon_opt = muon.Muon([test_param], weight_decay_method=weight_decay_method, use_nesterov=use_nesterov)
+        muon_opt = muon.Muon([test_param], weight_decay_method=weight_decay_method, nesterov=nesterov)
         muon_opt.step()
 
     def test_use_syrk_match_without_syrk(self) -> None:
@@ -279,18 +279,18 @@ class MopTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(5, 7), (33, 65), (127, 257)],
         weight_decay_method=["decoupled", "independent"],
-        use_nesterov=[True, False],
+        nesterov=[True, False],
         scale_mode=["spectral", "nuclear_norm"],
         extra_scale_factor=[1.0, 0.2],
     )
-    def test_smoke(self, shape, weight_decay_method, use_nesterov, scale_mode, extra_scale_factor) -> None:
+    def test_smoke(self, shape, weight_decay_method, nesterov, scale_mode, extra_scale_factor) -> None:
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=self.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
         mop_opt = mop.MOP(
             [test_param],
             weight_decay_method=weight_decay_method,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
             scale_mode=scale_mode,
             extra_scale_factor=extra_scale_factor,
         )

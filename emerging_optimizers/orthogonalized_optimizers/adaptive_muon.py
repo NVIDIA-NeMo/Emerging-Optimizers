@@ -42,7 +42,7 @@ class AdaptiveMuon(muon.Muon):
         lr: Learning rate.
         momentum_beta: The exponential decay rate for momentum.
         weight_decay: Weight decay coefficient.
-        use_nesterov: Whether to use Nesterov momentum.
+        nesterov: Whether to use Nesterov momentum.
         weight_decay_method: The weight decay method to use.
         fp32_matmul_prec: Precision for FP32 matrix multiplication.
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration.
@@ -62,7 +62,7 @@ class AdaptiveMuon(muon.Muon):
         momentum_beta: float,
         weight_decay: float,
         *,
-        use_nesterov: bool,
+        nesterov: bool,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         fp32_matmul_prec: FP32MatmulPrecT,
         coefficient_type: NSCoeffT = "quintic",
@@ -79,7 +79,7 @@ class AdaptiveMuon(muon.Muon):
             lr=lr,
             momentum_beta=momentum_beta,
             weight_decay=weight_decay,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
             coefficient_type=coefficient_type,
@@ -222,7 +222,7 @@ class AdaptiveMuon(muon.Muon):
                 # update momentum buffer with EMA of gradient
                 exp_avg.lerp_(grad, 1 - group["momentum_beta"])
 
-                if self.use_nesterov:
+                if self.nesterov:
                     grad = grad.lerp(exp_avg, group["momentum_beta"])
                 else:
                     grad = exp_avg

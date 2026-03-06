@@ -29,7 +29,7 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
         momentum_beta: The momentum used by the internal SGD.
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
-        use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
+        nesterov: Whether to use Nesterov-style momentum in the internal SGD.
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
             for more details.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
@@ -95,7 +95,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         momentum_beta: float,
         weight_decay: float,
         *,
-        use_nesterov: bool,
+        nesterov: bool,
         weight_decay_method: opt_mixin.WeightDecayT,
         fp32_matmul_prec: FP32MatmulPrecT,
         scaled_orthogonalize_fn: Callable | None = None,
@@ -106,7 +106,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
             scaled_orthogonalize_fn = torch.nn.Identity()
 
         self.fp32_matmul_prec = fp32_matmul_prec
-        self.use_nesterov = use_nesterov
+        self.nesterov = nesterov
         self.weight_decay_method = weight_decay_method
 
         default_args_dict = dict(
@@ -163,7 +163,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 exp_avg.lerp_(grad, 1 - group["momentum_beta"])
 
                 # include nesterov momentum
-                if self.use_nesterov:
+                if self.nesterov:
                     grad = grad.lerp(exp_avg, group["momentum_beta"])
                 else:
                     grad = exp_avg

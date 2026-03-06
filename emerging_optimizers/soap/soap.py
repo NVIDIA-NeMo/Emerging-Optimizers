@@ -55,7 +55,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay: Weight decay coefficient
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
             for more details.
-        use_nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf,
+        nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf,
             https://openreview.net/forum?id=OM0jvwB8jIp57ZJjtNEZ)
         precondition_frequency: How often to update the preconditioner. Can be an integer for fixed frequency
             or a callable function that takes the current step as input and returns the frequency.
@@ -87,7 +87,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay: float = 0.01,
         *,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
-        use_nesterov: bool = False,
+        nesterov: bool = False,
         precondition_frequency: int | Callable[[int], int] = 1,
         adam_warmup_steps: int = 0,
         precondition_1d: bool = False,
@@ -105,7 +105,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self.precondition_frequency = precondition_frequency
         self.adam_warmup_steps = adam_warmup_steps
         self.precondition_1d = precondition_1d
-        self.use_nesterov = use_nesterov
+        self.nesterov = nesterov
         self.correct_bias = correct_bias
         self.weight_decay_method = weight_decay_method
         self.fp32_matmul_prec = fp32_matmul_prec
@@ -273,7 +273,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     state["exp_avg_sq"],
                     group["betas"],
                     self.correct_bias,
-                    self.use_nesterov,
+                    self.nesterov,
                     curr_iter_1_based,  # 1-based iteration index is used for bias correction
                     group["eps"],
                 )

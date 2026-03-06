@@ -40,9 +40,9 @@ class AdaptiveMuonTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(5, 7), (33, 65), (127, 257)],
         second_moment_method=["adamuon", "normuon"],
-        use_nesterov=[True, False],
+        nesterov=[True, False],
     )
-    def test_smoke(self, shape, second_moment_method, use_nesterov) -> None:
+    def test_smoke(self, shape, second_moment_method, nesterov) -> None:
         """Smoke test AdaptiveMuon with both second moment methods."""
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=FLAGS.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
@@ -52,7 +52,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
             lr=0.01,
             momentum_beta=0.9,
             weight_decay=0.01,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
             moment2_method=second_moment_method,
             beta2=0.999,
             eps=1e-8,
@@ -75,7 +75,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
             lr=0.01,
             momentum_beta=0.9,
             weight_decay=0.0,
-            use_nesterov=False,
+            nesterov=False,
             moment2_method=second_moment_method,
             beta2=0.999,
             eps=1e-8,
@@ -113,7 +113,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
             lr=0.01,
             momentum_beta=0.9,
             weight_decay=0.0,
-            use_nesterov=False,
+            nesterov=False,
             moment2_method=None,
             beta2=0.999,
             eps=1e-8,

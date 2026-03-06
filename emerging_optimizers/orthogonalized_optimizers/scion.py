@@ -83,8 +83,8 @@ class Scion(OrthogonalizedOptimizer):
         weight_decay = 1
         weight_decay_method = "decoupled"
 
-        logging.info("Scion does not use Nesterov momentum. Setting use_nesterov to False.")
-        use_nesterov = False
+        logging.info("Scion does not use Nesterov momentum. Setting nesterov to False.")
+        nesterov = False
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
@@ -101,7 +101,7 @@ class Scion(OrthogonalizedOptimizer):
             lr,
             momentum_beta,
             weight_decay,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
             weight_decay_method=weight_decay_method,  # type: ignore[arg-type]
             fp32_matmul_prec=fp32_matmul_prec,
             scaled_orthogonalize_fn=scaled_orthogonalize_fn,

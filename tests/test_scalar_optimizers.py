@@ -49,7 +49,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         betas = (0.9, 0.99)
         eps = 1e-8
         step = 10
-        use_nesterov = False
+        nesterov = False
         lr = 0.25
 
         exp_avg_for_manual_calc = exp_avg_initial.clone()
@@ -61,7 +61,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
             exp_avg_sq_for_manual_calc,
             betas,
             correct_bias=True,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
             step=step,
             eps=eps,
         )
@@ -195,8 +195,8 @@ class ScalarOptimizerTest(parameterized.TestCase):
             exp_avg_for_adam,
             exp_avg_sq_for_adam,
             (betas[0], betas[1]),
-            correct_bias=correct_bias,
-            use_nesterov=False,
+            correct_bias=correct_bias_manual,
+            nesterov=False,
             step=step,
             eps=eps,
         )
@@ -263,19 +263,17 @@ class ScalarOptimizerTest(parameterized.TestCase):
         shape=[(3, 3), (15, 31)],
         momentum_beta=[0.9, 0.99],
         correct_bias=[True, False],
-        use_nesterov=[True, False],
+        nesterov=[True, False],
         step=[1, 5],
     )
-    def test_calculate_signum_update_returns_sign(
-        self, shape, momentum_beta, correct_bias, use_nesterov, step
-    ) -> None:
+    def test_calculate_signum_update_returns_sign(self, shape, momentum_beta, correct_bias, nesterov, step) -> None:
         """Signum output should be +1 or -1 everywhere (the sign of the momentum)."""
         # generate random numbers that are not 0 centered
         grad = torch.rand(shape, device=self.device) - 0.3
         exp_avg = torch.lerp(torch.randn(shape, device=self.device), grad, 1 - momentum_beta)
 
         update = scalar_optimizers.calculate_signum_update(
-            grad, exp_avg, momentum_beta=momentum_beta, correct_bias=correct_bias, use_nesterov=use_nesterov, step=step
+            grad, exp_avg, momentum_beta=momentum_beta, correct_bias=correct_bias, nesterov=nesterov, step=step
         )
 
         torch.testing.assert_close(update.abs(), torch.ones(shape, device=self.device), atol=0, rtol=0)
@@ -291,7 +289,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
             exp_avg,
             momentum_beta=momentum_beta,
             correct_bias=False,
-            use_nesterov=False,
+            nesterov=False,
             step=1,
             use_shape_scaling=True,
         ).abs()

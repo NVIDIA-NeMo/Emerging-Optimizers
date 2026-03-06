@@ -27,7 +27,7 @@ def calculate_signum_update(
     exp_avg: torch.Tensor,
     momentum_beta: float,
     correct_bias: bool,
-    use_nesterov: bool,
+    nesterov: bool,
     step: int,
     use_shape_scaling: bool = False,
 ) -> torch.Tensor:
@@ -51,7 +51,7 @@ def calculate_signum_update(
         exp_avg: The accumulated first moment of the gradient.
         momentum_beta: The EMA beta coefficients for the momentum update.
         correct_bias: Whether to correct the bias of the momentum update.
-        use_nesterov: Whether to use nesterov momentum.
+        nesterov: Whether to use nesterov momentum.
         step: The current step of the optimizer, used to compute the bias correction terms.
         use_shape_scaling: Whether to scale the update by the shape of the tensor.
 
@@ -68,7 +68,7 @@ def calculate_signum_update(
     else:
         bias_correction1 = 1
 
-    if use_nesterov:
+    if nesterov:
         # Apply nesterov momentum correction, optionally with bias correction
         bias_correction_nesterov = (1 - momentum_beta ** (step + 1)) if correct_bias else 1.0
         momentum = momentum_beta * exp_avg / bias_correction_nesterov + (1 - momentum_beta) * grad / bias_correction1
