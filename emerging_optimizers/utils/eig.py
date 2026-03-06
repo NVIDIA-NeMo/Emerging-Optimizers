@@ -120,7 +120,7 @@ def met_approx_eigvals_criteria(
     matrix_norm = torch.linalg.norm(kronecker_factor)
     diagonal_norm = torch.linalg.norm(approx_eigvals)
 
-    return diagonal_norm <= (1 - tolerance) * matrix_norm
+    return tolerance * matrix_norm >= (matrix_norm - diagonal_norm)
 
 
 def orthogonal_iteration(
