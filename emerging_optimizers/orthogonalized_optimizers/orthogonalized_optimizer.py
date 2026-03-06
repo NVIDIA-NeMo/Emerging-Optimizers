@@ -119,6 +119,38 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         super().__init__(params, default_args_dict)
         self.scaled_orthogonalize_fn = scaled_orthogonalize_fn
 
+    def _init_group(
+        self,
+        group: dict,
+        param_with_grad_list: list[torch.Tensor],
+        grad_list: list[torch.Tensor],
+        momentum_buffer_list: list[torch.Tensor],
+    ) -> None:
+        """Initializes state for parameters with gradients and collects them into lists.
+
+        Similar to ``torch.optim.Adam._init_group``, this method performs lazy state initialization
+        and collects per-parameter state into flat lists for batch processing.
+
+        Args:
+            group: Parameter group dictionary.
+            param_with_grad_list: Output list to collect parameters that have gradients.
+            grad_list: Output list to collect gradients.
+            momentum_buffer_list: Output list to collect momentum buffers.
+        """
+        for p in group["params"]:
+            grad = p.grad
+            if grad is None:
+                continue
+            state = self.state[p]
+
+            # initialize momentum buffer
+            if "momentum_buffer" not in state:
+                state["momentum_buffer"] = torch.zeros_like(grad)
+
+            param_with_grad_list.append(p)
+            grad_list.append(grad)
+            momentum_buffer_list.append(state["momentum_buffer"])
+
     @overload
     def step(self, closure: None = ...) -> None: ...
 
@@ -139,19 +171,18 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
             loss = closure()
 
         for group in self.param_groups:
-            for p in group["params"]:
-                grad = p.grad
-                if grad is None:
-                    continue
-                state = self.state[p]
+            param_with_grad_list: list[torch.Tensor] = []
+            grad_list: list[torch.Tensor] = []
+            momentum_buffer_list: list[torch.Tensor] = []
 
-                # initialize momentum buffer
-                if "momentum_buffer" not in state:
-                    state["momentum_buffer"] = torch.zeros_like(grad)
+            self._init_group(group, param_with_grad_list, grad_list, momentum_buffer_list)
 
-                # Subsequent update to exp_avg are all inplace, so it is not assigned back to state.
-                exp_avg = state["momentum_buffer"]
-
+            for p, grad, exp_avg in zip(
+                param_with_grad_list,
+                grad_list,
+                momentum_buffer_list,
+                strict=True,
+            ):
                 self._apply_weight_decay_inplace(
                     p,
                     grad,
