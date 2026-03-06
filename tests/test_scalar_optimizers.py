@@ -261,33 +261,33 @@ class ScalarOptimizerTest(parameterized.TestCase):
 
     @parameterized.product(
         shape=[(3, 3), (15, 31)],
-        momentum_beta=[0.9, 0.99],
+        momentum=[0.9, 0.99],
         correct_bias=[True, False],
         nesterov=[True, False],
         step=[1, 5],
     )
-    def test_calculate_signum_update_returns_sign(self, shape, momentum_beta, correct_bias, nesterov, step) -> None:
+    def test_calculate_signum_update_returns_sign(self, shape, momentum, correct_bias, nesterov, step) -> None:
         """Signum output should be +1 or -1 everywhere (the sign of the momentum)."""
         # generate random numbers that are not 0 centered
         grad = torch.rand(shape, device=self.device) - 0.3
-        exp_avg = torch.lerp(torch.randn(shape, device=self.device), grad, 1 - momentum_beta)
+        exp_avg = torch.lerp(torch.randn(shape, device=self.device), grad, 1 - momentum)
 
         update = scalar_optimizers.calculate_signum_update(
-            grad, exp_avg, momentum_beta=momentum_beta, correct_bias=correct_bias, nesterov=nesterov, step=step
+            grad, exp_avg, momentum=momentum, correct_bias=correct_bias, nesterov=nesterov, step=step
         )
 
         torch.testing.assert_close(update.abs(), torch.ones(shape, device=self.device), atol=0, rtol=0)
 
     def test_calculate_signum_with_shape_scaling_returns_sign(self) -> None:
         shape = (8, 12)
-        momentum_beta = 0.5
+        momentum = 0.5
         grad = torch.rand(shape, device=self.device) - 0.3
-        exp_avg = torch.lerp(torch.randn(shape, device=self.device), grad, 1 - momentum_beta)
+        exp_avg = torch.lerp(torch.randn(shape, device=self.device), grad, 1 - momentum)
 
         update_abs = scalar_optimizers.calculate_signum_update(
             grad,
             exp_avg,
-            momentum_beta=momentum_beta,
+            momentum=momentum,
             correct_bias=False,
             nesterov=False,
             step=1,

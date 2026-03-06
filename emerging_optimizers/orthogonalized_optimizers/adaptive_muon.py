@@ -40,7 +40,7 @@ class AdaptiveMuon(muon.Muon):
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups.
         lr: Learning rate.
-        momentum_beta: The exponential decay rate for momentum.
+        momentum: The exponential decay rate for momentum.
         weight_decay: Weight decay coefficient.
         nesterov: Whether to use Nesterov momentum.
         weight_decay_method: The weight decay method to use.
@@ -59,7 +59,7 @@ class AdaptiveMuon(muon.Muon):
         self,
         params: ParamsT,
         lr: float,
-        momentum_beta: float,
+        momentum: float,
         weight_decay: float,
         *,
         nesterov: bool,
@@ -77,7 +77,7 @@ class AdaptiveMuon(muon.Muon):
         super().__init__(
             params,
             lr=lr,
-            momentum_beta=momentum_beta,
+            momentum=momentum,
             weight_decay=weight_decay,
             nesterov=nesterov,
             weight_decay_method=weight_decay_method,
@@ -220,10 +220,10 @@ class AdaptiveMuon(muon.Muon):
                 )
 
                 # update momentum buffer with EMA of gradient
-                exp_avg.lerp_(grad, 1 - group["momentum_beta"])
+                exp_avg.lerp_(grad, 1 - group["momentum"])
 
                 if self.nesterov:
-                    grad = grad.lerp(exp_avg, group["momentum_beta"])
+                    grad = grad.lerp(exp_avg, group["momentum"])
                 else:
                     grad = exp_avg
 

@@ -52,7 +52,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         orthogonalized_opt = OrthogonalizedOptimizer(
             [test_param],
             lr=2,
-            momentum_beta=0,
+            momentum=0,
             weight_decay=0.5,
             nesterov=nesterov,
             weight_decay_method=weight_decay_method,
@@ -77,7 +77,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         orthogonalized_opt = OrthogonalizedOptimizer(
             [test_param],
             lr=2,
-            momentum_beta=0,
+            momentum=0,
             nesterov=False,
             weight_decay=0.5,
             weight_decay_method="decoupled",
@@ -113,12 +113,12 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         ref_param = nn.Parameter(torch.empty_like(test_param))
         ref_param.data.copy_(test_param.data)
 
-        # Muon EMA momentum while torch SGD uses standard momentum. lr and momentum_beta values
+        # Muon EMA momentum while torch SGD uses standard momentum. lr and momentum values
         # are specially chosen for them to match.
         orthogonalized_opt = OrthogonalizedOptimizer(
             [test_param],
             lr=2.0,
-            momentum_beta=0.5,
+            momentum=0.5,
             nesterov=False,
             weight_decay=0.0,
             weight_decay_method="l2",
@@ -168,7 +168,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         orthogonalized_opt = OrthogonalizedOptimizer(
             [test_param],
             lr=-1,
-            momentum_beta=0,
+            momentum=0,
             nesterov=False,
             weight_decay=0.0,
             weight_decay_method="l2",
@@ -243,7 +243,7 @@ class MuonTest(parameterized.TestCase):
             lr=0.0,  # Zero learning rate
             weight_decay=weight_decay,
             weight_decay_method="independent",
-            momentum_beta=0.0,
+            momentum=0.0,
         )
         muon_opt_indep.step()
 
@@ -312,7 +312,7 @@ class MuonHyperballTest(parameterized.TestCase):
         opt = muon_hyperball.MuonHyperball(
             [test_param],
             lr=0.01,
-            momentum_beta=0.0,
+            momentum=0.0,
             weight_decay=0.0,
         )
 

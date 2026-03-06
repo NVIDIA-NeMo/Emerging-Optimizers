@@ -54,7 +54,7 @@ class Scion(OrthogonalizedOptimizer):
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate used by the internal SGD.
-        momentum_beta: The momentum used by the internal SGD.
+        momentum: The momentum used by the internal SGD.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration. Can be one of
             ["simple", "quintic", "polar_express"].
@@ -66,7 +66,7 @@ class Scion(OrthogonalizedOptimizer):
         self,
         params: ParamsT,
         lr: float = 3e-4,
-        momentum_beta: float = 0.95,
+        momentum: float = 0.95,
         *,
         fp32_matmul_prec: FP32MatmulPrecT = "medium",
         coefficient_type: NSCoeffT = "quintic",
@@ -99,7 +99,7 @@ class Scion(OrthogonalizedOptimizer):
         super().__init__(
             params,
             lr,
-            momentum_beta,
+            momentum,
             weight_decay,
             nesterov=nesterov,
             weight_decay_method=weight_decay_method,  # type: ignore[arg-type]

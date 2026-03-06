@@ -50,7 +50,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
         adaptive_opt = AdaptiveMuon(
             [test_param],
             lr=0.01,
-            momentum_beta=0.9,
+            momentum=0.9,
             weight_decay=0.01,
             nesterov=nesterov,
             moment2_method=second_moment_method,
@@ -73,7 +73,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
         adaptive_opt = AdaptiveMuon(
             [test_param],
             lr=0.01,
-            momentum_beta=0.9,
+            momentum=0.9,
             weight_decay=0.0,
             nesterov=False,
             moment2_method=second_moment_method,
@@ -111,7 +111,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
         adaptive_opt = AdaptiveMuon(
             [test_param],
             lr=0.01,
-            momentum_beta=0.9,
+            momentum=0.9,
             weight_decay=0.0,
             nesterov=False,
             moment2_method=None,

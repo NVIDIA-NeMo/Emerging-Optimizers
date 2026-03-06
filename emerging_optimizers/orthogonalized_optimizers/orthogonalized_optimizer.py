@@ -26,7 +26,7 @@ from emerging_optimizers.utils import FP32MatmulPrecT
 
 _args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate used by the internal SGD.
-        momentum_beta: The momentum used by the internal SGD.
+        momentum: The momentum used by the internal SGD.
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
         nesterov: Whether to use Nesterov-style momentum in the internal SGD.
@@ -92,7 +92,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self,
         params: ParamsT,
         lr: float,
-        momentum_beta: float,
+        momentum: float,
         weight_decay: float,
         *,
         nesterov: bool,
@@ -111,7 +111,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         default_args_dict = dict(
             lr=lr,
-            momentum_beta=momentum_beta,
+            momentum=momentum,
             weight_decay=weight_decay,
             **kwargs,
         )
@@ -160,11 +160,11 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 )
 
                 # update momentum buffer with EMA of gradient
-                exp_avg.lerp_(grad, 1 - group["momentum_beta"])
+                exp_avg.lerp_(grad, 1 - group["momentum"])
 
                 # include nesterov momentum
                 if self.nesterov:
-                    grad = grad.lerp(exp_avg, group["momentum_beta"])
+                    grad = grad.lerp(exp_avg, group["momentum"])
                 else:
                     grad = exp_avg
 

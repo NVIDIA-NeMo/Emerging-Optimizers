@@ -47,7 +47,7 @@ class MOP(OrthogonalizedOptimizer):
         self,
         params: ParamsT,
         lr: float = 3e-4,
-        momentum_beta: float = 0.95,
+        momentum: float = 0.95,
         weight_decay: float = 0.01,
         *,
         nesterov: bool = False,
@@ -70,7 +70,7 @@ class MOP(OrthogonalizedOptimizer):
         super().__init__(
             params,
             lr,
-            momentum_beta,
+            momentum,
             weight_decay,
             nesterov=nesterov,
             weight_decay_method=weight_decay_method,

@@ -263,7 +263,7 @@ class TestSinkhornMuon(parameterized.TestCase):
             lr=0.0,
             weight_decay=weight_decay,
             weight_decay_method="independent",
-            momentum_beta=0.0,
+            momentum=0.0,
             num_iters=num_iters,
             eps=eps,
         )
