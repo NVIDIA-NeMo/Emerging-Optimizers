@@ -137,7 +137,7 @@ def orthogonal_iteration(
     to recompute the eigenbases of the preconditioner kronecker factor. Generalizes Vyas et al.'s (SOAP) algorithm of 1 step of power iteration for updating the eigenbasis.
 
     Args:
-        approx_eigenvalue_matrix : Projection of kronecker factor onto the eigenbasis, should be close to diagonal
+        approx_eigvals : Projection of kronecker factor onto the eigenbasis, should be close to diagonal
         kronecker_factor : Kronecker factor matrix.
         eigenbasis : Kronecker factor eigenbasis matrix.
         ind : Index for selecting dimension in the exp_avg_sq matrix to apply the sorting order over.
