@@ -244,8 +244,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 state_steps,
                 strict=True,
             ):
-                state = self.state[p]
-
                 # NOTE: The upstream PyTorch implementations increment the step counter in the middle of the loop
                 # to be used in bias correction. But this is confusing and error prone if anything else needs to use
                 # the step counter.
@@ -255,7 +253,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 curr_iter_1_based = step + 1
 
                 # Define kronecker_factor_update_fn based on whether to use KL-Shampoo here
-                # because it needs access to state and group
+                # because it needs access to eigenbasis_list and group
                 if not self.use_kl_shampoo:
                     kronecker_factor_update_fn = partial(
                         update_kronecker_factors,
@@ -264,7 +262,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 else:
                     kronecker_factor_update_fn = partial(
                         update_kronecker_factors_kl_shampoo,
-                        eigenbasis_list=state["Q"],
+                        eigenbasis_list=eigenbasis_list,
                         eps=group["eps"],
                     )
 
@@ -299,7 +297,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     )
                     if not skip_update:
                         with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
-                            state["Q"], state["exp_avg"], state["exp_avg_sq"] = update_eigenbasis_and_momentum(
+                            eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_momentum(
                                 kronecker_factor_list=kronecker_factor_list,
                                 eigenbasis_list=eigenbasis_list,
                                 exp_avg_sq=exp_avg_sq,
@@ -307,6 +305,9 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                                 use_eigh=use_eigh,
                                 power_iter_steps=self.power_iter_steps,
                             )
+                            self.state[p]["Q"] = eigenbasis_list
+                            self.state[p]["exp_avg"] = exp_avg
+                            self.state[p]["exp_avg_sq"] = exp_avg_sq
                 torch.cuda.nvtx.range_pop()
 
                 self._apply_weight_decay_inplace(
@@ -323,7 +324,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         grad_projected = precondition(
                             grad,
-                            eigenbasis_list=state["Q"],
+                            eigenbasis_list=eigenbasis_list,
                             dims=[[0], [0]],
                         )
                 torch.cuda.nvtx.range_pop()
@@ -331,8 +332,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # Calculate the Adam update for the projected gradient tensor
                 adam_update = scalar_optimizers.calculate_adam_update(
                     grad_projected,
-                    state["exp_avg"],
-                    state["exp_avg_sq"],
+                    exp_avg,
+                    exp_avg_sq,
                     group["betas"],
                     self.correct_bias,
                     self.nesterov,
@@ -346,7 +347,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         precond_update = precondition(
                             adam_update,
-                            eigenbasis_list=state.get("Q", None),
+                            eigenbasis_list=eigenbasis_list,
                             dims=[[0], [1]],
                         )
                 else:
@@ -356,7 +357,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 _clip_update_rms_in_place(precond_update, self.max_update_rms)
                 p.add_(precond_update, alpha=-group["lr"])
 
-                state["step"] += 1
+                self.state[p]["step"] += 1
 
         return loss
 
