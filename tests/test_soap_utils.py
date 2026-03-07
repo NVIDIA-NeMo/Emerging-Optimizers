@@ -202,7 +202,7 @@ class SoapUtilsTest(BaseTestCase):
         kronecker_factor_list = [K_sym]
 
         eigenbasis_list = [torch.linalg.eigh(K_sym).eigenvectors]
-        self.assertTrue(soap_utils.all_eigenbases_met_criteria(kronecker_factor_list, eigenbasis_list))
+        self.assertTrue(soap_utils.all_eigenbases_met_criteria(kronecker_factor_list, eigenbasis_list, 0.01))
 
 
 if __name__ == "__main__":
