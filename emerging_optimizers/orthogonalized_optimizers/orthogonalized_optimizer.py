@@ -119,6 +119,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         super().__init__(params, default_args_dict)
         self.scaled_orthogonalize_fn = scaled_orthogonalize_fn
 
+    @torch.no_grad()  # type: ignore[misc]
     def _init_group(
         self,
         group: dict,
