@@ -130,6 +130,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         }
         super().__init__(params, defaults)
 
+    @torch.no_grad()  # type: ignore[misc]
     def _init_group(
         self,
         group: dict,
