@@ -196,9 +196,9 @@ class TestSinkhornMuon(parameterized.TestCase):
     @parameterized.product(
         shape=[(5, 7), (15, 15), (31, 63)],
         weight_decay_method=["decoupled", "independent", "l2"],
-        use_nesterov=[True, False],
+        nesterov=[True, False],
     )
-    def test_smoke(self, shape, weight_decay_method, use_nesterov) -> None:
+    def test_smoke(self, shape, weight_decay_method, nesterov) -> None:
         """Smoke test: SinkhornMuon should run without errors."""
         # Initialize parameter as doubly-stochastic using SinkhornMapper
         init_data = torch.randint(1, 10, shape, dtype=torch.float32, device=FLAGS.device)
@@ -211,7 +211,7 @@ class TestSinkhornMuon(parameterized.TestCase):
         opt = SinkhornMuon(
             [test_param],
             weight_decay_method=weight_decay_method,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
         )
         opt.step()
 
@@ -263,7 +263,7 @@ class TestSinkhornMuon(parameterized.TestCase):
             lr=0.0,
             weight_decay=weight_decay,
             weight_decay_method="independent",
-            momentum_beta=0.0,
+            momentum=0.0,
             num_iters=num_iters,
             eps=eps,
         )

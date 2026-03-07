@@ -26,10 +26,10 @@ from emerging_optimizers.utils import FP32MatmulPrecT
 
 _args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate used by the internal SGD.
-        momentum_beta: The momentum used by the internal SGD.
+        momentum: The momentum used by the internal SGD.
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
-        use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
+        nesterov: Whether to use Nesterov-style momentum in the internal SGD.
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
             for more details.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
@@ -92,10 +92,10 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self,
         params: ParamsT,
         lr: float,
-        momentum_beta: float,
+        momentum: float,
         weight_decay: float,
         *,
-        use_nesterov: bool,
+        nesterov: bool,
         weight_decay_method: opt_mixin.WeightDecayT,
         fp32_matmul_prec: FP32MatmulPrecT,
         scaled_orthogonalize_fn: Callable | None = None,
@@ -106,12 +106,12 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
             scaled_orthogonalize_fn = torch.nn.Identity()
 
         self.fp32_matmul_prec = fp32_matmul_prec
-        self.use_nesterov = use_nesterov
+        self.nesterov = nesterov
         self.weight_decay_method = weight_decay_method
 
         default_args_dict = dict(
             lr=lr,
-            momentum_beta=momentum_beta,
+            momentum=momentum,
             weight_decay=weight_decay,
             **kwargs,
         )
@@ -160,11 +160,11 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 )
 
                 # update momentum buffer with EMA of gradient
-                exp_avg.lerp_(grad, 1 - group["momentum_beta"])
+                exp_avg.lerp_(grad, 1 - group["momentum"])
 
                 # include nesterov momentum
-                if self.use_nesterov:
-                    grad = grad.lerp(exp_avg, group["momentum_beta"])
+                if self.nesterov:
+                    grad = grad.lerp(exp_avg, group["momentum"])
                 else:
                     grad = exp_avg
 
