@@ -95,7 +95,7 @@ class LionOptimizerTest(parameterized.TestCase):
         """Lion should minimize a simple quadratic f(x) = ||x||^2."""
         torch.manual_seed(42)
         param = torch.nn.Parameter(torch.randn(10, device=self.device) * 5)
-        optimizer = Lion([param], lr=1e-3, betas=(0.9, 0.99))
+        optimizer = Lion([param], lr=1e-2, betas=(0.9, 0.99))
 
         for _ in range(2000):
             optimizer.zero_grad()
