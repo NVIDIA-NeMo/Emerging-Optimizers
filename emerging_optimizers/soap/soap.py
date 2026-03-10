@@ -273,7 +273,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         grad_projected = precondition(
                             grad,
-                            eigenbasis_list=state["Q"],
+                            eigenbasis_list=state.get("Q", None),
                             dims=[[0], [0]],
                         )
                 torch.cuda.nvtx.range_pop()
@@ -296,7 +296,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         precond_update = precondition(
                             adam_update,
-                            eigenbasis_list=state["Q"],
+                            eigenbasis_list=state.get("Q", None),
                             dims=[[0], [1]],
                         )
                 else:
