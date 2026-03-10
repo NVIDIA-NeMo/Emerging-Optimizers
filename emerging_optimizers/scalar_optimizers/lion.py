@@ -107,7 +107,7 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
         weight_decay: float = 0.0,
         weight_decay_method: WeightDecayT = "decoupled",
     ) -> None:
-        defaults = dict(lr=lr, betas=betas, weight_decay=weight_decay)
+        defaults = dict(lr=lr, betas=betas, weight_decay=weight_decay, weight_decay_method=weight_decay_method)
         self.weight_decay_method = weight_decay_method
         super().__init__(params, defaults)
 
