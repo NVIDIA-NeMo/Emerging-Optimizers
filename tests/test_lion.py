@@ -137,6 +137,30 @@ class LionOptimizerTest(parameterized.TestCase):
         expected = old_param * (1 - 0.1)
         torch.testing.assert_close(param.data, expected, atol=1e-6, rtol=1e-6)
 
+    def test_exp_avg_evolves_correctly(self) -> None:
+        """Verify exp_avg state matches analytical values after deterministic steps."""
+        beta1, beta2 = 0.9, 0.99
+        param = torch.nn.Parameter(torch.ones(2, 2, device=self.device))
+        optimizer = Lion([param], lr=0.01, betas=(beta1, beta2), weight_decay=0.0)
+
+        grads = [
+            torch.full((2, 2), 1.0, device=self.device),
+            torch.full((2, 2), -2.0, device=self.device),
+            torch.full((2, 2), 0.5, device=self.device),
+        ]
+
+        # exp_avg starts at 0. Each step: exp_avg = lerp(exp_avg, grad, 1 - beta2)
+        # i.e. exp_avg = beta2 * exp_avg + (1 - beta2) * grad
+        expected_exp_avg = torch.zeros(2, 2, device=self.device)
+        for grad in grads:
+            param.grad = grad.clone()
+            optimizer.step()
+            expected_exp_avg = beta2 * expected_exp_avg + (1 - beta2) * grad
+
+        torch.testing.assert_close(
+            optimizer.state[param]["exp_avg"], expected_exp_avg, atol=1e-6, rtol=1e-6
+        )
+
     def test_convergence_on_quadratic(self) -> None:
         """Lion should minimize a simple quadratic f(x) = ||x||^2."""
         torch.manual_seed(42)
