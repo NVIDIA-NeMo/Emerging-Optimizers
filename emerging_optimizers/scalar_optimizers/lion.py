@@ -99,15 +99,16 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
             :class:`~emerging_optimizers.mixin.WeightDecayMixin` for more details.
     """
 
-    def __init__(
-        self,
-        params: ParamsT,
-        lr: float = 1e-4,
-        betas: tuple[float, float] = (0.9, 0.99),
-        weight_decay: float = 0.0,
-        weight_decay_method: WeightDecayT = "decoupled",
     ) -> None:
-        defaults = dict(lr=lr, betas=betas, weight_decay=weight_decay, weight_decay_method=weight_decay_method)
+        if not 0.0 <= lr:
+            raise ValueError(f"Invalid learning rate: {lr}")
+        if not 0.0 <= betas[0] < 1.0:
+            raise ValueError(f"Invalid beta at index 0: {betas[0]}")
+        if not 0.0 <= betas[1] < 1.0:
+            raise ValueError(f"Invalid beta at index 1: {betas[1]}")
+        if not 0.0 <= weight_decay:
+            raise ValueError(f"Invalid weight_decay value: {weight_decay}")
+        defaults = dict(lr=lr, betas=betas, weight_decay=weight_decay)
         self.weight_decay_method = weight_decay_method
         super().__init__(params, defaults)
 

@@ -69,7 +69,8 @@ class LionOptimizerTest(parameterized.TestCase):
         """Lion updates should be +/- lr (sign-based)."""
         param = torch.nn.Parameter(torch.ones(5, 5, device=self.device))
         optimizer = Lion([param], lr=0.1, betas=betas, weight_decay=0.0)
-        param.grad = torch.randn(5, 5, device=self.device)
+        # Use a fixed, non-zero gradient to guarantee sign(g) != 0 for every element.
+        param.grad = torch.ones(5, 5, device=self.device)
         old_param = param.data.clone()
         optimizer.step()
 
