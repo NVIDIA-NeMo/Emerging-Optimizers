@@ -157,9 +157,7 @@ class LionOptimizerTest(parameterized.TestCase):
             optimizer.step()
             expected_exp_avg = beta2 * expected_exp_avg + (1 - beta2) * grad
 
-        torch.testing.assert_close(
-            optimizer.state[param]["exp_avg"], expected_exp_avg, atol=1e-6, rtol=1e-6
-        )
+        torch.testing.assert_close(optimizer.state[param]["exp_avg"], expected_exp_avg, atol=1e-6, rtol=1e-6)
 
     def test_convergence_on_quadratic(self) -> None:
         """Lion should minimize a simple quadratic f(x) = ||x||^2."""

@@ -136,11 +136,11 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
                 loss = closure()
 
         for group in self.param_groups:
-            lr = group['lr']
-            betas = group['betas']
-            weight_decay = group['weight_decay']
+            lr = group["lr"]
+            betas = group["betas"]
+            weight_decay = group["weight_decay"]
 
-            for p in group['params']:
+            for p in group["params"]:
                 if p.grad is None:
                     continue
 
@@ -149,9 +149,9 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
                 # State initialization
                 state = self.state[p]
                 if len(state) == 0:
-                    state['exp_avg'] = torch.zeros_like(p.data)
+                    state["exp_avg"] = torch.zeros_like(p.data)
 
-                exp_avg = state['exp_avg']
+                exp_avg = state["exp_avg"]
 
                 # Weight decay
                 self._apply_weight_decay_inplace(p.data, grad, lr, weight_decay)
