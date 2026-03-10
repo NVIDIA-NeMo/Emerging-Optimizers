@@ -356,7 +356,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 _clip_update_rms_in_place(precond_update, self.max_update_rms)
                 p.add_(precond_update, alpha=-group["lr"])
 
-                self.state[p]["step"] += 1
+                step += 1
 
         return loss
 
