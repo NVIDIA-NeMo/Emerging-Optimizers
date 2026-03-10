@@ -300,6 +300,9 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                                 use_eigh=use_eigh,
                                 power_iter_steps=self.power_iter_steps,
                             )
+                            self.state[p]["Q"] = eigenbasis_list
+                            self.state[p]["exp_avg"] = exp_avg
+                            self.state[p]["exp_avg_sq"] = exp_avg_sq
                 torch.cuda.nvtx.range_pop()
 
                 self._apply_weight_decay_inplace(
@@ -349,7 +352,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 _clip_update_rms_in_place(precond_update, self.max_update_rms)
                 p.add_(precond_update, alpha=-group["lr"])
 
-                step += 1
+                self.state[p]["step"] += 1
 
         return loss
 
