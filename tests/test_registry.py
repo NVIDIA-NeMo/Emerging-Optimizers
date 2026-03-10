@@ -18,7 +18,7 @@ import torch
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers import psgd, registry, soap
+from emerging_optimizers import psgd, registry, scalar_optimizers, soap
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -60,6 +60,7 @@ class TestRegistry(parameterized.TestCase):
         ("psgd_pro", psgd.PSGDPro),
         ("scion", scion.Scion),
         ("soap", soap.SOAP),
+        ("lion", scalar_optimizers.Lion),
     )
     def test_get_optimizer(self, opt_name, expected_opt_cls):
         opt_cls = registry.get_optimizer_cls(opt_name)
