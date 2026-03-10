@@ -46,16 +46,16 @@ class LionOptimizerTest(parameterized.TestCase):
 
     def test_state_initialization(self) -> None:
         """Lion initializes exp_avg state to zeros on first step."""
-        beta2 = 0.99
-        param = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
-        optimizer = Lion([param], lr=1e-4, betas=(0.9, beta2), weight_decay=0.0)
-        grad = torch.randn_like(param)
+        beta2 = 0.75
+        param = torch.nn.Parameter(torch.full((3, 3), 2.0, device=self.device))
+        optimizer = Lion([param], lr=0.25, betas=(0.5, beta2), weight_decay=0.0)
+        grad = torch.full((3, 3), 4.0, device=self.device)
         param.grad = grad.clone()
         optimizer.step()
         self.assertIn("exp_avg", optimizer.state[param])
         # exp_avg is initialized to zero then updated: 0 * beta2 + (1 - beta2) * grad
         expected = (1 - beta2) * grad
-        torch.testing.assert_close(optimizer.state[param]["exp_avg"], expected, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(optimizer.state[param]["exp_avg"], expected, atol=0, rtol=0)
 
     def test_no_grad_no_update(self) -> None:
         """Parameters without gradients are not updated."""
