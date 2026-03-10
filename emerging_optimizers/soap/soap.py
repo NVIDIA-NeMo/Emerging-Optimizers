@@ -166,10 +166,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             grad = p.grad.to(torch.float32)
             state = self.state[p]
 
-            if "step" not in state:
+            if len(state) == 0:
                 state["step"] = 0
-
-            if state["step"] == 0:
                 assert all(key not in state for key in ["exp_avg", "exp_avg_sq", "GG"]), (
                     "exp_avg and exp_avg_sq and GG should not be initialized at step 0. "
                     "Some mismatch has been created likely in checkpointing"
