@@ -191,8 +191,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 if p.grad is None:
                     continue
 
-                # Cast grad to float32 here if it is not already in float32 because Kronecker factors need to be
-                # in float32 for accumulation and decomposition.
+                # TODO(skyw): Fix the double cast. It is casted once in _init_group and once here.
                 grad = p.grad.to(torch.float32)
                 state = self.state[p]
 
@@ -214,7 +213,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 else:
                     kronecker_factor_update_fn = partial(
                         update_kronecker_factors_kl_shampoo,
-                        eigenbasis_list=state.get("Q", None),
+                        eigenbasis_list=state["Q"],
                         eps=group["eps"],
                     )
 
@@ -240,7 +239,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     # Skip eigenbasis update if use_adaptive_criteria is True and all eigenbases meet the criteria
                     skip_update = (
                         self.use_adaptive_criteria
-                        and state.get("Q", None) is not None
+                        and "Q" in state
                         and soap_utils.all_eigenbases_met_criteria(
                             state["GG"], state["Q"], self.adaptive_update_tolerance
                         )
@@ -274,7 +273,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         grad_projected = precondition(
                             grad,
-                            eigenbasis_list=state.get("Q", None),
+                            eigenbasis_list=state["Q"],
                             dims=[[0], [0]],
                         )
                 torch.cuda.nvtx.range_pop()
@@ -297,7 +296,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         precond_update = precondition(
                             adam_update,
-                            eigenbasis_list=state.get("Q", None),
+                            eigenbasis_list=state["Q"],
                             dims=[[0], [1]],
                         )
                 else:
