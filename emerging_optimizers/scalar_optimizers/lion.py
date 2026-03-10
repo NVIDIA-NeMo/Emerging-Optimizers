@@ -115,7 +115,7 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
             raise ValueError(f"Invalid beta at index 1: {betas[1]}")
         if not 0.0 <= weight_decay:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
-        defaults = dict(lr=lr, betas=betas, weight_decay=weight_decay)
+        defaults = dict(lr=lr, betas=betas, weight_decay=weight_decay, weight_decay_method=weight_decay_method)
         self.weight_decay_method = weight_decay_method
         super().__init__(params, defaults)
 
