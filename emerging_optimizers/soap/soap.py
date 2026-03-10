@@ -134,28 +134,11 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
     def _init_group(
         self,
         group: dict,
-        param_with_grad_list: list[torch.Tensor],
-        grad_list: list[torch.Tensor],
-        exp_avg_list: list[torch.Tensor],
-        exp_avg_sq_list: list[torch.Tensor],
-        kronecker_factor_nested_lists: list[list[torch.Tensor]],
-        eigenbasis_nested_list: list[list[torch.Tensor] | None],
-        state_steps: list[int],
     ) -> None:
-        """Initializes state for parameters with gradients and collects them into lists.
-
-        Similar to ``torch.optim.Adam._init_group``, this method performs lazy state initialization
-        and collects per-parameter state into flat lists for batch processing.
+        """Performs lazy state initialization for parameters with gradients.
 
         Args:
             group: Parameter group dictionary.
-            param_with_grad_list: Output list to collect parameters that have gradients.
-            grad_list: Output list to collect gradients.
-            exp_avg_list: Output list to collect first moment buffers.
-            exp_avg_sq_list: Output list to collect second moment buffers.
-            kronecker_factor_nested_lists: Output list to collect Kronecker factor matrices.
-            eigenbasis_nested_list: Output list to collect eigenbasis matrices (None if not yet computed).
-            state_steps: Output list to collect step counters.
         """
         for p in group["params"]:
             if p.grad is None:
@@ -182,14 +165,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 )
                 state["Q"] = [torch.eye(shape, device=grad.device) for shape in grad.shape]
 
-            param_with_grad_list.append(p)
-            grad_list.append(grad)
-            exp_avg_list.append(state["exp_avg"])
-            exp_avg_sq_list.append(state["exp_avg_sq"])
-            kronecker_factor_nested_lists.append(state["GG"])
-            eigenbasis_nested_list.append(state.get("Q", None))
-            state_steps.append(state["step"])
-
     @overload
     def step(self, closure: None = ...) -> None: ...
 
@@ -210,42 +185,24 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             loss = closure()
 
         for group in self.param_groups:
-            param_with_grad_list: list[torch.Tensor] = []
-            grad_list: list[torch.Tensor] = []
-            exp_avg_list: list[torch.Tensor] = []
-            exp_avg_sq_list: list[torch.Tensor] = []
-            kronecker_factor_nested_lists: list[list[torch.Tensor]] = []
-            eigenbasis_nested_list: list[list[torch.Tensor] | None] = []
-            state_steps: list[int] = []
+            self._init_group(group)
 
-            self._init_group(
-                group,
-                param_with_grad_list,
-                grad_list,
-                exp_avg_list,
-                exp_avg_sq_list,
-                kronecker_factor_nested_lists,
-                eigenbasis_nested_list,
-                state_steps,
-            )
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
 
-            for p, grad, exp_avg, exp_avg_sq, kronecker_factor_list, eigenbasis_list, step in zip(
-                param_with_grad_list,
-                grad_list,
-                exp_avg_list,
-                exp_avg_sq_list,
-                kronecker_factor_nested_lists,
-                eigenbasis_nested_list,
-                state_steps,
-                strict=True,
-            ):
+                # Cast grad to float32 here if it is not already in float32 because Kronecker factors need to be
+                # in float32 for accumulation and decomposition.
+                grad = p.grad.to(torch.float32)
+                state = self.state[p]
+
                 # NOTE: The upstream PyTorch implementations increment the step counter in the middle of the loop
                 # to be used in bias correction. But this is confusing and error prone if anything else needs to use
                 # the step counter.
                 # We decided to follow Python and C convention to increment the step counter at the end of the loop.
                 # An explicitly named 1-based iteration/step counter is created for bias correction and other terms
                 # in the math equation that needs 1-based iteration count.
-                curr_iter_1_based = step + 1
+                curr_iter_1_based = state["step"] + 1
 
                 # Define kronecker_factor_update_fn based on whether to use KL-Shampoo here
                 # because it needs access to eigenbasis_list and group
@@ -257,7 +214,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 else:
                     kronecker_factor_update_fn = partial(
                         update_kronecker_factors_kl_shampoo,
-                        eigenbasis_list=eigenbasis_list,
+                        eigenbasis_list=state.get("Q", None),
                         eps=group["eps"],
                     )
 
@@ -267,42 +224,40 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 torch.cuda.nvtx.range_push("update_kronecker_factors")
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    kronecker_factor_update_fn(
-                        kronecker_factor_list=kronecker_factor_list, grad=grad, shampoo_beta=shampoo_beta
-                    )
+                    kronecker_factor_update_fn(kronecker_factor_list=state["GG"], grad=grad, shampoo_beta=shampoo_beta)
                 torch.cuda.nvtx.range_pop()
 
                 # After the adam_warmup_steps are completed , update eigenbases at precondition_frequency steps
                 torch.cuda.nvtx.range_push("Update eigen basis")
                 if _is_eigenbasis_update_step(
-                    step,
+                    state["step"],
                     self.adam_warmup_steps,
                     self.precondition_frequency,
                 ):
                     # Always use eigh for the first eigenbasis update
-                    use_eigh = self.use_eigh if step != self.adam_warmup_steps else True
+                    use_eigh = self.use_eigh if state["step"] != self.adam_warmup_steps else True
 
                     # Skip eigenbasis update if use_adaptive_criteria is True and all eigenbases meet the criteria
                     skip_update = (
                         self.use_adaptive_criteria
-                        and eigenbasis_list is not None
+                        and state.get("Q", None) is not None
                         and soap_utils.all_eigenbases_met_criteria(
-                            kronecker_factor_list, eigenbasis_list, self.adaptive_update_tolerance
+                            state["GG"], state["Q"], self.adaptive_update_tolerance
                         )
                     )
                     if not skip_update:
                         with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
                             eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_momentum(
-                                kronecker_factor_list=kronecker_factor_list,
-                                eigenbasis_list=eigenbasis_list,
-                                exp_avg_sq=exp_avg_sq,
-                                momentum=exp_avg,
+                                kronecker_factor_list=state["GG"],
+                                eigenbasis_list=state.get("Q", None),
+                                exp_avg_sq=state["exp_avg_sq"],
+                                momentum=state["exp_avg"],
                                 use_eigh=use_eigh,
                                 power_iter_steps=self.power_iter_steps,
                             )
-                            self.state[p]["Q"] = eigenbasis_list
-                            self.state[p]["exp_avg"] = exp_avg
-                            self.state[p]["exp_avg_sq"] = exp_avg_sq
+                            state["Q"] = eigenbasis_list
+                            state["exp_avg"] = exp_avg
+                            state["exp_avg_sq"] = exp_avg_sq
                 torch.cuda.nvtx.range_pop()
 
                 self._apply_weight_decay_inplace(
@@ -315,11 +270,11 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 grad_projected = grad
                 # Project gradients to the eigenbases of Shampoo's preconditioner
                 torch.cuda.nvtx.range_push("precondition")
-                if step >= self.adam_warmup_steps:
+                if state["step"] >= self.adam_warmup_steps:
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         grad_projected = precondition(
                             grad,
-                            eigenbasis_list=eigenbasis_list,
+                            eigenbasis_list=state.get("Q", None),
                             dims=[[0], [0]],
                         )
                 torch.cuda.nvtx.range_pop()
@@ -327,8 +282,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # Calculate the Adam update for the projected gradient tensor
                 adam_update = scalar_optimizers.calculate_adam_update(
                     grad_projected,
-                    exp_avg,
-                    exp_avg_sq,
+                    state["exp_avg"],
+                    state["exp_avg_sq"],
                     group["betas"],
                     self.correct_bias,
                     self.nesterov,
@@ -338,11 +293,11 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 # Projecting back the preconditioned (by ADAM) exponential moving average of gradients
                 torch.cuda.nvtx.range_push("precondition")
-                if step >= self.adam_warmup_steps:
+                if state["step"] >= self.adam_warmup_steps:
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         precond_update = precondition(
                             adam_update,
-                            eigenbasis_list=eigenbasis_list,
+                            eigenbasis_list=state.get("Q", None),
                             dims=[[0], [1]],
                         )
                 else:
@@ -352,7 +307,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 _clip_update_rms_in_place(precond_update, self.max_update_rms)
                 p.add_(precond_update, alpha=-group["lr"])
 
-                self.state[p]["step"] += 1
+                state["step"] += 1
 
         return loss
 
