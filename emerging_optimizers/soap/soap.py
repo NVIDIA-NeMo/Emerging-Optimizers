@@ -168,10 +168,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
             if len(state) == 0:
                 state["step"] = 0
-                assert all(key not in state for key in ["exp_avg", "exp_avg_sq", "GG"]), (
-                    "exp_avg and exp_avg_sq and GG should not be initialized at step 0. "
-                    "Some mismatch has been created likely in checkpointing"
-                )
                 state["exp_avg"] = torch.zeros_like(grad)
                 state["exp_avg_sq"] = torch.zeros_like(grad)
                 state["GG"] = init_kronecker_factors(
@@ -304,9 +300,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                                 use_eigh=use_eigh,
                                 power_iter_steps=self.power_iter_steps,
                             )
-                            self.state[p]["Q"] = eigenbasis_list
-                            self.state[p]["exp_avg"] = exp_avg
-                            self.state[p]["exp_avg_sq"] = exp_avg_sq
                 torch.cuda.nvtx.range_pop()
 
                 self._apply_weight_decay_inplace(
