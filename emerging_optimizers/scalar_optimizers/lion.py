@@ -12,7 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import override
+from collections.abc import Callable
+from typing import overload, override
 
 import torch
 from torch.optim.optimizer import ParamsT
@@ -104,7 +105,7 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
         params: ParamsT,
         lr: float = 1e-4,
         betas: tuple[float, float] = (0.9, 0.99),
-        weight_decay: float = 0.0,
+        weight_decay: float = 0.01,
         weight_decay_method: WeightDecayT = "decoupled",
     ) -> None:
         if not 0.0 <= lr:
@@ -115,14 +116,25 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
             raise ValueError(f"Invalid beta at index 1: {betas[1]}")
         if not 0.0 <= weight_decay:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
-        defaults = dict(lr=lr, betas=betas, weight_decay=weight_decay, weight_decay_method=weight_decay_method)
+        defaults = dict(lr=lr, betas=betas, weight_decay=weight_decay)
         self.weight_decay_method = weight_decay_method
         super().__init__(params, defaults)
 
+    @overload
+    def step(self, closure: None = ...) -> None: ...
+
+    @overload
+    def step(self, closure: Callable[[], float]) -> float: ...
+
+    @torch.no_grad()  # type: ignore[misc]
     @override
-    @torch.no_grad()
-    def step(self, closure=None):
+    def step(self, closure: Callable[[], float] | None = None) -> float | None:
         """Perform a single optimization step.
+
+        Note:
+            When ``weight_decay_method="l2"``, ``p.grad`` is modified in-place
+            (the L2 penalty ``weight_decay * p`` is added to the gradient).
+            If you need the original gradient after this call, clone it beforehand.
 
         Args:
             closure: A closure that reevaluates the model and returns the loss (optional).
