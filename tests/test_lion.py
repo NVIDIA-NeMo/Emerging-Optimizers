@@ -91,6 +91,51 @@ class LionOptimizerTest(parameterized.TestCase):
         expected = old_param * (1 - 0.1 * 0.1)
         torch.testing.assert_close(param.data, expected, atol=1e-6, rtol=1e-6)
 
+    def test_weight_decay_l2(self) -> None:
+        """L2 weight decay folds into gradient before sign(), so it can be masked."""
+        param = torch.nn.Parameter(torch.ones(3, 3, device=self.device))
+        optimizer = Lion([param], lr=0.1, weight_decay=0.1, weight_decay_method="l2")
+        # Use zero gradient so that the only gradient contribution is from L2: grad += wd * p = 0.1
+        param.grad = torch.zeros(3, 3, device=self.device)
+
+        old_param = param.data.clone()
+        optimizer.step()
+
+        # After L2, grad becomes 0 + 0.1 * 1 = 0.1 (all positive).
+        # First step: exp_avg is zero, so update = sign(beta1 * 0 + (1-beta1) * 0.1) = sign(0.1) = 1
+        # p = p - lr * sign = 1 - 0.1 * 1 = 0.9
+        expected = old_param - 0.1 * torch.ones(3, 3, device=self.device)
+        torch.testing.assert_close(param.data, expected, atol=1e-6, rtol=1e-6)
+
+    def test_weight_decay_l2_masked_by_gradient(self) -> None:
+        """L2 decay penalty can be masked when the gradient dominates the sign."""
+        param = torch.nn.Parameter(torch.ones(3, 3, device=self.device))
+        optimizer = Lion([param], lr=0.1, weight_decay=0.01, weight_decay_method="l2")
+        # Large negative gradient dominates: grad + wd*p = -10 + 0.01 = -9.99, sign = -1
+        param.grad = torch.full((3, 3), -10.0, device=self.device)
+
+        old_param = param.data.clone()
+        optimizer.step()
+
+        # sign(negative) = -1, so p = p - lr * (-1) = p + lr, parameter grows
+        # L2 cannot guarantee shrinkage when gradient dominates
+        expected = old_param + 0.1 * torch.ones(3, 3, device=self.device)
+        torch.testing.assert_close(param.data, expected, atol=1e-6, rtol=1e-6)
+
+    def test_weight_decay_independent(self) -> None:
+        """Independent weight decay shrinks params without lr scaling."""
+        param = torch.nn.Parameter(torch.ones(3, 3, device=self.device))
+        optimizer = Lion([param], lr=0.1, weight_decay=0.1, weight_decay_method="independent")
+        param.grad = torch.zeros(3, 3, device=self.device)
+
+        old_param = param.data.clone()
+        optimizer.step()
+
+        # Independent: p = p * (1 - wd) = 1 * 0.9 = 0.9  (no lr scaling, unlike decoupled)
+        # With zero grad, sign update is 0, so only weight decay applies
+        expected = old_param * (1 - 0.1)
+        torch.testing.assert_close(param.data, expected, atol=1e-6, rtol=1e-6)
+
     def test_convergence_on_quadratic(self) -> None:
         """Lion should minimize a simple quadratic f(x) = ||x||^2."""
         torch.manual_seed(42)
