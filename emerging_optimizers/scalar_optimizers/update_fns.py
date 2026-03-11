@@ -18,9 +18,247 @@ import torch
 
 
 __all__ = [
-    "calculate_sim_ademamix_update",
+    "calculate_adam_update",
     "calculate_ademamix_update",
+    "calculate_laprop_update",
+    "calculate_lion_update",
+    "calculate_signum_update",
+    "calculate_sim_ademamix_update",
 ]
+
+
+@torch.compile  # type: ignore[misc]
+@torch.no_grad()  # type: ignore[misc]
+def calculate_adam_update(
+    grad: torch.Tensor,
+    exp_avg: torch.Tensor,
+    exp_avg_sq: torch.Tensor,
+    betas: tuple[float, float],
+    correct_bias: bool,
+    nesterov: bool,
+    step: int,
+    eps: float,
+) -> torch.Tensor:
+    """Performs the Adam update.
+
+    This function performs the computation of 1 step of Adam.
+
+    The update rule is as follows:
+
+    .. math::
+        m_t = \\beta_1 m_{t-1} + (1 - \\beta_1) g_t \\\\
+        v_t = \\beta_2 v_{t-1} + (1 - \\beta_2) g_t^2 \\\\
+        \\hat{m}_t = \\frac{m_t}{1 - \\beta_1^t} \\\\
+        \\hat{v}_t = \\frac{v_t}{1 - \\beta_2^t} \\\\
+        \\text{update} = \\frac{\\hat{m}_t}{\\sqrt{\\hat{v}_t} + \\epsilon} \\\\
+
+    Args:
+        grad: The gradient tensor.
+        exp_avg: The accumulated first moment of the gradient.
+        exp_avg_sq: The accumulated second moment of the gradient.
+        betas: The EMA beta coefficients for the Adam update.
+        correct_bias: Whether to correct the bias of the Adam update.
+        nesterov: Whether to use nesterov momentum.
+        step: The current step of the optimizer, used to compute the bias correction terms.
+        eps: The epsilon for the Adam second moment update.
+
+    Returns:
+        The Adam-update.
+    """
+
+    beta1, beta2 = betas
+
+    # Decay the first and second moment running average coefficient
+    exp_avg.lerp_(grad, 1 - beta1)
+    exp_avg_sq.lerp_(grad.square(), 1 - beta2)
+
+    # step size correction for optimizer states EMA
+    bias_correction1 = 1.0
+    bias_correction2 = 1.0
+    if correct_bias:
+        # step size correction for ADAM moments EMA
+        bias_correction1 = 1.0 - beta1 ** (step)
+        bias_correction2 = 1.0 - beta2 ** (step)
+
+    if nesterov:
+        # Apply nesterov momentum correction, optionally with bias correction
+        bias_correction_nesterov = (1 - beta1 ** (step + 1)) if correct_bias else 1.0
+        momentum = beta1 * exp_avg / bias_correction_nesterov + (1 - beta1) * grad / bias_correction1
+    else:
+        # Use standard momentum, optionally with bias correction
+        momentum = exp_avg / bias_correction1
+
+    # construct the denominator of the inner ADAM optimizer
+    adam_second_moment = exp_avg_sq / bias_correction2
+    adam_second_moment = adam_second_moment.sqrt() + eps
+    return momentum / adam_second_moment
+
+
+@torch.compile  # type: ignore[misc]
+@torch.no_grad()  # type: ignore[misc]
+def calculate_lion_update(
+    grad: torch.Tensor,
+    exp_avg: torch.Tensor,
+    betas: tuple[float, float],
+) -> torch.Tensor:
+    """Performs the Lion update.
+
+    This function performs the computation of 1 step of Lion update.
+
+    The update rule is as follows:
+
+    .. math::
+        \\text{update} = \\text{sign}(\\beta_1 m_{t-1} + (1 - \\beta_1) g_t) \\\\
+        m_t = \\beta_2 m_{t-1} + (1 - \\beta_2) g_t
+
+    Args:
+        grad: The gradient tensor.
+        exp_avg: The accumulated first moment of the gradient.
+        betas: The EMA beta coefficients (beta1, beta2) for the Lion update.
+
+    Returns:
+        The Lion update.
+    """
+
+    beta1, beta2 = betas
+
+    # Compute update using interpolation (Lion's beta1)
+    update_momentum = beta1 * exp_avg + (1 - beta1) * grad
+
+    # Update the momentum state (Lion's beta2)
+    exp_avg.lerp_(grad, 1 - beta2)
+
+    # Return signed update (no shape scaling for Lion)
+    return torch.sign(update_momentum)
+
+
+@torch.compile  # type: ignore[misc]
+@torch.no_grad()  # type: ignore[misc]
+def calculate_signum_update(
+    grad: torch.Tensor,
+    exp_avg: torch.Tensor,
+    momentum: float,
+    correct_bias: bool,
+    nesterov: bool,
+    step: int,
+    use_shape_scaling: bool = False,
+) -> torch.Tensor:
+    """Performs the sign-SGD or Signum update.
+
+    This function performs the computation of 1 step of sign-SGD or Signum.
+    Based on https://arxiv.org/abs/1802.04434.
+    When using signSGD with shape scaling, general recommendation is to
+    scale :math:`lr = \\text{adam lr} \\cdot \\text{network width} \\cdot \\frac{2}{\\text{rows} + \\text{cols}}`.
+    This is for learning rate transfer with width scaling (https://arxiv.org/abs/2506.07254v1).
+
+    The update rule is as follows:
+
+    .. math::
+        m_t = \\beta m_{t-1} + (1 - \\beta) g_t \\\\
+        \\hat{m}_t = \\frac{m_t}{1 - \\beta^t} \\\\
+        \\text{update} = \\text{sign}(\\hat{m}_t)
+
+    Args:
+        grad: The gradient tensor.
+        exp_avg: The accumulated first moment of the gradient.
+        momentum: The EMA beta coefficients for the momentum update.
+        correct_bias: Whether to correct the bias of the momentum update.
+        nesterov: Whether to use nesterov momentum.
+        step: The current step of the optimizer, used to compute the bias correction terms.
+        use_shape_scaling: Whether to scale the update by the shape of the tensor.
+
+    Returns:
+        The sign-SGD/Signum update.
+    """
+
+    # Standard SignSGD: update momentum first, then compute signed update
+    # Decay the momentum with exponential moving average
+    exp_avg.lerp_(grad, 1 - momentum)
+
+    if correct_bias:
+        bias_correction1 = 1 - momentum**step
+    else:
+        bias_correction1 = 1
+
+    if nesterov:
+        # Apply nesterov momentum correction, optionally with bias correction
+        bias_correction_nesterov = (1 - momentum ** (step + 1)) if correct_bias else 1.0
+        new_momentum = momentum * exp_avg / bias_correction_nesterov + (1 - momentum) * grad / bias_correction1
+    else:
+        # Use standard momentum, optionally with bias correction
+        new_momentum = exp_avg / bias_correction1
+
+    # scale update by shape of tensor to ensure consistent update size: https://arxiv.org/abs/2506.07254
+    if use_shape_scaling:
+        m, n = grad.shape
+        return torch.sign(new_momentum) * (2 / (m + n))
+    else:
+        return torch.sign(new_momentum)
+
+
+@torch.compile  # type: ignore[misc]
+@torch.no_grad()  # type: ignore[misc]
+def calculate_laprop_update(
+    grad: torch.Tensor,
+    exp_avg: torch.Tensor,
+    exp_avg_sq: torch.Tensor,
+    correct_bias: bool,
+    betas: tuple[float, float],
+    step: int,
+    eps: float,
+) -> torch.Tensor:
+    """Performs the LAProp/Normalized SGD with momentum update.
+
+    LAProp can be seen as RMSProp with a momentum term, or normalized SGD with momentum.
+    Based on https://github.com/Z-T-WANG/LaProp-Optimizer/blob/master/laprop.py
+    and https://arxiv.org/abs/2002.04839.
+
+    The update rule is as follows:
+
+    .. math::
+        v_t = \\beta_2 v_{t-1} + (1 - \\beta_2) g_t^2 \\\\
+        \\hat{v}_t = \\frac{v_t}{1 - \\beta_2^t} \\\\
+        g'_t = \\frac{g_t}{\\sqrt{\\hat{v}_t} + \\epsilon} \\\\
+        m_t = \\beta_1 m_{t-1} + (1 - \\beta_1) g'_t \\\\
+        \\hat{m}_t = \\frac{m_t}{1 - \\beta_1^t} \\\\
+        \\text{update} = \\hat{m}_t
+
+    Args:
+        grad: The gradient tensor.
+        exp_avg: The exponential moving average of the gradient.
+        exp_avg_sq: The exponential moving average of the gradient squared.
+        correct_bias: Whether to correct the bias of the Adam update.
+        betas: The betas for the exponential moving average.
+        step: The current step.
+        eps: The epsilon for the second moment update.
+
+    Returns:
+        The LAProp update.
+    """
+    beta1, beta2 = betas
+
+    # Decay the second moment running average coefficient
+    exp_avg_sq.lerp_(grad.square(), 1 - beta2)
+
+    # step size correction for optimizer states EMA
+    bias_correction1 = 1.0
+    bias_correction2 = 1.0
+    if correct_bias:
+        # step size correction for ADAM moments EMA
+        bias_correction1 = 1.0 - beta1 ** (step)
+        bias_correction2 = 1.0 - beta2 ** (step)
+
+    # construct the denominator of the inner ADAM optimizer
+    second_moment = exp_avg_sq / bias_correction2
+    second_moment = second_moment.sqrt() + eps
+
+    normalized_grad = grad / second_moment
+
+    # update the exponential moving average of the gradient
+    exp_avg.lerp_(normalized_grad, 1 - beta1)
+
+    # return the LAProp update
+    return exp_avg / bias_correction1
 
 
 @torch.compile  # type: ignore[misc]

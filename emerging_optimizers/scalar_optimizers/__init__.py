@@ -12,19 +12,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .adam import calculate_adam_update
-from .ademamix import calculate_ademamix_update, calculate_sim_ademamix_update
-from .laprop import calculate_laprop_update
-from .lion import Lion, calculate_lion_update
-from .signum import calculate_signum_update
+from .lion import Lion
+from .update_fns import (
+    calculate_adam_update,
+    calculate_ademamix_update,
+    calculate_laprop_update,
+    calculate_lion_update,
+    calculate_signum_update,
+    calculate_sim_ademamix_update,
+)
 
 
 __all__ = [
     "calculate_adam_update",
-    "calculate_sim_ademamix_update",
     "calculate_ademamix_update",
-    "calculate_signum_update",
     "calculate_laprop_update",
     "calculate_lion_update",
+    "calculate_signum_update",
+    "calculate_sim_ademamix_update",
     "Lion",
 ]

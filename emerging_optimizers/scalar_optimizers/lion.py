@@ -20,50 +20,12 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import registry
 from emerging_optimizers.mixin import WeightDecayMixin, WeightDecayT
+from emerging_optimizers.scalar_optimizers.update_fns import calculate_lion_update
 
 
 __all__ = [
-    "calculate_lion_update",
     "Lion",
 ]
-
-
-@torch.compile  # type: ignore[misc]
-@torch.no_grad()  # type: ignore[misc]
-def calculate_lion_update(
-    grad: torch.Tensor,
-    exp_avg: torch.Tensor,
-    betas: tuple[float, float],
-) -> torch.Tensor:
-    """Performs the Lion update.
-
-    This function performs the computation of 1 step of Lion update.
-
-    The update rule is as follows:
-
-    .. math::
-        \\text{update} = \\text{sign}(\\beta_1 m_{t-1} + (1 - \\beta_1) g_t) \\\\
-        m_t = \\beta_2 m_{t-1} + (1 - \\beta_2) g_t
-
-    Args:
-        grad: The gradient tensor.
-        exp_avg: The accumulated first moment of the gradient.
-        betas: The EMA beta coefficients (beta1, beta2) for the Lion update.
-
-    Returns:
-        The Lion update.
-    """
-
-    beta1, beta2 = betas
-
-    # Compute update using interpolation (Lion's beta1)
-    update_momentum = beta1 * exp_avg + (1 - beta1) * grad
-
-    # Update the momentum state (Lion's beta2)
-    exp_avg.lerp_(grad, 1 - beta2)
-
-    # Return signed update (no shape scaling for Lion)
-    return torch.sign(update_momentum)
 
 
 @registry.register_optimizer("lion")
