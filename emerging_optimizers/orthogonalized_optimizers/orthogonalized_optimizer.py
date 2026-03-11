@@ -123,34 +123,20 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
     def _init_group(
         self,
         group: dict,
-        param_with_grad_list: list[torch.Tensor],
-        grad_list: list[torch.Tensor],
-        momentum_buffer_list: list[torch.Tensor],
     ) -> None:
-        """Initializes state for parameters with gradients and collects them into lists.
-
-        Similar to ``torch.optim.Adam._init_group``, this method performs lazy state initialization
-        and collects per-parameter state into flat lists for batch processing.
+        """Performs lazy state initialization for parameters with gradients.
 
         Args:
             group: Parameter group dictionary.
-            param_with_grad_list: Output list to collect parameters that have gradients.
-            grad_list: Output list to collect gradients.
-            momentum_buffer_list: Output list to collect momentum buffers.
         """
         for p in group["params"]:
-            grad = p.grad
-            if grad is None:
+            if p.grad is None:
                 continue
             state = self.state[p]
 
             # initialize momentum buffer
             if "momentum_buffer" not in state:
-                state["momentum_buffer"] = torch.zeros_like(grad)
-
-            param_with_grad_list.append(p)
-            grad_list.append(grad)
-            momentum_buffer_list.append(state["momentum_buffer"])
+                state["momentum_buffer"] = torch.zeros_like(p.grad)
 
     @overload
     def step(self, closure: None = ...) -> None: ...
@@ -172,18 +158,15 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
             loss = closure()
 
         for group in self.param_groups:
-            param_with_grad_list: list[torch.Tensor] = []
-            grad_list: list[torch.Tensor] = []
-            momentum_buffer_list: list[torch.Tensor] = []
+            self._init_group(group)
 
-            self._init_group(group, param_with_grad_list, grad_list, momentum_buffer_list)
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
 
-            for p, grad, exp_avg in zip(
-                param_with_grad_list,
-                grad_list,
-                momentum_buffer_list,
-                strict=True,
-            ):
+                grad = p.grad
+                state = self.state[p]
+
                 self._apply_weight_decay_inplace(
                     p,
                     grad,
@@ -192,13 +175,13 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 )
 
                 # update momentum buffer with EMA of gradient
-                exp_avg.lerp_(grad, 1 - group["momentum"])
+                state["momentum_buffer"].lerp_(grad, 1 - group["momentum"])
 
                 # include nesterov momentum
                 if self.nesterov:
-                    grad = grad.lerp(exp_avg, group["momentum"])
+                    grad = grad.lerp(state["momentum_buffer"], group["momentum"])
                 else:
-                    grad = exp_avg
+                    grad = state["momentum_buffer"]
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     group_kwargs = {k: v for k, v in group.items() if k != "params"}
