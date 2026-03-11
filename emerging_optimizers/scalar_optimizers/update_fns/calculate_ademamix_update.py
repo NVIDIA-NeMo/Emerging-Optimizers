@@ -64,7 +64,7 @@ def calculate_ademamix_update(
         step: The current step of the optimizer, used to compute the bias correction terms.
         eps: The epsilon for the Adam second moment update.
         correct_bias: Whether to correct the bias of the AdEMAMix update.
-        alpha: Coeficient for mixing the current gradient and EMA, the final value to use in case of scheduling.
+        alpha: Coefficient for mixing the current gradient and EMA, the final value to use in case of scheduling.
 
     Returns:
         The AdEMAMix update.
@@ -73,8 +73,6 @@ def calculate_ademamix_update(
 
     if num_alpha_warmup_steps is not None:
         alpha = _linear_warmup_scheduler(step, alpha_end=alpha, alpha_start=0, num_warmup_steps=num_alpha_warmup_steps)
-    else:
-        alpha = alpha
 
     # Compute beta_slow based on scheduler with half-life linear warmup
     # beta_start is usually set to beta_fast

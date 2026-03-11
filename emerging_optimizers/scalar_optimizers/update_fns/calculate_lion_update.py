@@ -49,7 +49,7 @@ def calculate_lion_update(
     beta1, beta2 = betas
 
     # Compute update using interpolation (Lion's beta1)
-    update_momentum = beta1 * exp_avg + (1 - beta1) * grad
+    update_momentum = exp_avg.lerp(grad, 1 - beta1)
 
     # Update the momentum state (Lion's beta2)
     exp_avg.lerp_(grad, 1 - beta2)
