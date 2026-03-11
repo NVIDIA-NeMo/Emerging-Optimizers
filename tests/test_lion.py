@@ -185,22 +185,30 @@ class LionOptimizerTest(parameterized.TestCase):
 
     def test_param_groups(self) -> None:
         """Lion supports multiple parameter groups with different hyperparameters."""
-        p1 = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
-        p2 = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
+        p1 = torch.nn.Parameter(torch.full((3, 3), 2.0, device=self.device))
+        p2 = torch.nn.Parameter(torch.full((3, 3), 2.0, device=self.device))
         optimizer = Lion(
             [
                 {"params": [p1], "lr": 0.01},
                 {"params": [p2], "lr": 0.001},
             ],
             betas=(0.9, 0.99),
+            weight_decay=0.0,
         )
-        p1.grad = torch.randn_like(p1)
-        p2.grad = torch.randn_like(p2)
+        p1_original = p1.data.clone()
+        p2_original = p2.data.clone()
+        p1.grad = torch.full((3, 3), 4.0, device=self.device)
+        p2.grad = torch.full((3, 3), 4.0, device=self.device)
         optimizer.step()
 
         # Both should have state initialized
         self.assertIn("exp_avg", optimizer.state[p1])
         self.assertIn("exp_avg", optimizer.state[p2])
+
+        # p1 (lr=0.01) should have moved more than p2 (lr=0.001)
+        p1_change = (p1.data - p1_original).abs().mean()
+        p2_change = (p2.data - p2_original).abs().mean()
+        self.assertGreater(p1_change.item(), p2_change.item())
 
 
 if __name__ == "__main__":

@@ -74,15 +74,14 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
     exponential moving average (no second moment), resulting in lower memory usage
     than Adam.
 
-    The update rule is:
+    The update rule below assumes ``weight_decay_method="decoupled"`` (the default).
+    See :class:`~emerging_optimizers.mixin.WeightDecayMixin` for the other modes.
 
     .. math::
         p = p \\cdot (1 - \\text{lr} \\cdot \\lambda) \\\\
         \\text{update} = \\text{sign}(\\beta_1 m_{t-1} + (1 - \\beta_1) g_t) \\\\
         m_t = \\beta_2 m_{t-1} + (1 - \\beta_2) g_t \\\\
         p = p - \\text{lr} \\cdot \\text{update}
-
-    where :math:`\\lambda` is the weight decay coefficient.
 
     References:
         - Chen, X., Liang, C., Huang, D., Real, E., Wang, K., Liu, Y., Pham, H., Dong, X.,
@@ -169,6 +168,8 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
                 self._apply_weight_decay_inplace(p.data, grad, lr, weight_decay)
 
                 # Lion update: sign(beta1 * m + (1-beta1) * g)
+                # Note: different betas per param-group will each trigger a one-time
+                # torch.compile recompilation of calculate_lion_update.
                 update = calculate_lion_update(grad, exp_avg, betas)
                 p.data.add_(update, alpha=-lr)
 
