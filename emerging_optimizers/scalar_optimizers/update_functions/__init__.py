@@ -12,12 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .calculate_adam_update import calculate_adam_update
-from .calculate_ademamix_update import calculate_ademamix_update
-from .calculate_laprop_update import calculate_laprop_update
-from .calculate_lion_update import calculate_lion_update
-from .calculate_signum_update import calculate_signum_update
-from .calculate_sim_ademamix_update import calculate_sim_ademamix_update
+from emerging_optimizers.scalar_optimizers.update_functions.adam import *
+from emerging_optimizers.scalar_optimizers.update_functions.ademamix import *
+from emerging_optimizers.scalar_optimizers.update_functions.laprop import *
+from emerging_optimizers.scalar_optimizers.update_functions.lion import *
+from emerging_optimizers.scalar_optimizers.update_functions.signum import *
 
 
 __all__ = [

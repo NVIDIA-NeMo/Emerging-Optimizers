@@ -20,7 +20,7 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import registry
 from emerging_optimizers.mixin import WeightDecayMixin, WeightDecayT
-from emerging_optimizers.scalar_optimizers.update_fns import calculate_lion_update
+from emerging_optimizers.scalar_optimizers.update_functions import calculate_lion_update
 
 
 __all__ = [
