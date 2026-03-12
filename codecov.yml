@@ -1,8 +1,14 @@
-comment: false
+comment:
+  layout: "condensed_header, condensed_files, condensed_footer"
+  require_changes: true
 coverage:
   status:
-    project: false
-    patch: false
+    project:
+      default:
+        target: auto
+    patch:
+      default:
+        target: auto
 
 fixes:
   - "/workspace/::"
