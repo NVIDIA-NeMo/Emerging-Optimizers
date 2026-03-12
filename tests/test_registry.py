@@ -75,6 +75,16 @@ class TestRegistry(parameterized.TestCase):
         assert opt_cls is not muon.Muon
         _ = opt_cls([torch.randn(10, 10)], extra_scale_factor=0.2)
 
+    def test_get_optimizer_name_list_all_names_registered(self):
+        epot_name_list = registry.get_optimizer_name_list()
+        logging.debug(f"Available optimizers: {epot_name_list}")
+
+        # Register is called on import, so we can't know what should be in registry easily.
+        # So we check all names are valid and already registered
+        for opt_name in epot_name_list:
+            with self.assertRaisesRegex(ValueError, "already registered"):
+                registry.register_optimizer(opt_name)(registry.get_optimizer_cls(opt_name))
+
 
 if __name__ == "__main__":
     absltest.main()
