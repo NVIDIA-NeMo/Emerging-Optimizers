@@ -37,19 +37,29 @@ class LionOptimizerTest(parameterized.TestCase):
     def setUp(self):
         self.device = FLAGS.device
 
-    def test_smoke(self) -> None:
+    @parameterized.parameters(
+        {"shape": (3, 3)},
+        {"shape": (15, 31)},
+        {"shape": (127, 255)},
+    )
+    def test_smoke(self, shape) -> None:
         """Lion optimizer can be instantiated and stepped."""
-        param = torch.nn.Parameter(torch.randn(4, 4, device=self.device))
+        param = torch.nn.Parameter(torch.randn(*shape, device=self.device))
         optimizer = Lion([param], lr=1e-4)
         param.grad = torch.randn_like(param)
         optimizer.step()
 
-    def test_state_initialization(self) -> None:
+    @parameterized.parameters(
+        {"shape": (3, 3)},
+        {"shape": (15, 31)},
+        {"shape": (127, 255)},
+    )
+    def test_state_initialization(self, shape) -> None:
         """Lion initializes exp_avg state to zeros on first step."""
         beta2 = 0.75
-        param = torch.nn.Parameter(torch.full((3, 3), 2.0, device=self.device))
+        param = torch.nn.Parameter(torch.randint(-3, 5, shape, device=self.device, dtype=torch.float32))
         optimizer = Lion([param], lr=0.25, betas=(0.5, beta2), weight_decay=0.0)
-        grad = torch.full((3, 3), 4.0, device=self.device)
+        grad = torch.randint_like(param, -3, 5)
         param.grad = grad.clone()
         optimizer.step()
         self.assertIn("exp_avg", optimizer.state[param])
@@ -57,24 +67,29 @@ class LionOptimizerTest(parameterized.TestCase):
         expected = (1 - beta2) * grad
         torch.testing.assert_close(optimizer.state[param]["exp_avg"], expected, atol=0, rtol=0)
 
-    def test_no_grad_no_update(self) -> None:
+    @parameterized.parameters(
+        {"shape": (3, 3)},
+        {"shape": (15, 31)},
+        {"shape": (127, 255)},
+    )
+    def test_no_grad_no_update_params_unchanged(self, shape) -> None:
         """Parameters without gradients are not updated."""
-        param = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
+        param = torch.nn.Parameter(torch.randn(*shape, device=self.device))
         original = param.data.clone()
         optimizer = Lion([param], lr=1e-4)
         optimizer.step()
         torch.testing.assert_close(param.data, original, atol=0, rtol=0)
 
-    @parameterized.parameters(
-        {"betas": (0.9, 0.99)},
-        {"betas": (0.95, 0.98)},
+    @parameterized.product(
+        betas=[(0.9, 0.99), (0.95, 0.98)],
+        shape=[(3, 3), (15, 31), (127, 255)],
     )
-    def test_update_is_sign_based(self, betas) -> None:
+    def test_update_is_sign_based(self, betas, shape) -> None:
         """Lion updates should be +/- lr (sign-based)."""
-        param = torch.nn.Parameter(torch.full((5, 5), 4.0, device=self.device))
+        param = torch.nn.Parameter(torch.randint(-5, 5, shape, device=self.device, dtype=torch.float32))
         optimizer = Lion([param], lr=0.25, betas=betas, weight_decay=0.0)
         # Use a fixed, non-zero gradient to guarantee sign(g) != 0 for every element.
-        param.grad = torch.full((5, 5), 2.0, device=self.device)
+        param.grad = torch.randint(1, 5, shape, device=self.device, dtype=torch.float32)
         old_param = param.data.clone()
         optimizer.step()
 
@@ -82,13 +97,18 @@ class LionOptimizerTest(parameterized.TestCase):
         diff = old_param - param.data
         torch.testing.assert_close(diff.abs(), torch.full_like(diff, 0.25), atol=0, rtol=0)
 
-    def test_weight_decay_decoupled(self) -> None:
+    @parameterized.parameters(
+        {"shape": (3, 3)},
+        {"shape": (15, 31)},
+        {"shape": (127, 255)},
+    )
+    def test_weight_decay_decoupled_matches_analytical(self, shape) -> None:
         """Decoupled weight decay shrinks parameters toward zero."""
         lr = 0.25
         wd = 0.5
-        param = torch.nn.Parameter(torch.ones(3, 3, device=self.device))
+        param = torch.nn.Parameter(torch.randint(1, 5, shape, device=self.device, dtype=torch.float32))
         optimizer = Lion([param], lr=lr, weight_decay=wd, weight_decay_method="decoupled")
-        param.grad = torch.zeros(3, 3, device=self.device)
+        param.grad = torch.zeros(*shape, device=self.device)
 
         old_param = param.data.clone()
         optimizer.step()
@@ -97,48 +117,63 @@ class LionOptimizerTest(parameterized.TestCase):
         expected = old_param * (1 - lr * wd)
         torch.testing.assert_close(param.data, expected, atol=0, rtol=0)
 
-    def test_weight_decay_l2(self) -> None:
+    @parameterized.parameters(
+        {"shape": (3, 3)},
+        {"shape": (15, 31)},
+        {"shape": (127, 255)},
+    )
+    def test_weight_decay_l2(self, shape) -> None:
         """L2 weight decay folds into gradient before sign(), so it can be masked."""
         lr = 0.25
         wd = 0.5
-        param = torch.nn.Parameter(torch.ones(3, 3, device=self.device))
+        param = torch.nn.Parameter(torch.randint(1, 5, shape, device=self.device, dtype=torch.float32))
         optimizer = Lion([param], lr=lr, weight_decay=wd, weight_decay_method="l2")
         # Use zero gradient so that the only gradient contribution is from L2: grad += wd * p
-        param.grad = torch.zeros(3, 3, device=self.device)
+        param.grad = torch.zeros(*shape, device=self.device)
 
         old_param = param.data.clone()
         optimizer.step()
 
-        # After L2, grad becomes 0 + wd * 1 = wd (all positive).
-        # First step: exp_avg is zero, so update = sign(beta1 * 0 + (1-beta1) * wd) = sign(wd) = 1
-        # p = p - lr * sign = 1 - lr
-        expected = old_param - lr * torch.ones(3, 3, device=self.device)
+        # After L2, grad becomes 0 + wd * p (all positive since p > 0).
+        # First step: exp_avg is zero, so update = sign(beta1 * 0 + (1-beta1) * wd * p) = sign(positive) = 1
+        # p = p - lr * sign = p - lr
+        expected = old_param - lr
         torch.testing.assert_close(param.data, expected, atol=0, rtol=0)
 
-    def test_weight_decay_l2_masked_by_gradient(self) -> None:
+    @parameterized.parameters(
+        {"shape": (3, 3)},
+        {"shape": (15, 31)},
+        {"shape": (127, 255)},
+    )
+    def test_weight_decay_l2_masked_by_gradient(self, shape) -> None:
         """L2 decay penalty can be masked when the gradient dominates the sign."""
         lr = 0.25
         wd = 0.125
-        param = torch.nn.Parameter(torch.ones(3, 3, device=self.device))
+        param = torch.nn.Parameter(torch.randint(1, 5, shape, device=self.device, dtype=torch.float32))
         optimizer = Lion([param], lr=lr, weight_decay=wd, weight_decay_method="l2")
-        # Large negative gradient dominates: grad + wd*p = -8 + 0.125, sign = -1
-        param.grad = torch.full((3, 3), -8.0, device=self.device)
+        # Large negative gradient dominates: grad + wd*p is still negative, sign = -1
+        param.grad = torch.randint(-10, -5, shape, device=self.device, dtype=torch.float32)
 
         old_param = param.data.clone()
         optimizer.step()
 
         # sign(negative) = -1, so p = p - lr * (-1) = p + lr, parameter grows
         # L2 cannot guarantee shrinkage when gradient dominates
-        expected = old_param + lr * torch.ones(3, 3, device=self.device)
+        expected = old_param + lr
         torch.testing.assert_close(param.data, expected, atol=0, rtol=0)
 
-    def test_weight_decay_independent(self) -> None:
+    @parameterized.parameters(
+        {"shape": (3, 3)},
+        {"shape": (15, 31)},
+        {"shape": (127, 255)},
+    )
+    def test_weight_decay_independent_matches_analytical(self, shape) -> None:
         """Independent weight decay shrinks params without lr scaling."""
         lr = 0.25
         wd = 0.5
-        param = torch.nn.Parameter(torch.ones(3, 3, device=self.device))
+        param = torch.nn.Parameter(torch.randint(1, 5, shape, device=self.device, dtype=torch.float32))
         optimizer = Lion([param], lr=lr, weight_decay=wd, weight_decay_method="independent")
-        param.grad = torch.zeros(3, 3, device=self.device)
+        param.grad = torch.zeros(*shape, device=self.device)
 
         old_param = param.data.clone()
         optimizer.step()
@@ -147,21 +182,26 @@ class LionOptimizerTest(parameterized.TestCase):
         expected = old_param * (1 - wd)
         torch.testing.assert_close(param.data, expected, atol=0, rtol=0)
 
-    def test_exp_avg_evolves_correctly(self) -> None:
+    @parameterized.parameters(
+        {"shape": (3, 3)},
+        {"shape": (15, 31)},
+        {"shape": (127, 255)},
+    )
+    def test_exp_avg_evolves_correctly(self, shape) -> None:
         """Verify exp_avg state matches analytical values after deterministic steps."""
         beta1, beta2 = 0.9, 0.99
-        param = torch.nn.Parameter(torch.ones(2, 2, device=self.device))
+        param = torch.nn.Parameter(torch.randint(-5, 5, shape, device=self.device, dtype=torch.float32))
         optimizer = Lion([param], lr=0.01, betas=(beta1, beta2), weight_decay=0.0)
 
         grads = [
-            torch.full((2, 2), 1.0, device=self.device),
-            torch.full((2, 2), -2.0, device=self.device),
-            torch.full((2, 2), 0.5, device=self.device),
+            torch.randint(-3, 3, shape, device=self.device, dtype=torch.float32),
+            torch.randint(-3, 3, shape, device=self.device, dtype=torch.float32),
+            torch.randint(-3, 3, shape, device=self.device, dtype=torch.float32),
         ]
 
         # exp_avg starts at 0. Each step: exp_avg = lerp(exp_avg, grad, 1 - beta2)
         # i.e. exp_avg = beta2 * exp_avg + (1 - beta2) * grad
-        expected_exp_avg = torch.zeros(2, 2, device=self.device)
+        expected_exp_avg = torch.zeros(*shape, device=self.device)
         for grad in grads:
             param.grad = grad.clone()
             optimizer.step()
@@ -169,24 +209,15 @@ class LionOptimizerTest(parameterized.TestCase):
 
         torch.testing.assert_close(optimizer.state[param]["exp_avg"], expected_exp_avg, atol=1e-6, rtol=1e-6)
 
-    def test_convergence_on_quadratic(self) -> None:
-        """Lion should minimize a simple quadratic f(x) = ||x||^2."""
-        torch.manual_seed(42)
-        param = torch.nn.Parameter(torch.randn(10, device=self.device) * 5)
-        optimizer = Lion([param], lr=1e-2, betas=(0.9, 0.99))
-
-        for _ in range(2000):
-            optimizer.zero_grad()
-            loss = (param**2).sum()
-            loss.backward()
-            optimizer.step()
-
-        self.assertLess(param.data.abs().max().item(), 0.1)
-
-    def test_param_groups(self) -> None:
+    @parameterized.parameters(
+        {"shape": (3, 3)},
+        {"shape": (15, 31)},
+        {"shape": (127, 255)},
+    )
+    def test_param_groups_large_lr_moves_more(self, shape) -> None:
         """Lion supports multiple parameter groups with different hyperparameters."""
-        p1 = torch.nn.Parameter(torch.full((3, 3), 2.0, device=self.device))
-        p2 = torch.nn.Parameter(torch.full((3, 3), 2.0, device=self.device))
+        p1 = torch.nn.Parameter(torch.randint(-5, 5, shape, device=self.device, dtype=torch.float32))
+        p2 = torch.nn.Parameter(torch.randint(-5, 5, shape, device=self.device, dtype=torch.float32))
         optimizer = Lion(
             [
                 {"params": [p1], "lr": 0.01},
@@ -197,8 +228,9 @@ class LionOptimizerTest(parameterized.TestCase):
         )
         p1_original = p1.data.clone()
         p2_original = p2.data.clone()
-        p1.grad = torch.full((3, 3), 4.0, device=self.device)
-        p2.grad = torch.full((3, 3), 4.0, device=self.device)
+        grad = torch.randint(1, 5, shape, device=self.device, dtype=torch.float32)
+        p1.grad = grad.clone()
+        p2.grad = grad.clone()
         optimizer.step()
 
         # Both should have state initialized

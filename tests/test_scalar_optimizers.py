@@ -33,7 +33,7 @@ def setUpModule() -> None:
             torch.cuda.manual_seed_all(FLAGS.seed)
 
 
-class ScalarOptimizerTest(parameterized.TestCase):
+class UpdateFunctionTest(parameterized.TestCase):
     def setUp(self):
         self.device = FLAGS.device
 
