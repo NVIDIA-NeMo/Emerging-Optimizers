@@ -12,7 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Callable, overload, override
+from typing import TYPE_CHECKING, Any, Callable, override
+
+
+if TYPE_CHECKING:
+    from typing import overload
 
 import torch
 import torch.optim as optim
@@ -138,11 +142,13 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
             if "momentum_buffer" not in state:
                 state["momentum_buffer"] = torch.zeros_like(p.grad)
 
-    @overload
-    def step(self, closure: None = ...) -> None: ...
+    if TYPE_CHECKING:
 
-    @overload
-    def step(self, closure: Callable[[], float]) -> float: ...
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override

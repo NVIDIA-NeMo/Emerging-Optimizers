@@ -14,7 +14,11 @@
 # limitations under the License.
 from functools import partial
 from itertools import chain
-from typing import Callable, overload, override
+from typing import TYPE_CHECKING, Callable, override
+
+
+if TYPE_CHECKING:
+    from typing import overload
 
 import torch
 from absl import logging
@@ -22,7 +26,8 @@ from torch import optim
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import registry, scalar_optimizers, utils
+from emerging_optimizers import registry, utils
+from emerging_optimizers.scalar_optimizers import update_functions
 from emerging_optimizers.soap import soap_utils
 from emerging_optimizers.utils import FP32MatmulPrecT
 
@@ -165,11 +170,13 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 )
                 state["Q"] = [torch.eye(shape, device=grad.device) for shape in grad.shape]
 
-    @overload
-    def step(self, closure: None = ...) -> None: ...
+    if TYPE_CHECKING:
 
-    @overload
-    def step(self, closure: Callable[[], float]) -> float: ...
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override
@@ -279,7 +286,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 torch.cuda.nvtx.range_pop()
 
                 # Calculate the Adam update for the projected gradient tensor
-                adam_update = scalar_optimizers.calculate_adam_update(
+                adam_update = update_functions.calculate_adam_update(
                     grad_projected,
                     state["exp_avg"],
                     state["exp_avg_sq"],

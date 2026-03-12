@@ -16,7 +16,7 @@ import torch
 from absl import flags, logging, testing
 from absl.testing import parameterized
 
-from emerging_optimizers import scalar_optimizers
+from emerging_optimizers.scalar_optimizers import update_functions
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -33,7 +33,7 @@ def setUpModule() -> None:
             torch.cuda.manual_seed_all(FLAGS.seed)
 
 
-class ScalarOptimizerTest(parameterized.TestCase):
+class UpdateFunctionTest(parameterized.TestCase):
     def setUp(self):
         self.device = FLAGS.device
 
@@ -55,7 +55,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         exp_avg_for_manual_calc = exp_avg_initial.clone()
         exp_avg_sq_for_manual_calc = exp_avg_sq_initial.clone()
 
-        manual_update_value = scalar_optimizers.calculate_adam_update(
+        manual_update_value = update_functions.calculate_adam_update(
             grad,
             exp_avg_for_manual_calc,
             exp_avg_sq_for_manual_calc,
@@ -113,7 +113,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         exp_avg_sq_for_laprop = exp_avg_sq_initial.clone()
 
         # Calculate LaProp update
-        laprop_update = scalar_optimizers.calculate_laprop_update(
+        laprop_update = update_functions.calculate_laprop_update(
             grad,
             exp_avg_for_laprop,
             exp_avg_sq_for_laprop,
@@ -173,7 +173,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         exp_avg_fast_for_ademamix = exp_avg_fast_initial.clone()
         exp_avg_slow_for_ademamix = exp_avg_slow_initial.clone()
         exp_avg_sq_for_ademamix = exp_avg_sq_initial.clone()
-        ademamix_update = scalar_optimizers.calculate_ademamix_update(
+        ademamix_update = update_functions.calculate_ademamix_update(
             grad,
             exp_avg_fast_for_ademamix,
             exp_avg_slow_for_ademamix,
@@ -190,7 +190,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         # Calculate Adam update
         exp_avg_for_adam = exp_avg_fast_initial.clone()
         exp_avg_sq_for_adam = exp_avg_sq_initial.clone()
-        adam_update = scalar_optimizers.calculate_adam_update(
+        adam_update = update_functions.calculate_adam_update(
             grad,
             exp_avg_for_adam,
             exp_avg_sq_for_adam,
@@ -217,7 +217,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         exp_avg_sq_for_sim_ademamix = exp_avg_sq_initial.clone()
 
         # Calculate LaProp update
-        sim_ademamix_update = scalar_optimizers.calculate_sim_ademamix_update(
+        sim_ademamix_update = update_functions.calculate_sim_ademamix_update(
             grad,
             exp_avg_for_sim_ademamix,
             exp_avg_sq_for_sim_ademamix,
@@ -272,7 +272,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         grad = torch.rand(shape, device=self.device) - 0.3
         exp_avg = torch.lerp(torch.randn(shape, device=self.device), grad, 1 - momentum)
 
-        update = scalar_optimizers.calculate_signum_update(
+        update = update_functions.calculate_signum_update(
             grad, exp_avg, momentum=momentum, correct_bias=correct_bias, nesterov=nesterov, step=step
         )
 
@@ -284,7 +284,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         grad = torch.rand(shape, device=self.device) - 0.3
         exp_avg = torch.lerp(torch.randn(shape, device=self.device), grad, 1 - momentum)
 
-        update_abs = scalar_optimizers.calculate_signum_update(
+        update_abs = update_functions.calculate_signum_update(
             grad,
             exp_avg,
             momentum=momentum,
@@ -304,7 +304,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         exp_avg = torch.randn(shape, device=self.device)
         exp_avg_clone = exp_avg.clone()
 
-        update = scalar_optimizers.calculate_lion_update(grad, exp_avg, betas=(beta, beta))
+        update = update_functions.calculate_lion_update(grad, exp_avg, betas=(beta, beta))
 
         # Update should be sign(beta * m + (1 - beta) * g)
         expected_update = torch.sign(beta * exp_avg_clone + (1 - beta) * grad)
@@ -322,7 +322,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         exp_avg = torch.randn(shape, device=self.device)
         exp_avg_clone = exp_avg.clone()
 
-        update = scalar_optimizers.calculate_lion_update(grad, exp_avg, betas=(beta1, beta2))
+        update = update_functions.calculate_lion_update(grad, exp_avg, betas=(beta1, beta2))
 
         expected_update = torch.sign(beta1 * exp_avg_clone + (1 - beta1) * grad)
         torch.testing.assert_close(update, expected_update, atol=0, rtol=0)

@@ -13,14 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from collections.abc import Callable
-from typing import overload, override
+from typing import TYPE_CHECKING, override
+
+
+if TYPE_CHECKING:
+    from typing import overload
 
 import torch
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import registry
 from emerging_optimizers.mixin import WeightDecayMixin, WeightDecayT
-from emerging_optimizers.scalar_optimizers.update_fns import calculate_lion_update
+from emerging_optimizers.scalar_optimizers.update_functions import calculate_lion_update
 
 
 __all__ = [
@@ -81,11 +85,13 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
         self.weight_decay_method = weight_decay_method
         super().__init__(params, defaults)
 
-    @overload
-    def step(self, closure: None = ...) -> None: ...
+    if TYPE_CHECKING:
 
-    @overload
-    def step(self, closure: Callable[[], float]) -> float: ...
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override
