@@ -14,7 +14,11 @@
 # limitations under the License.
 from functools import partial
 from itertools import chain
-from typing import Callable, overload, override
+from typing import TYPE_CHECKING, Callable, override
+
+
+if TYPE_CHECKING:
+    from typing import overload
 
 import torch
 from absl import logging
@@ -166,11 +170,13 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 )
                 state["Q"] = [torch.eye(shape, device=grad.device) for shape in grad.shape]
 
-    @overload
-    def step(self, closure: None = ...) -> None: ...
+    if TYPE_CHECKING:
 
-    @overload
-    def step(self, closure: Callable[[], float]) -> float: ...
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override

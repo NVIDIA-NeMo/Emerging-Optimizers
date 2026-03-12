@@ -185,5 +185,6 @@ exclude_also = [
     "loss = closure",
     "raise .*Error",
     "@abstractmethod",
+    "if TYPE_CHECKING:",
 ]
 
