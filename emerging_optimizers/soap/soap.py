@@ -14,7 +14,11 @@
 # limitations under the License.
 from functools import partial
 from itertools import chain
-from typing import TYPE_CHECKING, Callable, overload, override
+from typing import TYPE_CHECKING, Callable, override
+
+
+if TYPE_CHECKING:
+    from typing import overload
 
 import torch
 from absl import logging

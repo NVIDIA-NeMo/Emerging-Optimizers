@@ -13,7 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from collections.abc import Callable
-from typing import TYPE_CHECKING, overload, override
+from typing import TYPE_CHECKING, override
+
+
+if TYPE_CHECKING:
+    from typing import overload
 
 import torch
 from torch.optim.optimizer import ParamsT
