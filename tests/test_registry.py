@@ -79,6 +79,8 @@ class TestRegistry(parameterized.TestCase):
         epot_name_list = registry.get_optimizer_name_list()
         logging.debug(f"Available optimizers: {epot_name_list}")
 
+        self.assertNotEmpty(epot_name_list)
+
         # Register is called on import, so we can't know what should be in registry easily.
         # So we check all names are valid and already registered
         for opt_name in epot_name_list:
