@@ -22,7 +22,8 @@ from torch import optim
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import registry, scalar_optimizers, utils
+from emerging_optimizers import registry, utils
+from emerging_optimizers.scalar_optimizers import update_functions
 from emerging_optimizers.soap import soap_utils
 from emerging_optimizers.utils import FP32MatmulPrecT
 
@@ -279,7 +280,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 torch.cuda.nvtx.range_pop()
 
                 # Calculate the Adam update for the projected gradient tensor
-                adam_update = scalar_optimizers.calculate_adam_update(
+                adam_update = update_functions.calculate_adam_update(
                     grad_projected,
                     state["exp_avg"],
                     state["exp_avg_sq"],
