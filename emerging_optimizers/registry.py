@@ -36,6 +36,11 @@ def register_optimizer(name: str) -> Callable[[type[optim.Optimizer]], type[opti
     return decorator
 
 
+def get_optimizer_name_list() -> list[str]:
+    """Returns the list of optimizer names in the registry."""
+    return list(_OPTIMIZERS.keys())
+
+
 def get_optimizer_cls(name: str) -> type[optim.Optimizer]:
     """Returns the optimizer class from the registry.
 
