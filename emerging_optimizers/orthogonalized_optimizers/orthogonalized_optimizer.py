@@ -127,7 +127,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
     def _init_group(
         self,
         group: dict,
-        skip_non_grad_params: bool = False,
+        skip_non_grad_params: bool = True,
     ) -> None:
         """Performs lazy state initialization for parameters.
 
