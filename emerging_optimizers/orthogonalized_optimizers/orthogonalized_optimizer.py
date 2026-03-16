@@ -127,6 +127,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
     def _init_group(
         self,
         group: dict,
+        skip_non_grad_params: bool = False,
     ) -> None:
         """Performs lazy state initialization for parameters with gradients.
 
@@ -134,13 +135,13 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
             group: Parameter group dictionary.
         """
         for p in group["params"]:
-            if p.grad is None:
+            if skip_non_grad_params and p.grad is None:
                 continue
             state = self.state[p]
 
             # initialize momentum buffer
-            if "momentum_buffer" not in state:
-                state["momentum_buffer"] = torch.zeros_like(p.grad)
+            if len(state) == 0:
+                state["momentum_buffer"] = torch.zeros_like(p.data)
 
     if TYPE_CHECKING:
 

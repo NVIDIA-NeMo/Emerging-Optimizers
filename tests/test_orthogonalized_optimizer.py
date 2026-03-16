@@ -147,6 +147,33 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             rtol=0,
         )
 
+    @parameterized.parameters(
+        {"skip_non_grad_params": False},
+        {"skip_non_grad_params": True},
+    )
+    def test_init_group_skip_non_grad_params(self, skip_non_grad_params) -> None:
+        """Test _init_group with skip_non_grad_params flag."""
+        param_with_grad = nn.Parameter(torch.randn(5, 7, device=self.device))
+        param_without_grad = nn.Parameter(torch.randn(5, 7, device=self.device))
+        param_with_grad.grad = torch.randn_like(param_with_grad)
+
+        opt = OrthogonalizedOptimizer(
+            [param_with_grad, param_without_grad],
+            lr=1.0,
+            momentum=0.0,
+            nesterov=False,
+            weight_decay=0.0,
+            weight_decay_method="l2",
+            fp32_matmul_prec="highest",
+        )
+
+        opt._init_group(opt.param_groups[0], skip_non_grad_params=skip_non_grad_params)
+
+        self.assertIn("momentum_buffer", opt.state[param_with_grad])
+        self.assertEqual(opt.state[param_with_grad]["momentum_buffer"].shape, param_with_grad.data.shape)
+
+        self.assertEqual("momentum_buffer" in opt.state[param_without_grad], not skip_non_grad_params)
+
     def test_split_fn_interleaved(self) -> None:
         """Test a three way interleaved split function.
 
