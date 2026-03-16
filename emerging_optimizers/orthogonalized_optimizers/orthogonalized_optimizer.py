@@ -129,10 +129,11 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         group: dict,
         skip_non_grad_params: bool = False,
     ) -> None:
-        """Performs lazy state initialization for parameters with gradients.
+        """Performs lazy state initialization for parameters.
 
         Args:
             group: Parameter group dictionary.
+            skip_non_grad_params: If True, skip parameters without gradients.
         """
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
