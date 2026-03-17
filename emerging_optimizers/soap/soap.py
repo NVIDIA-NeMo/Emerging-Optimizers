@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from functools import partial
-from itertools import chain
 from typing import TYPE_CHECKING, Callable, override
 
 
@@ -379,15 +378,9 @@ def update_kronecker_factors(
         >>> update_kronecker_factors([L, R], grad, shampoo_beta=0.95)
 
     """
-    for idx, kronecker_factor in enumerate(kronecker_factor_list):
-        # Compute outer product by contracting all dimensions except idx
-        contract_dims = [*chain(range(idx), range(idx + 1, grad.dim()))]
-        outer_product = torch.tensordot(
-            grad,
-            grad,
-            dims=[contract_dims] * 2,
-        )
-        kronecker_factor.lerp_(outer_product, 1 - shampoo_beta)
+    # L = G @ G.T, R = G.T @ G
+    kronecker_factor_list[0].lerp_(grad @ grad.T, 1 - shampoo_beta)
+    kronecker_factor_list[1].lerp_(grad.T @ grad, 1 - shampoo_beta)
 
 
 @torch.no_grad()  # type: ignore[misc]
