@@ -136,6 +136,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
     def _init_group(
         self,
         group: dict,
+        skip_non_grad_params: bool = True,
     ) -> None:
         """Performs lazy state initialization for parameters with gradients.
 
@@ -143,25 +144,24 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             group: Parameter group dictionary.
         """
         for p in group["params"]:
-            if p.grad is None:
+            if skip_non_grad_params and p.grad is None:
                 continue
 
             if p.dim() < 2:
                 raise TypeError("SOAP is only supported for 2D tensors")
 
-            # Cast grad to float32 here if it is not already in float32 because Kronecker factors need to be
-            # in float32 for accumulation and decomposition.
-            grad = p.grad.to(torch.float32)
             state = self.state[p]
 
             if len(state) == 0:
                 state["step"] = 0
-                state["exp_avg"] = torch.zeros_like(grad)
-                state["exp_avg_sq"] = torch.zeros_like(grad)
-                state["L"], state["R"] = init_kronecker_factors(grad)
+                state["exp_avg"] = torch.zeros_like(p.data, dtype=torch.float32)
+                state["exp_avg_sq"] = torch.zeros_like(p.data, dtype=torch.float32)
 
-                state["QL"] = torch.eye(grad.shape[0], device=grad.device)
-                state["QR"] = torch.eye(grad.shape[1], device=grad.device)
+                # Use shape of p instead of grad for initialization because of the introduction of skip_non_grad_params
+                # for megatron-lm distributed checkpointing use. _init_group can be called without grad.
+                state["L"], state["R"] = init_kronecker_factors(p.data)
+                state["QL"] = torch.eye(p.shape[0], device=p.device)
+                state["QR"] = torch.eye(p.shape[1], device=p.device)
 
     if TYPE_CHECKING:
 
