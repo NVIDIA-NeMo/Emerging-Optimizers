@@ -147,7 +147,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             if skip_non_grad_params and p.grad is None:
                 continue
 
-            if p.dim() < 2:
+            if p.dim() != 2:
                 raise TypeError("SOAP is only supported for 2D tensors")
 
             state = self.state[p]
@@ -238,9 +238,14 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     # Always use eigh for the first eigenbasis update
                     use_eigh = self.use_eigh if state["step"] != self.adam_warmup_steps else True
 
-                    # Skip eigenbasis update if use_adaptive_criteria is True and all eigenbases meet the criteria
-                    skip_update = self.use_adaptive_criteria and soap_utils.all_eigenbases_met_criteria(
-                        kronecker_factor_list, eigenbasis_list, self.adaptive_update_tolerance
+                    # Skip eigenbasis update if use_adaptive_criteria is True and all eigenbases meet the criteria.
+                    # Never skip the first eigenbasis update (step == adam_warmup_steps) since QL/QR are still identity.
+                    skip_update = (
+                        self.use_adaptive_criteria
+                        and state["step"] > self.adam_warmup_steps
+                        and soap_utils.all_eigenbases_met_criteria(
+                            kronecker_factor_list, eigenbasis_list, self.adaptive_update_tolerance
+                        )
                     )
                     if not skip_update:
                         with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
@@ -317,9 +322,8 @@ def init_kronecker_factors(
     """Initializes the kronecker factor matrices for the SOAP optimizer.
 
     This function creates the initial Kronecker factor matrices (L and R) used for
-    preconditioning. For 1D tensors (like biases), preconditioning is skipped and an
-    empty list is returned. For higher dimensional tensors, it creates a square
-    kronecker factor matrix for each dimension.
+    preconditioning. It creates a square kronecker factor matrix for each dimension
+    of the 2D gradient tensor.
 
     Note:
         The Kronecker factors are always initialized to float32 (unless default precision is set otherwise) as its
