@@ -531,6 +531,12 @@ def precondition(
     This function performs tensor contractions between the input gradient
     and kronecker factor eigenbases.
 
+    Note:
+        For 2D tensors, we can use matmul instead of tensordot for code legibility. However, the code has
+        been using tensordot historically, so does the reference implementation. It is difficult to match
+        matmul and tensordot outputs exactly because of underlying floating point arithmetic differences.
+        Therefore, we decided to keep using tensordot for consistency.
+
 
     Args:
         x: Input tensor to be preconditioned
