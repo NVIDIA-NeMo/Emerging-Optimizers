@@ -118,16 +118,16 @@ class SoapFunctionsTest(parameterized.TestCase):
             optimizer.step()
             state = optimizer.state[param]
 
-            self.assertEqual(state["QL"].shape, (5, 5))
-            self.assertEqual(state["QR"].shape, (3, 3))
+            self.assertEqual(state["Q_L"].shape, (5, 5))
+            self.assertEqual(state["Q_R"].shape, (3, 3))
 
         for _ in range(adam_warmup_steps, adam_warmup_steps + 3):
             param.grad = torch.randn_like(param)
             optimizer.step()
             state = optimizer.state[param]
 
-            self.assertEqual(state["QL"].shape, (5, 5))
-            self.assertEqual(state["QR"].shape, (3, 3))
+            self.assertEqual(state["Q_L"].shape, (5, 5))
+            self.assertEqual(state["Q_R"].shape, (3, 3))
 
     def test_update_kronecker_factors(self) -> None:
         shampoo_beta = 0.9
@@ -644,7 +644,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
                 rtol=1e-5,
             )
 
-            for eigenbasis_test, eigenbasis_ref in zip([test_state["QL"], test_state["QR"]], ref_state["Q"]):
+            for eigenbasis_test, eigenbasis_ref in zip([test_state["Q_L"], test_state["Q_R"]], ref_state["Q"]):
                 torch.testing.assert_close(
                     eigenbasis_test,
                     eigenbasis_ref,

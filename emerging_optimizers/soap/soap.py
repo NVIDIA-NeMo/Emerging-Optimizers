@@ -159,8 +159,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # Use shape of p instead of grad for initialization because of the introduction of skip_non_grad_params
                 # for megatron-lm distributed checkpointing use. _init_group can be called without grad.
                 state["L"], state["R"] = init_kronecker_factors(p.data)
-                state["QL"] = torch.eye(p.shape[0], device=p.device)
-                state["QR"] = torch.eye(p.shape[1], device=p.device)
+                state["Q_L"] = torch.eye(p.shape[0], device=p.device)
+                state["Q_R"] = torch.eye(p.shape[1], device=p.device)
 
     if TYPE_CHECKING:
 
@@ -205,7 +205,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # Define kronecker_factor_update_fn based on whether to use KL-Shampoo here
                 # because it needs access to eigenbasis_list and group
                 kronecker_factor_list = [state["L"], state["R"]]
-                eigenbasis_list = [state["QL"], state["QR"]]
+                eigenbasis_list = [state["Q_L"], state["Q_R"]]
 
                 if not self.use_kl_shampoo:
                     kronecker_factor_update_fn = update_kronecker_factors
@@ -256,7 +256,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                                 use_eigh=use_eigh,
                                 power_iter_steps=self.power_iter_steps,
                             )
-                            state["QL"], state["QR"] = updated_eigenbasis_list
+                            state["Q_L"], state["Q_R"] = updated_eigenbasis_list
                             eigenbasis_list = updated_eigenbasis_list
                             state["exp_avg"] = exp_avg
                             state["exp_avg_sq"] = exp_avg_sq
