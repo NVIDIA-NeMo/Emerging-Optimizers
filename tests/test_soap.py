@@ -14,7 +14,6 @@
 # limitations under the License.
 import math
 from functools import partial
-from typing import Any
 
 import soap_reference
 import torch
@@ -84,23 +83,25 @@ class SoapFunctionsTest(parameterized.TestCase):
         torch.manual_seed(13)
         cls.device = FLAGS.device
 
-    def test_init_preconditioner_multidim_tensor_shapes(self) -> None:
-        """Tests init_preconditioner with a multi-dimensional tensor."""
-        grad = torch.randn(3, 4, 5)
-        state: dict[str, Any] = {}
-        state["GG"] = soap.init_kronecker_factors(grad, precondition_1d=False)
-        self.assertEqual(len(state["GG"]), grad.dim())
-        self.assertEqual(state["GG"][0].shape, (3, 3))
-        self.assertEqual(state["GG"][1].shape, (4, 4))
-        self.assertEqual(state["GG"][2].shape, (5, 5))
+    def test_init_kronecker_factors_2d_tensor_shapes(self) -> None:
+        """Tests init_kronecker_factors with a 2D tensor."""
+        grad = torch.randn(3, 4)
+        L, R = soap.init_kronecker_factors(grad.shape)
+        self.assertEqual(L.shape, (3, 3))
+        self.assertEqual(R.shape, (4, 4))
 
     @parameterized.parameters(
         (1,),
         (2,),
         (3,),
     )
-    def test_adam_warmup_steps(self, adam_warmup_steps: int) -> None:
-        """Tests that adam_warmup_steps causes state["Q"] to be None until the specified steps are completed."""
+    def test_adam_warmup_steps_has_ql_qr(self, adam_warmup_steps: int) -> None:
+        """Tests QL/QR existence with adam_warmup_steps.
+
+        Historically, we only initialized QL/QR after the adam_warmup_steps. This test used to verify that
+        behavior. But we found delay initialization is not necessary as memory will be allocated later anyway.
+        This test verifies the new behavior now.
+        """
 
         param = torch.randn(5, 3, requires_grad=True, device=self.device)
 
@@ -112,54 +113,48 @@ class SoapFunctionsTest(parameterized.TestCase):
             precondition_frequency=1,
         )
 
-        for step in range(adam_warmup_steps):
+        for _ in range(adam_warmup_steps):
             param.grad = torch.randn_like(param)
             optimizer.step()
             state = optimizer.state[param]
 
-            self.assertNotIn("Q", state)
+            self.assertEqual(state["Q_L"].shape, (5, 5))
+            self.assertEqual(state["Q_R"].shape, (3, 3))
 
-        for step in range(adam_warmup_steps, adam_warmup_steps + 3):
+        for _ in range(adam_warmup_steps, adam_warmup_steps + 3):
             param.grad = torch.randn_like(param)
             optimizer.step()
             state = optimizer.state[param]
 
-            # Verify Q has the right shape (a list with tensors for each dim)
-            self.assertIsInstance(state["Q"], list)
-            self.assertEqual(len(state["Q"]), param.dim())
-            # Verify Q has the right shape (a list with square eigenvector matrices for each dim)
-            self.assertEqual(state["Q"][0].shape, (5, 5))
-            self.assertEqual(state["Q"][1].shape, (3, 3))
+            self.assertEqual(state["Q_L"].shape, (5, 5))
+            self.assertEqual(state["Q_R"].shape, (3, 3))
 
     def test_update_kronecker_factors(self) -> None:
-        max_dim = 8
         shampoo_beta = 0.9
-        dim0, dim1, dim2 = 3, max_dim + 2, 5
-        grad = torch.randn(dim0, dim1, dim2)
+        dim0, dim1 = 3, 10
+        grad = torch.randn(dim0, dim1)
 
         # Initialize factors
-        initial_factors = soap.init_kronecker_factors(grad, precondition_1d=False)
-
-        kronecker_factors = [f.clone() for f in initial_factors]
+        initial_L, initial_R = soap.init_kronecker_factors(grad.shape)
+        kronecker_factors = [initial_L.clone(), initial_R.clone()]
 
         soap.update_kronecker_factors(
             kronecker_factor_list=kronecker_factors,
             grad=grad,
             shampoo_beta=shampoo_beta,
-            precondition_1d=False,
         )
 
-        self.assertEqual(len(kronecker_factors), grad.dim())
+        self.assertEqual(len(kronecker_factors), 2)
 
-        contract_dims_0 = [1, 2]
-        outer_product_0 = torch.tensordot(grad, grad, dims=[contract_dims_0] * 2)
-        expected_factor_0 = initial_factors[0] * shampoo_beta + outer_product_0 * (1 - shampoo_beta)
-        torch.testing.assert_close(kronecker_factors[0], expected_factor_0, atol=1e-6, rtol=1e-6)
+        # L = GG^T
+        outer_product_L = torch.tensordot(grad, grad, dims=[[1], [1]])
+        expected_L = initial_L * shampoo_beta + outer_product_L * (1 - shampoo_beta)
+        torch.testing.assert_close(kronecker_factors[0], expected_L, atol=1e-6, rtol=1e-6)
 
-        contract_dims_2 = [0, 1]
-        outer_product_2 = torch.tensordot(grad, grad, dims=[contract_dims_2] * 2)
-        expected_factor_2 = initial_factors[2] * shampoo_beta + outer_product_2 * (1 - shampoo_beta)
-        torch.testing.assert_close(kronecker_factors[2], expected_factor_2, atol=1e-6, rtol=1e-6)
+        # R = G^TG
+        outer_product_R = torch.tensordot(grad, grad, dims=[[0], [0]])
+        expected_R = initial_R * shampoo_beta + outer_product_R * (1 - shampoo_beta)
+        torch.testing.assert_close(kronecker_factors[1], expected_R, atol=1e-6, rtol=1e-6)
 
     @parameterized.parameters(
         (4, 5),
@@ -449,7 +444,6 @@ class SoapTest(parameterized.TestCase):
             "eps": 1e-8,
             "precondition_frequency": 1,
             "shampoo_beta": 0.95,
-            "precondition_1d": False,
             "adam_warmup_steps": 1,
             "fp32_matmul_prec": "highest",
             "use_adaptive_criteria": False,
@@ -644,13 +638,13 @@ class SoapVsReferenceTest(parameterized.TestCase):
             ref_state = ref_optimizer.state[param_ref]
 
             torch.testing.assert_close(
-                test_state["GG"],
+                [test_state["L"], test_state["R"]],
                 ref_state["GG"],
                 atol=1e-5,
                 rtol=1e-5,
             )
 
-            for eigenbasis_test, eigenbasis_ref in zip(test_state["Q"], ref_state["Q"]):
+            for eigenbasis_test, eigenbasis_ref in zip([test_state["Q_L"], test_state["Q_R"]], ref_state["Q"]):
                 torch.testing.assert_close(
                     eigenbasis_test,
                     eigenbasis_ref,
