@@ -3,12 +3,8 @@ comment:
   require_changes: false
 coverage:
   status:
-    project:
-      default:
-        target: auto
-    patch:
-      default:
-        target: auto
+    project: false
+    patch: false
 
 fixes:
   - "/workspace/::"
