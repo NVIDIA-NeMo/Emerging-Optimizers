@@ -146,6 +146,9 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             if p.grad is None:
                 continue
 
+            if p.dim() < 2:
+                raise TypeError("SOAP is only supported for 2D tensors")
+
             # Cast grad to float32 here if it is not already in float32 because Kronecker factors need to be
             # in float32 for accumulation and decomposition.
             grad = p.grad.to(torch.float32)
@@ -155,14 +158,10 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 state["step"] = 0
                 state["exp_avg"] = torch.zeros_like(grad)
                 state["exp_avg_sq"] = torch.zeros_like(grad)
-                state["GG"] = init_kronecker_factors(grad)
+                state["L"], state["R"] = init_kronecker_factors(grad)
 
-            if self.use_kl_shampoo and "Q" not in state and len(state["GG"]) > 0:
-                assert state["step"] == 0, (
-                    f"Q should already be initialized at step {state['step']}, Some mismatch has been created "
-                    "likely in checkpointing"
-                )
-                state["Q"] = [torch.eye(shape, device=grad.device) for shape in grad.shape]
+                state["QL"] = torch.eye(grad.shape[0], device=grad.device)
+                state["QR"] = torch.eye(grad.shape[1], device=grad.device)
 
     if TYPE_CHECKING:
 
@@ -206,12 +205,15 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 # Define kronecker_factor_update_fn based on whether to use KL-Shampoo here
                 # because it needs access to eigenbasis_list and group
+                kronecker_factor_list = [state["L"], state["R"]]
+                eigenbasis_list = [state["QL"], state["QR"]]
+
                 if not self.use_kl_shampoo:
                     kronecker_factor_update_fn = update_kronecker_factors
                 else:
                     kronecker_factor_update_fn = partial(
                         update_kronecker_factors_kl_shampoo,
-                        eigenbasis_list=state["Q"],
+                        eigenbasis_list=eigenbasis_list,
                         eps=group["eps"],
                     )
 
@@ -221,7 +223,9 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 torch.cuda.nvtx.range_push("update_kronecker_factors")
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    kronecker_factor_update_fn(kronecker_factor_list=state["GG"], grad=grad, shampoo_beta=shampoo_beta)
+                    kronecker_factor_update_fn(
+                        kronecker_factor_list=kronecker_factor_list, grad=grad, shampoo_beta=shampoo_beta
+                    )
                 torch.cuda.nvtx.range_pop()
 
                 # After the adam_warmup_steps are completed , update eigenbases at precondition_frequency steps
@@ -235,24 +239,21 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     use_eigh = self.use_eigh if state["step"] != self.adam_warmup_steps else True
 
                     # Skip eigenbasis update if use_adaptive_criteria is True and all eigenbases meet the criteria
-                    skip_update = (
-                        self.use_adaptive_criteria
-                        and "Q" in state
-                        and soap_utils.all_eigenbases_met_criteria(
-                            state["GG"], state["Q"], self.adaptive_update_tolerance
-                        )
+                    skip_update = self.use_adaptive_criteria and soap_utils.all_eigenbases_met_criteria(
+                        kronecker_factor_list, eigenbasis_list, self.adaptive_update_tolerance
                     )
                     if not skip_update:
                         with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
-                            eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_momentum(
-                                kronecker_factor_list=state["GG"],
-                                eigenbasis_list=state.get("Q", None),
+                            updated_eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_momentum(
+                                kronecker_factor_list=kronecker_factor_list,
+                                eigenbasis_list=eigenbasis_list,
                                 exp_avg_sq=state["exp_avg_sq"],
                                 momentum=state["exp_avg"],
                                 use_eigh=use_eigh,
                                 power_iter_steps=self.power_iter_steps,
                             )
-                            state["Q"] = eigenbasis_list
+                            state["QL"], state["QR"] = updated_eigenbasis_list
+                            eigenbasis_list = updated_eigenbasis_list
                             state["exp_avg"] = exp_avg
                             state["exp_avg_sq"] = exp_avg_sq
                 torch.cuda.nvtx.range_pop()
@@ -271,7 +272,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         grad_projected = precondition(
                             grad,
-                            eigenbasis_list=state.get("Q", None),
+                            eigenbasis_list=eigenbasis_list,
                             dims=[[0], [0]],
                         )
                 torch.cuda.nvtx.range_pop()
@@ -294,7 +295,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         precond_update = precondition(
                             adam_update,
-                            eigenbasis_list=state.get("Q", None),
+                            eigenbasis_list=eigenbasis_list,
                             dims=[[0], [1]],
                         )
                 else:
@@ -312,7 +313,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 @torch.no_grad()  # type: ignore[misc]
 def init_kronecker_factors(
     grad: torch.Tensor,
-) -> list[torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Initializes the kronecker factor matrices for the SOAP optimizer.
 
     This function creates the initial Kronecker factor matrices (L and R) used for
@@ -329,9 +330,7 @@ def init_kronecker_factors(
             The shape of this tensor determines the size of the kronecker factor matrices.
 
     Returns:
-        List of kronecker factor matrices (L and R in paper).
-            - For 1D tensors: Empty list (preconditioning skipped)
-            - For higher dimensional tensors: List of square matrices, one per dimension
+        Tuple of kronecker factor matrices (L and R in paper).
 
     Example:
         >>> # For a 2D tensor (weight matrix)
@@ -343,11 +342,12 @@ def init_kronecker_factors(
 
     """
     if grad.dim() == 1:
-        # Skip preconditioning for 1D tensors
-        return []
+        raise TypeError("SOAP is only supported for 2D tensors")
 
     # Create a square kronecker factor matrix for each dimension
-    return [torch.zeros(size, size, device=grad.device) for size in grad.shape]
+    L = torch.zeros(grad.shape[0], grad.shape[0], device=grad.device)
+    R = torch.zeros(grad.shape[1], grad.shape[1], device=grad.device)
+    return L, R
 
 
 @torch.no_grad()  # type: ignore[misc]
