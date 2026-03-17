@@ -86,7 +86,7 @@ class SoapFunctionsTest(parameterized.TestCase):
     def test_init_kronecker_factors_2d_tensor_shapes(self) -> None:
         """Tests init_kronecker_factors with a 2D tensor."""
         grad = torch.randn(3, 4)
-        L, R = soap.init_kronecker_factors(grad)
+        L, R = soap.init_kronecker_factors(grad.shape)
         self.assertEqual(L.shape, (3, 3))
         self.assertEqual(R.shape, (4, 4))
 
@@ -135,7 +135,7 @@ class SoapFunctionsTest(parameterized.TestCase):
         grad = torch.randn(dim0, dim1)
 
         # Initialize factors
-        initial_L, initial_R = soap.init_kronecker_factors(grad)
+        initial_L, initial_R = soap.init_kronecker_factors(grad.shape)
         kronecker_factors = [initial_L.clone(), initial_R.clone()]
 
         soap.update_kronecker_factors(
