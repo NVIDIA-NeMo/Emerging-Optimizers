@@ -141,6 +141,10 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         Args:
             group: Parameter group dictionary.
+            skip_non_grad_params: Whether to skip parameters with no gradients.
+
+        Raises:
+            TypeError: If the parameter is not a 2D tensor.
         """
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
