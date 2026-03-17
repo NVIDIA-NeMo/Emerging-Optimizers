@@ -363,8 +363,7 @@ def update_kronecker_factors(
     """Updates the preconditioner matrices using gradient outer products.
 
     This function updates the Kronecker factor matrices (L and R) used for preconditioning
-    by computing and accumulating gradient outer products. 1D tensors (like biases) are
-    skipped. It modifies the kronecker_factor_list in place.
+    by computing and accumulating gradient outer products. kronecker_factor_list is updated in place.
 
     Args:
         kronecker_factor_list: List of preconditioner matrices (L and R) to update.
