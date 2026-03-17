@@ -257,7 +257,10 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                                 power_iter_steps=self.power_iter_steps,
                             )
                             state["Q_L"], state["Q_R"] = updated_eigenbasis_list
+
+                            # rebind local ref so precondition() below uses the updated Q
                             eigenbasis_list = updated_eigenbasis_list
+
                             state["exp_avg"] = exp_avg
                             state["exp_avg_sq"] = exp_avg_sq
                 torch.cuda.nvtx.range_pop()
