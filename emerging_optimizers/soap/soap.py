@@ -512,7 +512,6 @@ def update_eigenbasis_and_momentum(
 
 
 @torch.no_grad()  # type: ignore[misc]
-@torch.compile  # type: ignore[misc]
 def precondition(
     x: torch.Tensor,
     eigenbasis_list: list[torch.Tensor] | None = None,
@@ -546,11 +545,7 @@ def precondition(
         return x
 
     for Q in eigenbasis_list:
-        x = torch.tensordot(
-            x,
-            Q,
-            dims=dims,
-        )
+        x = torch.tensordot(x, Q, dims=dims)
 
     return x
 
