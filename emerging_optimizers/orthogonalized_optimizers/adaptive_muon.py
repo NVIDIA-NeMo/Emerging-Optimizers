@@ -41,6 +41,9 @@ class AdaptiveMuon(muon.Muon):
     descent for deep learning.* In Advances in neural information processing systems 28 (2015).
     The step() method is overridden to include second moment normalization logic.
 
+    Warning:
+        This optimizer is experimental and may change in future versions.
+
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups.
         lr: Learning rate.
