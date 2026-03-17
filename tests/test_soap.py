@@ -88,7 +88,7 @@ class SoapFunctionsTest(parameterized.TestCase):
         """Tests init_preconditioner with a multi-dimensional tensor."""
         grad = torch.randn(3, 4, 5)
         state: dict[str, Any] = {}
-        state["GG"] = soap.init_kronecker_factors(grad, precondition_1d=False)
+        state["GG"] = soap.init_kronecker_factors(grad)
         self.assertEqual(len(state["GG"]), grad.dim())
         self.assertEqual(state["GG"][0].shape, (3, 3))
         self.assertEqual(state["GG"][1].shape, (4, 4))
@@ -138,7 +138,7 @@ class SoapFunctionsTest(parameterized.TestCase):
         grad = torch.randn(dim0, dim1, dim2)
 
         # Initialize factors
-        initial_factors = soap.init_kronecker_factors(grad, precondition_1d=False)
+        initial_factors = soap.init_kronecker_factors(grad)
 
         kronecker_factors = [f.clone() for f in initial_factors]
 
@@ -146,7 +146,6 @@ class SoapFunctionsTest(parameterized.TestCase):
             kronecker_factor_list=kronecker_factors,
             grad=grad,
             shampoo_beta=shampoo_beta,
-            precondition_1d=False,
         )
 
         self.assertEqual(len(kronecker_factors), grad.dim())
@@ -449,7 +448,6 @@ class SoapTest(parameterized.TestCase):
             "eps": 1e-8,
             "precondition_frequency": 1,
             "shampoo_beta": 0.95,
-            "precondition_1d": False,
             "adam_warmup_steps": 1,
             "fp32_matmul_prec": "highest",
             "use_adaptive_criteria": False,

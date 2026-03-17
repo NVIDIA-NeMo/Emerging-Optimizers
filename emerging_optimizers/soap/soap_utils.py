@@ -46,9 +46,6 @@ def all_eigenbases_met_criteria(
         True if all eigenbases meet the criteria (no update needed), False otherwise.
     """
     for kronecker_factor, eigenbasis in zip(kronecker_factor_list, eigenbasis_list, strict=True):
-        if kronecker_factor.numel() == 0:
-            continue
-
         approx_eigvals = eig_utils.conjugate(kronecker_factor, eigenbasis, diag=True)
         if not eig_utils.met_approx_eigvals_criteria(kronecker_factor, approx_eigvals, adaptive_update_tolerance):
             return False
@@ -85,9 +82,6 @@ def get_eigenbasis_eigh(
     updated_eigenbasis_list: TensorList = []
 
     for kronecker_factor in kronecker_factor_list:
-        if kronecker_factor.numel() == 0:
-            updated_eigenbasis_list.append(torch.empty(0, 0, device=kronecker_factor.device))
-            continue
         _, Q = eig_utils.eigh_with_fallback(kronecker_factor, force_double=False, eps=eps)
         updated_eigenbasis_list.append(Q)
 
@@ -147,10 +141,6 @@ def get_eigenbasis_qr(
     """
     updated_eigenbasis_list: TensorList = []
     for ind, (kronecker_factor, eigenbasis) in enumerate(zip(kronecker_factor_list, eigenbasis_list, strict=True)):
-        if kronecker_factor.numel() == 0:
-            updated_eigenbasis_list.append(torch.empty(0, 0, device=kronecker_factor.device))
-            continue
-
         approx_eigvals = eig_utils.conjugate(kronecker_factor, eigenbasis, diag=True)
         Q, exp_avg_sq = eig_utils.orthogonal_iteration(
             approx_eigvals=approx_eigvals,

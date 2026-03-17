@@ -102,41 +102,14 @@ class SoapUtilsTest(BaseTestCase):
         # Also check that "exp_avg_sq" remains in the state with same shape if not merging
         self.assertEqual(exp_avg_sq_new.shape, (M, N))
 
-    def test_get_eigenbasis_qr_empty_factor(self) -> None:
-        """Tests get_eigenbasis_qr with an empty (numel()==0) kronecker factor."""
-        torch.manual_seed(0)
-        N = 4
-        g = torch.randn(N, N, device=self.device)
-        L = g.mm(g.t()).float()
-
-        empty_factor = torch.empty(0, 0, device=self.device)
-        kronecker_factor_list = [L, empty_factor]
-        eigenbasis_list = [torch.randn(N, N, device=self.device), torch.empty(0, device=self.device)]
-        exp_avg_sq = torch.abs(torch.randn(N, N, device=self.device))
-
-        Q_new_list, exp_avg_sq_new = soap_utils.get_eigenbasis_qr(
-            kronecker_factor_list=kronecker_factor_list,
-            eigenbasis_list=eigenbasis_list,
-            exp_avg_sq=exp_avg_sq,
-        )
-
-        self.assertEqual(len(Q_new_list), 2)
-        self.assertEqual(Q_new_list[0].shape, (N, N))
-        self.assertEqual(Q_new_list[1].numel(), 0)
-
     @parameterized.parameters(  # type: ignore[misc]
         {"dims": [128, 512]},
         {"dims": []},
-        {"dims": [64, 0, 32]},
     )
     def test_get_eigenbasis_eigh(self, dims: list[int]) -> None:
         """Tests the get_eigenbasis_eigh function."""
         kronecker_factor_list = []
         for dim in dims:
-            if dim == 0:
-                kronecker_factor_list.append(torch.empty(0, 0))
-                continue
-
             k_factor = torch.randn(dim, dim, device=self.device)
             k_factor = k_factor @ k_factor.T + torch.eye(dim, device=self.device) * 1e-5
             kronecker_factor_list.append(k_factor)
@@ -147,10 +120,6 @@ class SoapUtilsTest(BaseTestCase):
 
         for i, Q in enumerate(Q_list):
             orig_dim = dims[i]
-            if orig_dim == 0:
-                self.assertEqual(Q.shape, (0, 0))
-                continue
-
             self.assertEqual(Q.shape, (orig_dim, orig_dim))
 
             # Check orthogonality: Q.T @ Q should be close to identity due to orthonormal matrix property

@@ -65,7 +65,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         precondition_frequency: How often to update the preconditioner. Can be an integer for fixed frequency
             or a callable function that takes the current step as input and returns the frequency.
         adam_warmup_steps: How many steps to skip preconditioning in the beginning (i.e. use standard AdamW updates)
-        precondition_1d: Whether to precondition 1D gradients (like biases).
         correct_bias: Whether to use bias correction in Inner Adam and Kronecker factor matrices EMA
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
@@ -95,7 +94,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         nesterov: bool = False,
         precondition_frequency: int | Callable[[int], int] = 1,
         adam_warmup_steps: int = 0,
-        precondition_1d: bool = False,
         correct_bias: bool = True,
         fp32_matmul_prec: FP32MatmulPrecT = "high",
         use_eigh: bool = False,
@@ -109,7 +107,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
     ) -> None:
         self.precondition_frequency = precondition_frequency
         self.adam_warmup_steps = adam_warmup_steps
-        self.precondition_1d = precondition_1d
         self.nesterov = nesterov
         self.correct_bias = correct_bias
         self.weight_decay_method = weight_decay_method
@@ -158,12 +155,9 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 state["step"] = 0
                 state["exp_avg"] = torch.zeros_like(grad)
                 state["exp_avg_sq"] = torch.zeros_like(grad)
-                state["GG"] = init_kronecker_factors(
-                    grad,
-                    precondition_1d=self.precondition_1d,
-                )
+                state["GG"] = init_kronecker_factors(grad)
 
-            if self.use_kl_shampoo and "Q" not in state:
+            if self.use_kl_shampoo and "Q" not in state and len(state["GG"]) > 0:
                 assert state["step"] == 0, (
                     f"Q should already be initialized at step {state['step']}, Some mismatch has been created "
                     "likely in checkpointing"
@@ -213,10 +207,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # Define kronecker_factor_update_fn based on whether to use KL-Shampoo here
                 # because it needs access to eigenbasis_list and group
                 if not self.use_kl_shampoo:
-                    kronecker_factor_update_fn = partial(
-                        update_kronecker_factors,
-                        precondition_1d=self.precondition_1d,
-                    )
+                    kronecker_factor_update_fn = update_kronecker_factors
                 else:
                     kronecker_factor_update_fn = partial(
                         update_kronecker_factors_kl_shampoo,
@@ -321,48 +312,28 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 @torch.no_grad()  # type: ignore[misc]
 def init_kronecker_factors(
     grad: torch.Tensor,
-    precondition_1d: bool = False,
 ) -> list[torch.Tensor]:
     """Initializes the kronecker factor matrices for the SOAP optimizer.
 
     This function creates the initial Kronecker factor matrices (L and R) used for
-    preconditioning. For 1D tensors (like biases), it can either skip preconditioning
-    or create a single square kronecker factor matrix. For higher dimensional tensors,
-    it creates a square kronecker factor matrix for each dimension.
+    preconditioning. For 1D tensors (like biases), preconditioning is skipped and an
+    empty list is returned. For higher dimensional tensors, it creates a square
+    kronecker factor matrix for each dimension.
 
     Note:
         The Kronecker factors are always initialized to float32 (unless default precision is set otherwise) as its
         accumulation and decomposition are not safe in lower precisions.
 
-    When precondition_1d is:
-        * False (default):
-            - 1D tensors (like biases) will skip SOAP preconditioning entirely
-            - These parameters will use standard Adam-style updates
-            - This is often desirable as biases typically have fewer parameters and simpler optimization landscapes
-            - Can improve performance and reduce memory usage
-        * True:
-            - All parameters, including 1D tensors, will use SOAP preconditioning
-            - May be beneficial for certain architectures or training scenarios
-
     Args:
         grad: Gradient tensor used to initialize the kronecker factor matrices.
             The shape of this tensor determines the size of the kronecker factor matrices.
-        precondition_1d: Whether to create kronecker factor matrices for 1D tensors
-            (like biases). If False, 1D tensors will skip preconditioning.
 
     Returns:
         List of kronecker factor matrices (L and R in paper).
-            - For 1D tensors with precondition_1d=False: List containing an empty tensor
-            - For 1D tensors with precondition_1d=True: List containing a square matrix
+            - For 1D tensors: Empty list (preconditioning skipped)
             - For higher dimensional tensors: List of square matrices, one per dimension
 
     Example:
-        >>> # For a 1D tensor (bias)
-        >>> grad_1d = torch.randn(10)
-        >>> precond_1d = init_kronecker_factors(grad_1d, precondition_1d=True)
-        >>> print(len(precond_1d))  # 1
-        >>> print(precond_1d[0].shape)  # (10, 10)
-
         >>> # For a 2D tensor (weight matrix)
         >>> grad_2d = torch.randn(10, 20)
         >>> precond_2d = init_kronecker_factors(grad_2d)
@@ -371,22 +342,12 @@ def init_kronecker_factors(
         >>> print(precond_2d[1].shape)  # (20, 20)
 
     """
-    kronecker_factor_list: list[torch.Tensor] = []
-
     if grad.dim() == 1:
-        if not precondition_1d:
-            # Skip preconditioning for 1D tensors
-            kronecker_factor_list.append(torch.empty(0, device=grad.device))
-        else:
-            # Create a square preconditioner matrix for 1D tensors
-            size = grad.shape[0]
-            kronecker_factor_list.append(torch.zeros(size, size, device=grad.device))
-    else:
-        # Create a square kronecker factor matrix for each dimension
-        for size in grad.shape:
-            kronecker_factor_list.append(torch.zeros(size, size, device=grad.device))
+        # Skip preconditioning for 1D tensors
+        return []
 
-    return kronecker_factor_list
+    # Create a square kronecker factor matrix for each dimension
+    return [torch.zeros(size, size, device=grad.device) for size in grad.shape]
 
 
 @torch.no_grad()  # type: ignore[misc]
@@ -394,14 +355,12 @@ def update_kronecker_factors(
     kronecker_factor_list: list[torch.Tensor],
     grad: torch.Tensor,
     shampoo_beta: float,
-    precondition_1d: bool = False,
 ) -> None:
     """Updates the preconditioner matrices using gradient outer products.
 
     This function updates the Kronecker factor matrices (L and R) used for preconditioning
-    by computing and accumulating gradient outer products. For 1D tensors (like biases),
-    it can optionally skip preconditioning or use a special 1D preconditioning strategy.
-    It modifies the kronecker_factor_list in place.
+    by computing and accumulating gradient outer products. 1D tensors (like biases) are
+    skipped. It modifies the kronecker_factor_list in place.
 
     Args:
         kronecker_factor_list: List of preconditioner matrices (L and R) to update.
@@ -409,40 +368,23 @@ def update_kronecker_factors(
         grad: Gradient tensor of the parameter being optimized
         shampoo_beta: Momentum coefficient for updating preconditioners.
             Controls how much weight to give to new vs old gradient statistics.
-        precondition_1d: Whether to apply preconditioning to 1D tensors (like biases).
-            If False, 1D tensors will skip preconditioning.
 
     Example:
         >>> grad = torch.randn(10, 20)
         >>> L = torch.zeros(10, 10)
         >>> R = torch.zeros(20, 20)
-        >>> update_preconditioner([L, R], grad, shampoo_beta=0.95)
+        >>> update_kronecker_factors([L, R], grad, shampoo_beta=0.95)
 
     """
-    if grad.dim() == 1:
-        if precondition_1d:
-            # For 1D tensors, compute outer product directly
-            outer_product = grad.unsqueeze(1) @ grad.unsqueeze(0)
-            kronecker_factor_list[0].lerp_(outer_product, 1 - shampoo_beta)
-        else:
-            # For 1D tensors, skip preconditioning
-            logging.error(
-                "1D tensor is passed to update_kronecker_factors, "
-                "but precondition_1d is not set to True, skipping preconditioning."
-            )
-            return
-    else:
-        # For higher dimensional tensors, compute outer products for each dimension
-        for idx, dim_size in enumerate(grad.shape):
-            # Compute outer product by contracting all dimensions except idx
-            contract_dims = [*chain(range(idx), range(idx + 1, grad.dim()))]
-            outer_product = torch.tensordot(
-                grad,
-                grad,
-                dims=[contract_dims] * 2,
-            )
-            # Update the corresponding Kronecker factor
-            kronecker_factor_list[idx].lerp_(outer_product, 1 - shampoo_beta)
+    for idx, kronecker_factor in enumerate(kronecker_factor_list):
+        # Compute outer product by contracting all dimensions except idx
+        contract_dims = [*chain(range(idx), range(idx + 1, grad.dim()))]
+        outer_product = torch.tensordot(
+            grad,
+            grad,
+            dims=[contract_dims] * 2,
+        )
+        kronecker_factor.lerp_(outer_product, 1 - shampoo_beta)
 
 
 @torch.no_grad()  # type: ignore[misc]
@@ -608,18 +550,11 @@ def precondition(
         return x
 
     for Q in eigenbasis_list:
-        if Q.numel() > 0:
-            x = torch.tensordot(
-                x,
-                Q,
-                dims=dims,
-            )
-        else:
-            # Permute gradient dimensions to process the next dimension in the following iteration
-            # when preconditioning for the current dimension is skipped (Q is empty), in the case of
-            # one-sided preconditioning.
-            permute_order = list(range(1, x.dim())) + [0]
-            x = x.permute(permute_order)
+        x = torch.tensordot(
+            x,
+            Q,
+            dims=dims,
+        )
 
     return x
 
