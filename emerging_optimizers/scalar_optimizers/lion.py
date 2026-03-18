@@ -85,6 +85,26 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
         self.weight_decay_method = weight_decay_method
         super().__init__(params, defaults)
 
+    @torch.no_grad()
+    def _init_group(
+        self,
+        group: dict,
+        skip_non_grad_params: bool = True,
+    ) -> None:
+        """Performs lazy state initialization for parameters.
+
+        Args:
+            group: Parameter group dictionary.
+            skip_non_grad_params: If True, skip parameters without gradients.
+        """
+        for p in group["params"]:
+            if skip_non_grad_params and p.grad is None:
+                continue
+            state = self.state[p]
+
+            if len(state) == 0:
+                state["exp_avg"] = torch.zeros_like(p.data)
+
     if TYPE_CHECKING:
 
         @overload
@@ -115,6 +135,8 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
                 loss = closure()
 
         for group in self.param_groups:
+            self._init_group(group)
+
             lr = group["lr"]
             betas = group["betas"]
             weight_decay = group["weight_decay"]
@@ -124,13 +146,7 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
                     continue
 
                 grad = p.grad
-
-                # State initialization
-                state = self.state[p]
-                if len(state) == 0:
-                    state["exp_avg"] = torch.zeros_like(p.data)
-
-                exp_avg = state["exp_avg"]
+                exp_avg = self.state[p]["exp_avg"]
 
                 # Weight decay
                 self._apply_weight_decay_inplace(p.data, grad, lr, weight_decay)
