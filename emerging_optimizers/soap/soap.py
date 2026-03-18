@@ -36,7 +36,7 @@ __all__ = [
     "precondition",
     "init_kronecker_factors",
     "update_kronecker_factors",
-    "update_eigenbasis_and_momentum",
+    "update_eigenbasis_and_exp_avgs",
 ]
 
 
@@ -194,7 +194,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 if p.grad is None:
                     continue
 
-                # TODO(skyw): Fix the double cast. It is casted once in _init_group and once here.
                 grad = p.grad.to(torch.float32)
                 state = self.state[p]
 
@@ -252,11 +251,11 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     )
                     if not skip_update:
                         with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
-                            updated_eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_momentum(
+                            updated_eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_exp_avgs(
                                 kronecker_factor_list=kronecker_factor_list,
                                 eigenbasis_list=eigenbasis_list,
                                 exp_avg_sq=state["exp_avg_sq"],
-                                momentum=state["exp_avg"],
+                                exp_avg=state["exp_avg"],
                                 use_eigh=use_eigh,
                                 power_iter_steps=self.power_iter_steps,
                             )
@@ -436,22 +435,22 @@ def update_kronecker_factors_kl_shampoo(
 
 
 @torch.no_grad()  # type: ignore[misc]
-def update_eigenbasis_and_momentum(
+def update_eigenbasis_and_exp_avgs(
     kronecker_factor_list: list[torch.Tensor],
     eigenbasis_list: list[torch.Tensor],
     exp_avg_sq: torch.Tensor,
-    momentum: torch.Tensor,
+    exp_avg: torch.Tensor,
     use_eigh: bool = False,
     power_iter_steps: int = 1,
 ) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
-    """Updates the eigenbases using QR decomposition and power iteration or eigh.
+    """Updates the eigenbases and moving averages.
 
     This function performs an update of the eigenbases (QL and QR)
     used for preconditioning. It follows these steps:
 
-    1. Projects momentum back to the original basis
+    1. Projects exp_avg back to the original basis
     2. Updates the eigenbases using QR decomposition and power iteration (orthogonal iteration)
-    3. Projects momentum back to the new eigenbasis
+    3. Projects exp_avg back to the new eigenbasis
 
     Args:
         kronecker_factor_list: List of preconditioner matrices (L and R) that define
@@ -460,7 +459,7 @@ def update_eigenbasis_and_momentum(
             used for preconditioning. These will be updated by this function.
         exp_avg_sq: Inner Adam's second moment tensor, used for scaling the preconditioner updates.
             This tensor is modified in-place.
-        momentum: Inner Adam's first moment tensor, used for tracking gradient momentum.
+        exp_avg: Inner Adam's first moment tensor, used for tracking gradient momentum.
             This tensor is modified in-place.
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
             If False, use orthogonal iteration to compute the eigenbasis.
@@ -470,7 +469,8 @@ def update_eigenbasis_and_momentum(
     Returns:
         A tuple containing:
             - Updated list of eigenbases (QL and QR)
-            - Updated momentum tensor projected to the new eigenbasis
+            - Updated exp_avg tensor projected to the new eigenbasis
+            - Updated exp_avg_sq tensor
 
     Example:
         >>> L = torch.randn(10, 10)
@@ -478,15 +478,15 @@ def update_eigenbasis_and_momentum(
         >>> QL = torch.randn(10, 10)
         >>> QR = torch.randn(20, 20)
         >>> exp_avg_sq = torch.randn(10, 20)
-        >>> momentum = torch.randn(10, 20)
-        >>> updated_eigenbases = update_eigenbasis(
-        ...     [L, R], [QL, QR], exp_avg_sq, momentum)
+        >>> exp_avg = torch.randn(10, 20)
+        >>> updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = update_eigenbasis_and_exp_avgs(
+        ...     [L, R], [QL, QR], exp_avg_sq, exp_avg)
 
     """
-    # Step 1: Project momentum back to the original basis
+    # Step 1: Project exp_avg back to the original basis
     torch.cuda.nvtx.range_push("eigenbasis update step 1: precondition")
-    momentum = precondition(
-        momentum,
+    exp_avg = precondition(
+        exp_avg,
         eigenbasis_list,
         dims=[[0], [1]],
     )
@@ -508,16 +508,16 @@ def update_eigenbasis_and_momentum(
         )
     torch.cuda.nvtx.range_pop()
 
-    # Step 3: Project momentum to the new eigenbasis using the updated eigenbases
-    torch.cuda.nvtx.range_push("eigenbasis update step 3: project momentum")
-    momentum = precondition(
-        momentum,
+    # Step 3: Project exp_avg to the new eigenbasis using the updated eigenbases
+    torch.cuda.nvtx.range_push("eigenbasis update step 3: project exp_avg")
+    exp_avg = precondition(
+        exp_avg,
         updated_eigenbasis_list,
         dims=[[0], [0]],
     )
     torch.cuda.nvtx.range_pop()
 
-    return updated_eigenbasis_list, momentum, exp_avg_sq
+    return updated_eigenbasis_list, exp_avg, exp_avg_sq
 
 
 @torch.no_grad()  # type: ignore[misc]

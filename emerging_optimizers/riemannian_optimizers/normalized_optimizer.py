@@ -21,7 +21,13 @@ if TYPE_CHECKING:
 import torch
 from torch.optim.optimizer import Optimizer
 
+from emerging_optimizers import registry
 
+
+__all__ = ["ObliqueSGD", "ObliqueAdam"]
+
+
+@registry.register_optimizer("oblique_sgd")
 class ObliqueSGD(Optimizer):
     """SGD optimizer for row- or column-normalized 2D parameters on oblique manifolds.
 
@@ -120,6 +126,7 @@ class ObliqueSGD(Optimizer):
         return loss
 
 
+@registry.register_optimizer("oblique_adam")
 class ObliqueAdam(Optimizer):
     """Adam optimizer for row- or column-normalized 2D parameters on oblique manifolds.
 
