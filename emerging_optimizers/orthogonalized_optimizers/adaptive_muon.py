@@ -133,6 +133,11 @@ class AdaptiveMuon(muon.Muon):
                 elif self.moment2_method == "normuon":
                     # Row/column-wise second moment - reduced along one dimension
                     # Determine which dimension to reduce based on parameter shape
+                    if p.data.ndim < 2:
+                        raise ValueError(
+                            f"{self.__class__.__name__} only supports 2D parameters, "
+                            f"got shape {tuple(p.data.shape)}"
+                        )
                     avg_dim = -1 if p.data.shape[-2] >= p.data.shape[-1] else -2
                     # Specify the shape with reduced dimension
                     moment2_shape = list(p.data.shape)
