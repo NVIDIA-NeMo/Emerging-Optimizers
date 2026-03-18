@@ -17,12 +17,14 @@ from typing import Any, override
 
 import torch
 
+from emerging_optimizers import registry
 from emerging_optimizers.orthogonalized_optimizers import muon
 
 
 __all__ = ["MuonHyperball"]
 
 
+@registry.register_optimizer("muon_hyperball")
 class MuonHyperball(muon.Muon):
     """Muon optimizer with hyperball-style norm-preserving weight updates.
 

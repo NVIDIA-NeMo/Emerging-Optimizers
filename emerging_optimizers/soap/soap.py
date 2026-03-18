@@ -194,7 +194,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 if p.grad is None:
                     continue
 
-                # TODO(skyw): Fix the double cast. It is casted once in _init_group and once here.
                 grad = p.grad.to(torch.float32)
                 state = self.state[p]
 
