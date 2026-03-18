@@ -22,7 +22,7 @@ emerging_optimizers.soap
 
 .. autofunction:: update_kronecker_factors_kl_shampoo
 
-.. autofunction:: update_eigenbasis_and_momentum
+.. autofunction:: update_eigenbasis_and_evg_avgs
 
 
 :hidden:`REKLS`
