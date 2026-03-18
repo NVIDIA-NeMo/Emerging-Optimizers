@@ -209,6 +209,22 @@ class LionOptimizerTest(parameterized.TestCase):
 
         torch.testing.assert_close(optimizer.state[param]["exp_avg"], expected_exp_avg, atol=1e-6, rtol=1e-6)
 
+    @parameterized.parameters(True, False)
+    def test_init_group_skip_non_grad_params(self, skip_non_grad_params) -> None:
+        """Test _init_group with skip_non_grad_params flag."""
+        param_with_grad = torch.nn.Parameter(torch.randn(5, 7, device=self.device))
+        param_without_grad = torch.nn.Parameter(torch.randn(5, 7, device=self.device))
+        param_with_grad.grad = torch.randn_like(param_with_grad)
+
+        opt = Lion([param_with_grad, param_without_grad], lr=1e-4)
+
+        opt._init_group(opt.param_groups[0], skip_non_grad_params=skip_non_grad_params)
+
+        self.assertIn("exp_avg", opt.state[param_with_grad])
+        self.assertEqual(opt.state[param_with_grad]["exp_avg"].shape, param_with_grad.data.shape)
+
+        self.assertEqual("exp_avg" in opt.state[param_without_grad], not skip_non_grad_params)
+
     @parameterized.parameters(
         {"shape": (3, 3)},
         {"shape": (15, 31)},
