@@ -273,8 +273,8 @@ class SoapFunctionsTest(parameterized.TestCase):
         N=[4, 8, 33],
         use_eigh=[True, False],
     )
-    def test_update_eigenbasis_and_evg_avgs(self, M: int, N: int, use_eigh: bool) -> None:
-        """Tests that update_eigenbasis_and_evg_avgs returns valid outputs.
+    def test_update_eigenbasis_and_exp_avgs(self, M: int, N: int, use_eigh: bool) -> None:
+        """Tests that update_eigenbasis_and_exp_avgs returns valid outputs.
 
         Verifies output shapes, eigenbasis orthogonality, and that the round-trip
         projection (original → eigenbasis → original → new eigenbasis) preserves the
@@ -295,7 +295,7 @@ class SoapFunctionsTest(parameterized.TestCase):
         exp_avg = torch.randn(M, N, device=self.device)
         exp_avg_norm_before = torch.linalg.norm(exp_avg)
 
-        updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = soap.update_eigenbasis_and_evg_avgs(
+        updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = soap.update_eigenbasis_and_exp_avgs(
             kronecker_factor_list=kronecker_factor_list,
             eigenbasis_list=eigenbasis_list,
             exp_avg_sq=exp_avg_sq,

@@ -36,7 +36,7 @@ __all__ = [
     "precondition",
     "init_kronecker_factors",
     "update_kronecker_factors",
-    "update_eigenbasis_and_evg_avgs",
+    "update_eigenbasis_and_exp_avgs",
 ]
 
 
@@ -251,7 +251,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     )
                     if not skip_update:
                         with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
-                            updated_eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_evg_avgs(
+                            updated_eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_exp_avgs(
                                 kronecker_factor_list=kronecker_factor_list,
                                 eigenbasis_list=eigenbasis_list,
                                 exp_avg_sq=state["exp_avg_sq"],
@@ -435,7 +435,7 @@ def update_kronecker_factors_kl_shampoo(
 
 
 @torch.no_grad()  # type: ignore[misc]
-def update_eigenbasis_and_evg_avgs(
+def update_eigenbasis_and_exp_avgs(
     kronecker_factor_list: list[torch.Tensor],
     eigenbasis_list: list[torch.Tensor],
     exp_avg_sq: torch.Tensor,
@@ -479,7 +479,7 @@ def update_eigenbasis_and_evg_avgs(
         >>> QR = torch.randn(20, 20)
         >>> exp_avg_sq = torch.randn(10, 20)
         >>> exp_avg = torch.randn(10, 20)
-        >>> updated_eigenbases = update_eigenbasis_and_evg_avgs(
+        >>> updated_eigenbases = update_eigenbasis_and_exp_avgs(
         ...     [L, R], [QL, QR], exp_avg_sq, exp_avg)
 
     """
