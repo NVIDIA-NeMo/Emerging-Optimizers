@@ -135,7 +135,7 @@ class AdaptiveMuon(muon.Muon):
                     # Determine which dimension to reduce based on parameter shape
                     if p.data.ndim != 2:
                         raise ValueError(
-                                f"{self.__class__.__name__} only supports 2D parameters, got shape {tuple(p.data.shape)}"
+                            f"{self.__class__.__name__} only supports 2D parameters, got shape {tuple(p.data.shape)}"
                         )
                     avg_dim = -1 if p.data.shape[-2] >= p.data.shape[-1] else -2
                     # Specify the shape with reduced dimension
