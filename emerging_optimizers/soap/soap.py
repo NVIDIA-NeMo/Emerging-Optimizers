@@ -479,7 +479,7 @@ def update_eigenbasis_and_exp_avgs(
         >>> QR = torch.randn(20, 20)
         >>> exp_avg_sq = torch.randn(10, 20)
         >>> exp_avg = torch.randn(10, 20)
-        >>> updated_eigenbases = update_eigenbasis_and_exp_avgs(
+        >>> updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = update_eigenbasis_and_exp_avgs(
         ...     [L, R], [QL, QR], exp_avg_sq, exp_avg)
 
     """
