@@ -242,6 +242,9 @@ class TestMuonUtils(parameterized.TestCase):
         (511, 257),
         (257, 513),
     )
+    def test_get_cans_9steps_close_to_reference(self, dim1, dim2):
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        out_cans9 = muon_utils.newton_schulz(x, steps=9, coefficient_type="cans")
         coeff = deepcopy(muon_utils._COEFFICIENT_SETS["cans"])
         # CANS uses repeat_last, so repeat the last tuple for remaining steps.
         coeff.append(coeff[-1])
@@ -249,6 +252,7 @@ class TestMuonUtils(parameterized.TestCase):
         coeff.append(coeff[-1])
         coeff.append(coeff[-1])
         out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
+        torch.testing.assert_close(out_cans9, out_ref, atol=2e-6, rtol=1e-7)
 
 
 @absltest.skipIf(
