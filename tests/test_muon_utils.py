@@ -247,10 +247,7 @@ class TestMuonUtils(parameterized.TestCase):
         out_cans9 = muon_utils.newton_schulz(x, steps=9, coefficient_type="cans")
         coeff = deepcopy(muon_utils._COEFFICIENT_SETS["cans"])
         # CANS uses repeat_last, so repeat the last tuple for remaining steps.
-        coeff.append(coeff[-1])
-        coeff.append(coeff[-1])
-        coeff.append(coeff[-1])
-        coeff.append(coeff[-1])
+        coeff.extend([coeff[-1]] * 4)
         out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
         torch.testing.assert_close(out_cans9, out_ref, atol=2e-6, rtol=1e-7)
 

@@ -56,8 +56,9 @@ _COEFFICIENT_SETS = {
         (1.8750, -1.2500, 0.3750),
     ],
     "cans": [
+        # CANS from: http://arxiv.org/abs/2506.10935
         # CANS iteration (Remez + adaptive interval) based coefficients.
-        # Source (generation): accelerating_orthogonalization/polynomials.py
+        # Source (for generating CANS coefficients): https://github.com/GrishKate/accelerating_orthogonalization/blob/main/polynomials.py
         (8.4703, -25.1081, 18.6293),
         (4.1828, -3.1087, 0.5806),
         (3.9619, -2.9541, 0.5630),
