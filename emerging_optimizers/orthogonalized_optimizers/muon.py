@@ -63,7 +63,7 @@ class Muon(OrthogonalizedOptimizer):
     Args:
         {_args_doc}
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration. Can be one of
-            ["simple", "quintic", "polar_express"].
+            ["simple", "quintic", "polar_express", "cans"].
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
         scale_mode: The type of scale factor to use for the update. Defaults to "spectral" style scaling.
         extra_scale_factor: The additional scale factor to use for the update. Setting it to 0.2 can closely match

@@ -25,7 +25,7 @@ __all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "get_coefficient_ite
 
 CoeffIterMode = Literal["cycle", "repeat_last"]
 
-NSCoeffT = Literal["simple", "quintic", "polar_express", "aol", "custom"]
+NSCoeffT = Literal["simple", "quintic", "polar_express", "aol", "cans", "custom"]
 
 _COEFFICIENT_SETS = {
     # Values are rounded to closest representable in single precision.
@@ -54,6 +54,15 @@ _COEFFICIENT_SETS = {
         (1.8726, -1.2307, 0.3585),
         (1.8564, -1.2132, 0.3568),
         (1.8750, -1.2500, 0.3750),
+    ],
+    "cans": [
+        # CANS iteration (Remez + adaptive interval) based coefficients.
+        # Source (generation): accelerating_orthogonalization/polynomials.py
+        (8.4703, -25.1081, 18.6293),
+        (4.1828, -3.1087, 0.5806),
+        (3.9619, -2.9541, 0.5630),
+        (3.2866, -2.4647, 0.5074),
+        (2.2737, -1.6447, 0.4162),
     ],
     "aol": [
         # from https://github.com/thib-s/flash-newton-schulz/blob/main/newton_schulz_triton.py#L511
@@ -136,6 +145,8 @@ def newton_schulz(
       - "simple": Default coefficient set.
       - "quintic": Quintic iteration with optimized coefficients.
       - "polar_express": Polar Express iteration with optimized coefficients.
+      - "cans": CANS iteration with Remez + adaptive interval coefficients.
+      - "aol": AOL coefficient set.
       - "custom": Custom coefficient sets.
 
     Arguments:
@@ -179,7 +190,9 @@ def newton_schulz(
     else:
         raise ValueError(f"Invalid coefficient type: {coefficient_type}")
 
-    iter_mode: CoeffIterMode = "cycle" if coefficient_type != "polar_express" else "repeat_last"
+    iter_mode: CoeffIterMode = (
+        "repeat_last" if coefficient_type in ("polar_express", "cans") else "cycle"
+    )
     coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
     ns_step_fn = newton_schulz_step
