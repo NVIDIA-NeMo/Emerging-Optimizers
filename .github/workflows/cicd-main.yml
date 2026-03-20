@@ -170,7 +170,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          pattern: test-results-*
+          pattern: test-results-L0_*
           merge-multiple: true
 
       - name: Publish Test Report
