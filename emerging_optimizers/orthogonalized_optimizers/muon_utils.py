@@ -25,7 +25,7 @@ __all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "get_coefficient_ite
 
 CoeffIterMode = Literal["cycle", "repeat_last"]
 
-NSCoeffT = Literal["simple", "quintic", "polar_express", "aol", "cans", "custom"]
+NSCoeffT = Literal["simple", "quintic", "polar_express", "cans", "aol", "custom"]
 
 _COEFFICIENT_SETS = {
     # Values are rounded to closest representable in single precision.
