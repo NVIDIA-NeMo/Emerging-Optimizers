@@ -28,7 +28,6 @@ __all__ = [
 def eigh_with_fallback(
     x: Tensor,
     force_double: bool = False,
-    eps: float | None = None,
 ) -> tuple[Tensor, Tensor]:
     r"""torch.linalg.eigh() function with double precision fallback
 
@@ -40,59 +39,34 @@ def eigh_with_fallback(
         x: Tensor of shape (*, n, n) where "*" is zero or more batch dimensions consisting of symmetric or
             Hermitian matrices.
         force_double: Force double precision computation. Default False.
-        eps: Small offset for numerical stability. If None, uses dtype-appropriate values (1e-7 for float32,
-            1e-15 for float64). Default None.
 
     Returns:
         Eigenvalues and eigenvectors tuple (eigenvalues in descending order).
     """
     input_dtype = x.dtype
 
-    # Set precision-appropriate epsilon if not provided
-    if eps is None:
-        if x.dtype == torch.float64 or force_double:
-            eps = 1e-15
-        else:  # float32, float16
-            eps = 1e-7
-
-    # Check if x is already a diagonal matrix
-    diag_result = _try_handle_diagonal_matrix(x)
-    if diag_result is not None:
-        L, Q = diag_result
-        # Sort in descending order for diagonal case
-        L_flipped, indices = L.sort(descending=True)
-        Q_flipped = Q[:, indices]
-        return (L_flipped, Q_flipped)
-
-    # Add small identity for numerical stability
-    eye = torch.eye(
-        x.shape[0],
-        device=x.device,
-        dtype=x.dtype,
-    )
-    stabilized_x = torch.addmm(x, eye, eye, alpha=eps)
-
     if force_double:
         logging.warning("Force double precision")
-        stabilized_x = stabilized_x.to(torch.float64)
+        x = x.to(torch.float64)
 
     try:
-        L, Q = torch.linalg.eigh(stabilized_x)
+        eigenvalues, eigenvectors = torch.linalg.eigh(x)
     except (torch.linalg.LinAlgError, RuntimeError) as e:
         if not force_double:
             logging.warning(f"Falling back to double precision: {e}")
-            # Fallback to higher precision if the default precision fails
-            stabilized_x_fp64 = stabilized_x.to(torch.float64)
-            L, Q = torch.linalg.eigh(stabilized_x_fp64)
+            # Fallback to double precision if the default precision fails
+            x = x.to(torch.float64)
+            eigenvalues, eigenvectors = torch.linalg.eigh(x)
         else:
             raise e
 
-    L = L.to(input_dtype)
-    Q = Q.to(input_dtype)
+    eigenvalues = eigenvalues.to(input_dtype)
+    eigenvectors = eigenvectors.to(input_dtype)
+
     # Flip order to descending (`torch.linalg.eigh` returns ascending order by default)
-    L_flipped = torch.flip(L, [-1])
-    Q_flipped = torch.flip(Q, [-1])
-    return (L_flipped, Q_flipped)
+    eigenvalues = torch.flip(eigenvalues, [-1])
+    eigenvectors = torch.flip(eigenvectors, [-1])
+    return (eigenvalues, eigenvectors)
 
 
 def met_approx_eigvals_criteria(
@@ -191,38 +165,3 @@ def conjugate(a: torch.Tensor, p: torch.Tensor, diag: bool = False) -> torch.Ten
         # return the diagonal of the similarity transformation
         b = (pta * p.T).sum(dim=1)
     return b
-
-
-def _is_diagonal(x: Tensor) -> bool:
-    r"""Checks if symmetric matrix is diagonal. Raises an error if the input is not a square matrix."""
-
-    x_shape = x.shape
-    if len(x_shape) != 2:
-        raise ValueError(f"Matrix is not 2-dimensional! {x_shape=}")
-
-    if x_shape[0] != x_shape[1]:
-        raise ValueError(f"Matrix is not square! {x_shape=}")
-
-    # Check both upper triangular part and lower triangular part are all zeros.
-    return not x.triu(diagonal=1).any() and not x.tril(diagonal=-1).any()
-
-
-def _try_handle_diagonal_matrix(x: Tensor) -> tuple[Tensor, Tensor] | None:
-    """Checks if matrix A is diagonal and returns its eigenvalues/vectors in ascending order if so.
-
-    Args:
-        x: Tensor of shape (n, n) where x is a symmetric or Hermitian matrix.
-
-    Returns:
-        Sorted eigenvalues and eigenvectors if A is diagonal, None otherwise.
-    """
-    input_dtype = x.dtype
-    if _is_diagonal(x):
-        # If x is diagonal, eigenvalues are the diagonal elements and eigenvectors are the identity matrix
-        eigenvalues = torch.diag(x)
-        eigenvectors = torch.eye(x.shape[0], device=x.device, dtype=input_dtype)
-        # Sort eigenvalues in ascending order and reorder eigenvectors accordingly
-        sorted_eigenvalues, indices = eigenvalues.sort()
-        sorted_eigenvectors = eigenvectors[:, indices]
-        return sorted_eigenvalues, sorted_eigenvectors
-    return None

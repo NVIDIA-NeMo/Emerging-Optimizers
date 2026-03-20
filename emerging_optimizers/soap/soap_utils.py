@@ -55,13 +55,11 @@ def all_eigenbases_met_criteria(
 
 def get_eigenbasis_eigh(
     kronecker_factor_list: TensorList,
-    eps: float | None = None,
 ) -> TensorList:
     """Computes the eigenbases of the preconditioner using torch.linalg.eigh decomposition.
 
     Args:
         kronecker_factor_list: Matrix List to compute eigenbases of
-        eps: Small offset for numerical stability.
 
     Returns:
         List of orthonormal kronecker factor eigenbases matrices
@@ -82,8 +80,8 @@ def get_eigenbasis_eigh(
     updated_eigenbasis_list: TensorList = []
 
     for kronecker_factor in kronecker_factor_list:
-        _, Q = eig_utils.eigh_with_fallback(kronecker_factor, force_double=False, eps=eps)
-        updated_eigenbasis_list.append(Q)
+        _, eigenvectors = eig_utils.eigh_with_fallback(kronecker_factor, force_double=False)
+        updated_eigenbasis_list.append(eigenvectors)
 
     return updated_eigenbasis_list
 
