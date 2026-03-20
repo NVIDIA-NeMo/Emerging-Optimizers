@@ -121,6 +121,43 @@ jobs:
           path: test-results/**/*.xml
           if-no-files-found: ignore
 
+  cicd-nightly-tests:
+    needs: [pre-flight, cicd-container-build]
+    runs-on: ${{ needs.pre-flight.outputs.runner_prefix }}-gpu-x2
+    name: L1_Tests_GPU
+    environment: nemo-ci
+    if: |
+      github.event_name == 'schedule'
+      && (
+        success()
+        || needs.pre-flight.outputs.is_ci_workload == 'true'
+        || needs.pre-flight.outputs.force_run_all == 'true'
+      )
+      && !cancelled()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: main
+        uses: ./.github/actions/test-template
+        with:
+          script: L1_Tests_GPU
+          timeout: 60
+          is_unit_test: "true"
+          image: emerging_optimizers
+          has-azure-credentials: "true"
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          runner: ${{ needs.pre-flight.outputs.runner_prefix }}-gpu-x2
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-L1_Tests_GPU
+          path: test-results/**/*.xml
+          if-no-files-found: ignore
+
   publish-test-results:
     needs: [cicd-unit-tests]
     if: always()
@@ -133,7 +170,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          pattern: test-results-*
+          pattern: test-results-L0_*
           merge-multiple: true
 
       - name: Publish Test Report
@@ -141,6 +178,28 @@ jobs:
         with:
           files: "**/*.xml"
           fail_on: "nothing"
+
+  publish-nightly-test-results:
+    needs: [cicd-nightly-tests]
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      pull-requests: write
+    steps:
+      - name: Download Test Results
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-L1_*
+          merge-multiple: true
+
+      - name: Publish Test Report
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: "**/*.xml"
+          fail_on: "nothing"
+          check_name: "Nightly Test Results"
 
   Nemo_CICD_Test:
     needs:
@@ -171,8 +230,8 @@ jobs:
           IS_CI_WORKLOAD: ${{ needs.pre-flight.outputs.is_ci_workload }}
         run: |
           # Get workflow run details and check job conclusions
-          NUM_FAILED=$(gh run view $RUN_ID --json jobs -q '[.jobs[] | select(.conclusion == "failure") | .name] | length')
-          NUM_CANCELLED=$(gh run view $RUN_ID --json jobs -q '[.jobs[] | select(.conclusion == "cancelled") | .name] | length')
+          NUM_FAILED=$(gh run view $RUN_ID --json jobs -q '[.jobs[] | select(.conclusion == "failure" and .name != "L1_Tests_GPU") | .name] | length')
+          NUM_CANCELLED=$(gh run view $RUN_ID --json jobs -q '[.jobs[] | select(.conclusion == "cancelled" and .name != "L1_Tests_GPU") | .name] | length')
 
           if [[ ($NUM_FAILED -eq 0 && $NUM_CANCELLED -eq 0) || $DOCS_ONLY == 'true' || $IS_DEPLOYMENT == 'true' || $IS_CI_WORKLOAD == 'true' ]]; then
             RESULT="success"
