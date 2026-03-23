@@ -258,7 +258,11 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
             rtol=1e-6,
         )
 
-    def test_multiple_optimization_steps_preserve_norms(self) -> None:
+    @parameterized.parameters(
+        (0.4),
+        (0.8),
+    )
+    def test_multiple_optimization_steps_preserve_norms(self, momentum: float) -> None:
         """Test that norms are preserved across multiple optimization steps."""
         matrix_size = (4, 4)
         param = torch.randn(matrix_size, dtype=torch.float32, device=self.device)
@@ -267,7 +271,7 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
         param = param / param.norm(dim=0, keepdim=True).clamp(min=1e-8)
 
         param = torch.nn.Parameter(param)
-        optimizer = ObliqueSGD([param], lr=0.05, momentum=0.8, dim=0)
+        optimizer = ObliqueSGD([param], lr=0.05, momentum=momentum, dim=0)
 
         # Perform multiple optimization steps
         for step in range(10):
