@@ -141,6 +141,47 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
         expected_norms = torch.ones_like(final_norms)
         torch.testing.assert_close(final_norms, expected_norms, atol=0, rtol=1e-6)
 
+    def test_oblique_sgd_momentum_buffer_accumulates_across_steps(self) -> None:
+        """Test that ObliqueSGD persists momentum state across optimization steps."""
+        param = torch.tensor(
+            [[1.0, 0.0], [0.0, 1.0]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        param = torch.nn.Parameter(param)
+        optimizer = ObliqueSGD([param], lr=0.1, momentum=0.8, dim=0)
+
+        first_grad = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        second_grad = torch.tensor(
+            [[0.5, 1.5], [2.5, 3.5]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+
+        param.grad = first_grad.clone()
+        optimizer.step()
+        torch.testing.assert_close(
+            optimizer.state[param]["momentum_buffer"],
+            first_grad,
+            atol=0,
+            rtol=0,
+        )
+
+        param.grad = second_grad.clone()
+        optimizer.step()
+
+        expected_buffer = second_grad + 0.8 * first_grad
+        torch.testing.assert_close(
+            optimizer.state[param]["momentum_buffer"],
+            expected_buffer,
+            atol=0,
+            rtol=0,
+        )
+
     def test_oblique_adam_zero_gradient(self) -> None:
         """Test that ObliqueAdam handles zero gradients correctly."""
         matrix_size = (2, 3)

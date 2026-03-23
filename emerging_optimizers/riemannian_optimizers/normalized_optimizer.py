@@ -115,10 +115,14 @@ class ObliqueSGD(Optimizer):
                 buf = state["momentum_buffer"]
 
                 # theory style momentum
-                buf = torch.add(grad, buf, alpha=mom)
+                buf.mul_(mom).add_(grad)
 
-                # Apply Riemannian gradient update
-                _compute_riemannian_grad_and_update(param, buf, dim, lr, wd)
+                # Compute the Riemannian gradient
+                riem_grad = _compute_riemannian_grad(param, buf, dim)
+
+                # Apply the weight update
+                param.mul_(1 - lr * wd)
+                param.add_(riem_grad, alpha=-lr)
 
                 # Retraction back to the manifold, the hyper-sphere
                 torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=eps, out=param)
@@ -239,8 +243,12 @@ class ObliqueAdam(Optimizer):
 
                 norm_grad = (exp_avg / bias_correction1) / (exp_avg_sq.sqrt() / bias_correction2 + eps)
 
-                # Apply Riemannian gradient update
-                _compute_riemannian_grad_and_update(param, norm_grad, dim, lr, wd)
+                # Compute the Riemannian gradient
+                riem_grad = _compute_riemannian_grad(param, norm_grad, dim)
+
+                # Apply the weight update
+                param.mul_(1 - lr * wd)
+                param.add_(riem_grad, alpha=-lr)
 
                 # Retraction back to the manifold, i.e. the hyper-sphere
                 torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=eps, out=param)
@@ -248,24 +256,17 @@ class ObliqueAdam(Optimizer):
         return loss
 
 
-def _compute_riemannian_grad_and_update(
-    param: torch.Tensor, grad_like: torch.Tensor, dim: int, lr: float, wd: float
-) -> None:
-    """Compute Riemannian gradient for oblique manifold and update parameter in-place.
+def _compute_riemannian_grad(param: torch.Tensor, grad_like: torch.Tensor, dim: int) -> torch.Tensor:
+    """Compute the Riemannian gradient for the oblique manifold.
 
     Args:
         param: Parameter tensor (2D)
-        grad_like: Gradient-like tensor (momentum buffer or normalized gradient)
+        grad_like: Gradient-like tensor (momentum buffer or gradient)
         dim: The dimension to normalize over
-        lr: Learning rate
-        wd: Weight decay coefficient
+
+    Returns:
+        The tangent-space projected gradient.
     """
 
     inner = (param * grad_like).sum(dim=dim, keepdim=True)
-    riem_grad = torch.add(grad_like, param * inner, alpha=-1)
-
-    # Add decoupled weight decay
-    param.mul_(1 - lr * wd)
-
-    # Apply update in-place
-    param.add_(riem_grad, alpha=-lr)
+    return torch.add(grad_like, param * inner, alpha=-1)
