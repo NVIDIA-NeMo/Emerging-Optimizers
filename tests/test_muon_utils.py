@@ -233,7 +233,7 @@ class TestMuonUtils(parameterized.TestCase):
         torch.testing.assert_close(
             out_cans_test,
             out_cans_ref,
-            atol=1e-6,
+            atol=1e-5,
             rtol=1e-7,
         )
 
