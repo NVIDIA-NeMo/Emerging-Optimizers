@@ -191,9 +191,7 @@ def newton_schulz(
     else:
         raise ValueError(f"Invalid coefficient type: {coefficient_type}")
 
-    iter_mode: CoeffIterMode = (
-        "repeat_last" if coefficient_type in ("polar_express", "cans") else "cycle"
-    )
+    iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in ("polar_express", "cans") else "cycle"
     coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
     ns_step_fn = newton_schulz_step
