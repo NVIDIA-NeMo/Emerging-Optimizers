@@ -220,6 +220,37 @@ class TestMuonUtils(parameterized.TestCase):
         out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
         torch.testing.assert_close(out_pe9, out_ref, atol=2e-6, rtol=1e-7)
 
+    @parameterized.parameters(
+        (512, 512),
+        (512, 256),
+        (256, 512),
+    )
+    def test_cans_close_to_reference(self, dim1, dim2):
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        out_cans_test = muon_utils.newton_schulz(x, steps=5, coefficient_type="cans")
+        out_cans_ref = newton_schulz_ref(x, coefficient_sets=muon_utils._COEFFICIENT_SETS["cans"])
+
+        torch.testing.assert_close(
+            out_cans_test,
+            out_cans_ref,
+            atol=1e-5,
+            rtol=1e-7,
+        )
+
+    @parameterized.parameters(
+        (511, 513),
+        (511, 257),
+        (257, 513),
+    )
+    def test_get_cans_9steps_close_to_reference(self, dim1, dim2):
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        out_cans9 = muon_utils.newton_schulz(x, steps=9, coefficient_type="cans")
+        coeff = deepcopy(muon_utils._COEFFICIENT_SETS["cans"])
+        # CANS uses repeat_last, so repeat the last tuple for remaining steps.
+        coeff.extend([coeff[-1]] * 4)
+        out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
+        torch.testing.assert_close(out_cans9, out_ref, atol=2e-6, rtol=1e-7)
+
 
 @absltest.skipIf(
     _SM_VERSION not in ((8, 0), (9, 0), (10, 0), (10, 3)),
