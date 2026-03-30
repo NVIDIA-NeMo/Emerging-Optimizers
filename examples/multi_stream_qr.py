@@ -41,7 +41,7 @@ def multi_stream_qr(
     num = len(matrices)
 
     # Placeholder results
-    results: list[tuple[torch.Tensor, torch.Tensor]] = [(torch.empty(0), torch.empty(0))] * num
+    results: list[tuple[torch.Tensor, torch.Tensor]] = [(torch.empty(0), torch.empty(0)) for _ in range(num)]
 
     # Launch each QR on its assigned stream
     capturing_stream = torch.cuda.current_stream()
