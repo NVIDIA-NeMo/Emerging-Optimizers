@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,11 +27,10 @@ class _WeightDecayHelper(WeightDecayMixin):
 
 
 class WeightDecayMixinTest(parameterized.TestCase):
-    # ------------------------------------------------------------------
-    # Zero weight decay – nothing should change regardless of method
-    # ------------------------------------------------------------------
+
     @parameterized.parameters("decoupled", "independent", "l2", "palm")
     def test_zero_weight_decay_is_noop(self, method):
+        """Neither p nor grad should change when weight_decay is 0."""
         helper = _WeightDecayHelper(method)
         p = torch.tensor([1.0, 2.0, 3.0])
         grad = torch.tensor([0.5, -0.5, 1.0])
@@ -42,16 +41,13 @@ class WeightDecayMixinTest(parameterized.TestCase):
         torch.testing.assert_close(p, p_orig, atol=0, rtol=0)
         torch.testing.assert_close(grad, grad_orig, atol=0, rtol=0)
 
-    # ------------------------------------------------------------------
-    # Decoupled: p <- p + p * (-wd * lr)  =>  p * (1 - wd * lr)
-    # grad is untouched
-    # ------------------------------------------------------------------
     @parameterized.parameters(
         {"lr": 0.1, "wd": 0.5},
         {"lr": 0.01, "wd": 1.0},
         {"lr": 1.0, "wd": 0.01},
     )
     def test_decoupled(self, lr, wd):
+        """Decoupled: p <- p * (1 - wd * lr), grad untouched."""
         helper = _WeightDecayHelper("decoupled")
         p = torch.tensor([4.0, -2.0, 0.0, 7.0])
         grad = torch.tensor([1.0, 1.0, 1.0, 1.0])
@@ -63,16 +59,13 @@ class WeightDecayMixinTest(parameterized.TestCase):
         torch.testing.assert_close(p, expected_p, atol=0, rtol=0)
         torch.testing.assert_close(grad, grad_orig, atol=0, rtol=0)
 
-    # ------------------------------------------------------------------
-    # Independent: p <- p + p * (-wd)  =>  p * (1 - wd)
-    # grad is untouched; lr is irrelevant
-    # ------------------------------------------------------------------
     @parameterized.parameters(
         {"lr": 0.1, "wd": 0.5},
         {"lr": 0.01, "wd": 1.0},
         {"lr": 1.0, "wd": 0.01},
     )
     def test_independent(self, lr, wd):
+        """Independent: p <- p * (1 - wd), grad untouched, lr irrelevant."""
         helper = _WeightDecayHelper("independent")
         p = torch.tensor([4.0, -2.0, 0.0, 7.0])
         grad = torch.tensor([1.0, 1.0, 1.0, 1.0])
@@ -84,11 +77,8 @@ class WeightDecayMixinTest(parameterized.TestCase):
         torch.testing.assert_close(p, expected_p, atol=0, rtol=0)
         torch.testing.assert_close(grad, grad_orig, atol=0, rtol=0)
 
-    # ------------------------------------------------------------------
-    # Independent does NOT depend on lr – verify two different lr values
-    # produce the same result
-    # ------------------------------------------------------------------
     def test_independent_ignores_lr(self):
+        """Two different lr values must produce identical results for independent decay."""
         wd = 0.3
         p1 = torch.tensor([5.0, -3.0, 1.0])
         p2 = p1.clone()
@@ -100,16 +90,13 @@ class WeightDecayMixinTest(parameterized.TestCase):
 
         torch.testing.assert_close(p1, p2, atol=0, rtol=0)
 
-    # ------------------------------------------------------------------
-    # L2: grad <- grad + p * wd
-    # p is untouched
-    # ------------------------------------------------------------------
     @parameterized.parameters(
         {"lr": 0.1, "wd": 0.5},
         {"lr": 0.01, "wd": 1.0},
         {"lr": 1.0, "wd": 0.01},
     )
     def test_l2(self, lr, wd):
+        """L2: grad <- grad + p * wd, p untouched."""
         helper = _WeightDecayHelper("l2")
         p = torch.tensor([4.0, -2.0, 0.0, 7.0])
         grad = torch.tensor([1.0, 1.0, 1.0, 1.0])
@@ -121,10 +108,8 @@ class WeightDecayMixinTest(parameterized.TestCase):
         torch.testing.assert_close(p, p_orig, atol=0, rtol=0)
         torch.testing.assert_close(grad, expected_grad, atol=0, rtol=0)
 
-    # ------------------------------------------------------------------
-    # L2 does NOT depend on lr
-    # ------------------------------------------------------------------
     def test_l2_ignores_lr(self):
+        """Two different lr values must produce identical results for L2 decay."""
         wd = 0.3
         p1 = torch.tensor([5.0, -3.0, 1.0])
         p2 = p1.clone()
@@ -136,16 +121,13 @@ class WeightDecayMixinTest(parameterized.TestCase):
 
         torch.testing.assert_close(grad1, grad2, atol=0, rtol=0)
 
-    # ------------------------------------------------------------------
-    # PaLM: p <- p + p * (-(wd * lr^2))  =>  p * (1 - wd * lr^2)
-    # grad is untouched
-    # ------------------------------------------------------------------
     @parameterized.parameters(
         {"lr": 0.1, "wd": 0.5},
         {"lr": 0.01, "wd": 1.0},
         {"lr": 1.0, "wd": 0.01},
     )
     def test_palm(self, lr, wd):
+        """PaLM: p <- p * (1 - wd * lr^2), grad untouched."""
         helper = _WeightDecayHelper("palm")
         p = torch.tensor([4.0, -2.0, 0.0, 7.0])
         grad = torch.tensor([1.0, 1.0, 1.0, 1.0])
@@ -157,10 +139,8 @@ class WeightDecayMixinTest(parameterized.TestCase):
         torch.testing.assert_close(p, expected_p, atol=0, rtol=0)
         torch.testing.assert_close(grad, grad_orig, atol=0, rtol=0)
 
-    # ------------------------------------------------------------------
-    # Default method (no attribute set) should be "l2"
-    # ------------------------------------------------------------------
     def test_default_method_is_l2(self):
+        """When weight_decay_method attribute is absent, default to L2."""
         helper = WeightDecayMixin()
         p = torch.tensor([4.0, -2.0, 0.0, 7.0])
         grad = torch.tensor([1.0, 1.0, 1.0, 1.0])
@@ -173,10 +153,8 @@ class WeightDecayMixinTest(parameterized.TestCase):
         torch.testing.assert_close(p, p_orig, atol=0, rtol=0)
         torch.testing.assert_close(grad, expected_grad, atol=0, rtol=0)
 
-    # ------------------------------------------------------------------
-    # Invalid method raises ValueError
-    # ------------------------------------------------------------------
     def test_invalid_method_raises(self):
+        """An unrecognized weight_decay_method must raise ValueError."""
         helper = _WeightDecayHelper("bogus")
         p = torch.tensor([1.0])
         grad = torch.tensor([1.0])
