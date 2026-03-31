@@ -27,7 +27,6 @@ class _WeightDecayHelper(WeightDecayMixin):
 
 
 class WeightDecayMixinTest(parameterized.TestCase):
-
     @parameterized.parameters("decoupled", "independent", "l2", "palm")
     def test_zero_weight_decay_is_noop(self, method):
         """Neither p nor grad should change when weight_decay is 0."""
