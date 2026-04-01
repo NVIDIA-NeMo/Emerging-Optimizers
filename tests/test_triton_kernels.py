@@ -13,13 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
+import triton
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import triton_kernels
+from emerging_optimizers.triton_kernels.syrk import prune_invalid_configs, prune_invalid_configs_for_small_matrix
 
 
-flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
+flags.DEFINE_enum("device", "cuda", ["cuda"], "Device to run tests on")
 flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 FLAGS = flags.FLAGS
 
@@ -30,6 +32,48 @@ def setUpModule() -> None:
         torch.manual_seed(FLAGS.seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(FLAGS.seed)
+
+
+def _make_config(tile_m: int, tile_n: int, tile_k: int) -> triton.Config:
+    return triton.Config({"TILE_M": tile_m, "TILE_N": tile_n, "TILE_K": tile_k})
+
+
+class PruneInvalidConfigsTest(parameterized.TestCase):
+    @parameterized.parameters(
+        {"n": 5123, "configs": [(128, 256, 64), (64, 128, 64), (256, 256, 128)], "expected": [(128, 256, 64)]},
+        {
+            "n": 3999,
+            "configs": [(64, 128, 64), (128, 128, 128), (256, 256, 64)],
+            "expected": [(64, 128, 64), (128, 128, 128)],
+        },
+        {"n": 1337, "configs": [(128, 64, 64)], "expected": []},
+    )
+    def test_prune_invalid_configs(self, n: int, configs: list, expected: list):
+        triton_configs = [_make_config(*c) for c in configs]
+        result = prune_invalid_configs(triton_configs, {"N": n})
+        result_tuples = [(c.kwargs["TILE_M"], c.kwargs["TILE_N"], c.kwargs["TILE_K"]) for c in result]
+        self.assertEqual(result_tuples, expected)
+
+
+class PruneInvalidConfigsForSmallMatrixTest(parameterized.TestCase):
+    @parameterized.parameters(
+        {
+            "n": 7777,
+            "configs": [(128, 128, 64), (256, 256, 64), (64, 64, 64), (128, 256, 64)],
+            "expected": [(128, 128, 64), (256, 256, 64)],
+        },
+        {
+            "n": 2345,
+            "configs": [(64, 64, 64), (128, 128, 128), (128, 256, 64)],
+            "expected": [(64, 64, 64), (128, 128, 128)],
+        },
+        {"n": 999, "configs": [(256, 256, 64)], "expected": [(256, 256, 64)]},
+    )
+    def test_prune_invalid_configs_for_small_matrix(self, n: int, configs: list, expected: list):
+        triton_configs = [_make_config(*c) for c in configs]
+        result = prune_invalid_configs_for_small_matrix(triton_configs, {"N": n})
+        result_tuples = [(c.kwargs["TILE_M"], c.kwargs["TILE_N"], c.kwargs["TILE_K"]) for c in result]
+        self.assertEqual(result_tuples, expected)
 
 
 class TsyrkTest(parameterized.TestCase):
