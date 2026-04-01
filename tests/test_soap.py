@@ -517,6 +517,76 @@ class SoapTest(parameterized.TestCase):
             param.grad = None
 
 
+class SoapMultiStreamTest(parameterized.TestCase):
+    """Tests that SOAP with stream_list produces identical results to without."""
+
+    @classmethod
+    def setUpClass(cls):
+        if FLAGS.device == "cpu":
+            cls.skipTest(cls, "SoapStreamTest requires GPU")
+        cls.device = FLAGS.device
+
+    @parameterized.parameters(  # type: ignore[misc]
+        {"use_kl_shampoo": False, "use_eigh": False},
+        {"use_kl_shampoo": False, "use_eigh": True},
+        {"use_kl_shampoo": True, "use_eigh": False},
+    )
+    def test_8streams_matches_no_streams(self, use_kl_shampoo: bool, use_eigh: bool):
+        """Test that SOAP with 8 CUDA streams produces the same results as without."""
+        torch.manual_seed(42)
+        num_steps = 10
+        shapes = [(5, 3), (8, 4), (3, 7), (6, 6), (4, 5), (10, 3), (3, 9), (7, 4), (5, 5), (8, 6)]
+
+        common_kwargs = dict(
+            lr=0.001,
+            weight_decay=0.01,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            precondition_frequency=1,
+            shampoo_beta=0.95,
+            adam_warmup_steps=1,
+            fp32_matmul_prec="highest",
+            use_kl_shampoo=use_kl_shampoo,
+            use_eigh=use_eigh,
+        )
+
+        # Create two sets of identical parameters
+        params_no_stream = [
+            torch.randn(s, requires_grad=True, device=self.device, dtype=torch.bfloat16) for s in shapes
+        ]
+        params_with_stream = [p.clone().detach().requires_grad_(True) for p in params_no_stream]
+
+        opt_no_stream = SOAP(params_no_stream, **common_kwargs)
+        stream_list = [torch.cuda.Stream() for _ in range(8)]
+        opt_with_stream = SOAP(params_with_stream, **common_kwargs, stream_list=stream_list)
+
+        grads_per_step = [
+            [torch.randn(s, device=self.device, dtype=torch.bfloat16) for s in shapes] for _ in range(num_steps)
+        ]
+
+        for step in range(num_steps):
+            for p, g in zip(params_no_stream, grads_per_step[step]):
+                p.grad = g.clone()
+            for p, g in zip(params_with_stream, grads_per_step[step]):
+                p.grad = g.clone()
+
+            opt_no_stream.step()
+            opt_with_stream.step()
+            torch.cuda.synchronize()
+
+            for i, (p_no, p_with) in enumerate(zip(params_no_stream, params_with_stream)):
+                torch.testing.assert_close(
+                    p_with,
+                    p_no,
+                    atol=0,
+                    rtol=0,
+                    msg=lambda msg: f"Parameter {i} mismatch at step {step}:\n{msg}",
+                )
+
+            for p in params_no_stream + params_with_stream:
+                p.grad = None
+
+
 class SoapVsReferenceTest(parameterized.TestCase):
     """Tests that compare SOAP implementation against reference implementation."""
 

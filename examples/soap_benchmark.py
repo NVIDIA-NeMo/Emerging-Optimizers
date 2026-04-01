@@ -50,9 +50,9 @@ flags.DEFINE_integer("num_layers", 1, "Number of transformer layers to simulate.
 flags.DEFINE_integer("num_experts", 128, "Number of MoE experts per layer.")
 flags.DEFINE_integer("warmup_steps", 1, "Optimizer warmup steps before timing.")
 flags.DEFINE_integer("benchmark_steps", 5, "Optimizer steps to time.")
-flags.DEFINE_float("lr", 3e-4, "Learning rate.")
 flags.DEFINE_bool("use_eigh", False, "Use eigh instead of QR iteration.")
 flags.DEFINE_string("dtype", "bfloat16", "Parameter dtype: float32, bfloat16, or float16.")
+flags.DEFINE_integer("num_streams", None, "Number of CUDA streams for SOAP. None means no stream_list.")
 
 # Qwen3-30B-A3B linear layer shapes (out_features, in_features) per transformer block.
 QWEN3_30B_A3B_ATTN_SHAPES: list[tuple[str, tuple[int, int]]] = [
@@ -131,18 +131,31 @@ def main(_: Any) -> None:
     print(f"  Num tensors      : {len(params)}")
     print(f"  Param dtype      : {dtype}")
     print("\nShape breakdown:")
-    for desc, count in shape_counts.items():
-        print(f"  {desc} × {count}")
+    rows = [(d[: d.index("(")].rstrip(), d[d.index("(") :], str(count)) for d, count in shape_counts.items()]
+    w_name = max(len(r[0]) for r in rows)
+    w_shape = max(len(r[1]) for r in rows)
+    w_count = max(len(r[2]) for r in rows)
+    w_name, w_shape, w_count = max(w_name, 4), max(w_shape, 5), max(w_count, 5)
+    sep = f"  +-{'-' * w_name}-+-{'-' * w_shape}-+-{'-' * w_count}-+"
+    print(sep)
+    print(f"  | {'Name':<{w_name}} | {'Shape':<{w_shape}} | {'Count':>{w_count}} |")
+    print(sep)
+    for name, shape, count in rows:
+        print(f"  | {name:<{w_name}} | {shape:>{w_shape}} | {count:>{w_count}} |")
+    print(sep)
+
+    stream_list = [torch.cuda.Stream() for _ in range(FLAGS.num_streams)] if FLAGS.num_streams else None
 
     optimizer = SOAP(
         params,
-        lr=FLAGS.lr,
+        lr=0.25,
         use_eigh=FLAGS.use_eigh,
+        stream_list=stream_list,
     )
 
     print("\nSOAP settings:")
-    print(f"  lr       : {FLAGS.lr}")
-    print(f"  use_eigh : {FLAGS.use_eigh}")
+    print(f"  use_eigh    : {FLAGS.use_eigh}")
+    print(f"  num_streams : {FLAGS.num_streams}")
 
     print(f"\nWarming up ({FLAGS.warmup_steps} steps)...")
     for _ in range(FLAGS.warmup_steps):
@@ -172,7 +185,6 @@ def main(_: Any) -> None:
     print(f"  Median         : {median_ms:.2f} ms")
     print(f"  Min            : {min_ms:.2f} ms")
     print(f"  Max            : {max_ms:.2f} ms")
-    print(f"  Throughput     : {total_params / (avg_ms / 1000) / 1e9:.2f} Gparams/s")
 
     peak_mem = torch.cuda.max_memory_allocated(device) / (1024**3)
     print(f"  Peak GPU mem   : {peak_mem:.2f} GB")
