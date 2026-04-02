@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from contextlib import nullcontext
 from functools import partial
 from typing import TYPE_CHECKING, Callable, override
 
@@ -191,6 +192,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         else:
             loss = closure()
 
+        current_stream = torch.cuda.current_stream() if torch.cuda.is_available() else None
+
         for group in self.param_groups:
             self._init_group(group)
 
@@ -198,12 +201,12 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 if p.grad is None:
                     continue
 
-                stream = (
-                    self.stream_list[param_idx % len(self.stream_list)]
-                    if self.stream_list is not None
-                    else torch.cuda.current_stream()
-                )
-                with torch.cuda.stream(stream):
+                stream_ctx: torch.cuda.StreamContext | nullcontext = nullcontext()
+                if self.stream_list is not None and current_stream is not None:
+                    stream = self.stream_list[param_idx % len(self.stream_list)]
+                    stream_ctx = torch.cuda.stream(stream)
+
+                with stream_ctx:
                     grad = p.grad.to(torch.float32)
                     state = self.state[p]
 
@@ -326,6 +329,10 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     p.add_(precond_update, alpha=-group["lr"])
 
                     state["step"] += 1
+
+        if self.stream_list is not None and current_stream is not None:
+            for stream in self.stream_list:
+                current_stream.wait_stream(stream)
 
         return loss
 
