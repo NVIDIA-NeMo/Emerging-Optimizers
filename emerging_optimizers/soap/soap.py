@@ -201,7 +201,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 if p.grad is None:
                     continue
 
-                stream_ctx: torch.cuda.StreamContext | nullcontext = nullcontext()
+                stream_ctx: torch.cuda.StreamContext | nullcontext[None] = nullcontext()
                 if self.stream_list is not None and current_stream is not None:
                     stream = self.stream_list[param_idx % len(self.stream_list)]
                     stream_ctx = torch.cuda.stream(stream)
