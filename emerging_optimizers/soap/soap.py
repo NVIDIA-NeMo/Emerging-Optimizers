@@ -194,6 +194,10 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         current_stream = torch.cuda.current_stream() if torch.cuda.is_available() else None
 
+        if self.stream_list is not None and current_stream is not None:
+            for stream in self.stream_list:
+                stream.wait_stream(current_stream)
+
         for group in self.param_groups:
             self._init_group(group)
 
