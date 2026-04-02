@@ -191,6 +191,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             loss = None
         else:
             loss = closure()
+        for group in self.param_groups:
+            self._init_group(group)
 
         current_stream = torch.cuda.current_stream() if torch.cuda.is_available() else None
 
@@ -199,8 +201,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 stream.wait_stream(current_stream)
 
         for group in self.param_groups:
-            self._init_group(group)
-
             for param_idx, p in enumerate(group["params"]):
                 if p.grad is None:
                     continue
