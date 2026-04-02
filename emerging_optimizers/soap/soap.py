@@ -240,15 +240,12 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     if self.correct_shampoo_beta_bias:
                         shampoo_beta = 1 - (1 - shampoo_beta) / (1 - shampoo_beta**curr_iter_1_based)
 
-                    torch.cuda.nvtx.range_push("update_kronecker_factors")
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                         kronecker_factor_update_fn(
                             kronecker_factor_list=kronecker_factor_list, grad=grad, shampoo_beta=shampoo_beta
                         )
-                    torch.cuda.nvtx.range_pop()
 
                     # After the adam_warmup_steps are completed , update eigenbases at precondition_frequency steps
-                    torch.cuda.nvtx.range_push("Update eigen basis")
                     if _is_eigenbasis_update_step(
                         state["step"],
                         self.adam_warmup_steps,
@@ -283,7 +280,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                                 state["exp_avg"] = exp_avg
                                 state["exp_avg_sq"] = exp_avg_sq
-                    torch.cuda.nvtx.range_pop()
 
                     self._apply_weight_decay_inplace(
                         p,
@@ -294,7 +290,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                     grad_projected = grad
                     # Project gradients to the eigenbases of Shampoo's preconditioner
-                    torch.cuda.nvtx.range_push("precondition")
                     if state["step"] >= self.adam_warmup_steps:
                         with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                             grad_projected = precondition(
@@ -302,7 +297,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                                 eigenbasis_list=eigenbasis_list,
                                 dims=[[0], [0]],
                             )
-                    torch.cuda.nvtx.range_pop()
 
                     # Calculate the Adam update for the projected gradient tensor
                     adam_update = update_functions.calculate_adam_update(
@@ -317,7 +311,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     )
 
                     # Projecting back the preconditioned (by ADAM) exponential moving average of gradients
-                    torch.cuda.nvtx.range_push("precondition")
                     if state["step"] >= self.adam_warmup_steps:
                         with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                             precond_update = precondition(
@@ -327,7 +320,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                             )
                     else:
                         precond_update = adam_update
-                    torch.cuda.nvtx.range_pop()
 
                     _clip_update_rms_in_place(precond_update, self.max_update_rms)
                     p.add_(precond_update, alpha=-group["lr"])
@@ -505,16 +497,13 @@ def update_eigenbasis_and_exp_avgs(
 
     """
     # Step 1: Project exp_avg back to the original basis
-    torch.cuda.nvtx.range_push("eigenbasis update step 1: precondition")
     exp_avg = precondition(
         exp_avg,
         eigenbasis_list,
         dims=[[0], [1]],
     )
-    torch.cuda.nvtx.range_pop()
 
     # Step 2: Update eigenbases
-    torch.cuda.nvtx.range_push("eigenbasis update step 2: update Q")
     if use_eigh:
         updated_eigenbasis_list = soap_utils.get_eigenbasis_eigh(
             kronecker_factor_list,
@@ -527,16 +516,13 @@ def update_eigenbasis_and_exp_avgs(
             exp_avg_sq,
             power_iter_steps,
         )
-    torch.cuda.nvtx.range_pop()
 
     # Step 3: Project exp_avg to the new eigenbasis using the updated eigenbases
-    torch.cuda.nvtx.range_push("eigenbasis update step 3: project exp_avg")
     exp_avg = precondition(
         exp_avg,
         updated_eigenbasis_list,
         dims=[[0], [0]],
     )
-    torch.cuda.nvtx.range_pop()
 
     return updated_eigenbasis_list, exp_avg, exp_avg_sq
 
