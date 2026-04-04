@@ -38,5 +38,8 @@ for test in `find tests/convergence -type f -name '*_test.py'`; do
     coverage run -p --source=emerging_optimizers $test --device=cuda --seed="$fix_seed" -v -2 --xml_output_file="$report_name" || error=1
 done
 
+python tests/convergence/moe_c4_convergence.py --optimizer=muon
+python tests/convergence/moe_c4_convergence.py --optimizer=soap
+python tests/convergence/moe_c4_convergence.py --optimizer=adamw
 
 exit "${error}"
