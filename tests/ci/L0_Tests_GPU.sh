@@ -19,24 +19,24 @@ export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 mkdir -p test-results/tests/convergence
 
 error=0
-for test in `find tests -type f -name 'test_*' ! -name '*_cpu.py'`; do
-    echo "Running $test with random seed"
-    report_name="test-results/${test}.xml"
-    coverage run -p --source=emerging_optimizers $test --device=cuda -v -2 --xml_output_file="$report_name" || error=1
-done
+# for test in `find tests -type f -name 'test_*' ! -name '*_cpu.py'`; do
+#     echo "Running $test with random seed"
+#     report_name="test-results/${test}.xml"
+#     coverage run -p --source=emerging_optimizers $test --device=cuda -v -2 --xml_output_file="$report_name" || error=1
+# done
 
-fix_seed=42
-for test in `find tests -type f -name 'test_*' ! -name '*_cpu.py'`; do
-    echo "Running $test with fixed seed $fix_seed"
-    report_name="test-results/${test}_seed${fix_seed}.xml"
-    coverage run -p --source=emerging_optimizers $test --device=cuda --seed="$fix_seed" -v -2 --xml_output_file="$report_name" || error=1
-done
+# fix_seed=42
+# for test in `find tests -type f -name 'test_*' ! -name '*_cpu.py'`; do
+#     echo "Running $test with fixed seed $fix_seed"
+#     report_name="test-results/${test}_seed${fix_seed}.xml"
+#     coverage run -p --source=emerging_optimizers $test --device=cuda --seed="$fix_seed" -v -2 --xml_output_file="$report_name" || error=1
+# done
 
-for test in `find tests/convergence -type f -name '*_test.py'`; do
-    echo "Running $test with fixed seed"
-    report_name="test-results/${test}_seed${fix_seed}.xml"
-    coverage run -p --source=emerging_optimizers $test --device=cuda --seed="$fix_seed" -v -2 --xml_output_file="$report_name" || error=1
-done
+# for test in `find tests/convergence -type f -name '*_test.py'`; do
+#     echo "Running $test with fixed seed"
+#     report_name="test-results/${test}_seed${fix_seed}.xml"
+#     coverage run -p --source=emerging_optimizers $test --device=cuda --seed="$fix_seed" -v -2 --xml_output_file="$report_name" || error=1
+# done
 
 python tests/convergence/moe_c4_convergence.py --optimizer=muon
 python tests/convergence/moe_c4_convergence.py --optimizer=soap

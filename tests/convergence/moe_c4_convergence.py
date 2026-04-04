@@ -20,8 +20,10 @@ trained from scratch on streamed C4 data with optimizers from this repo.
 """
 
 import math
+import time
 from collections.abc import Iterator
 from typing import Any, Callable, override
+from xml.etree import ElementTree as ET
 
 import datasets
 import torch
@@ -43,7 +45,7 @@ flags.DEFINE_integer("batch_size", 16, "Batch size.")
 flags.DEFINE_integer("seq_len", 512, "Sequence length.")
 flags.DEFINE_integer("log_interval", 50, "Log every N steps.")
 flags.DEFINE_integer("seed", 13, "Random seed.")
-flags.DEFINE_float("loss_target", 20.0, "Loss target.")
+flags.DEFINE_float("loss_target", 8.0, "Loss target.")
 
 # Model hyperparameters
 flags.DEFINE_integer("d_model", 512, "Model dimension.")
@@ -53,6 +55,7 @@ flags.DEFINE_integer("n_kv_heads", 4, "Number of key-value heads (GQA).")
 flags.DEFINE_integer("n_experts", 8, "Number of experts per MoE layer.")
 flags.DEFINE_integer("top_k", 2, "Number of active experts per token.")
 flags.DEFINE_integer("d_ff", 1408, "Feed-forward intermediate dimension per expert.")
+flags.DEFINE_string("xml_output_file", None, "Path to write JUnit XML report.")
 
 
 class C4Dataset(IterableDataset):
@@ -77,12 +80,30 @@ class C4Dataset(IterableDataset):
                 yield t[:-1], t[1:]
 
 
+class _CombinedOptimizer:
+    """Wraps multiple optimizers so they can be used as one."""
+
+    def __init__(self, optimizers: list[torch.optim.Optimizer]):
+        self.optimizers = optimizers
+        self.param_groups: list[dict] = []
+        for opt in optimizers:
+            self.param_groups.extend(opt.param_groups)
+
+    def zero_grad(self, set_to_none: bool = True) -> None:
+        for opt in self.optimizers:
+            opt.zero_grad(set_to_none=set_to_none)
+
+    def step(self, closure: Callable[[], float] | None = None) -> None:
+        for opt in self.optimizers:
+            opt.step(closure)
+
+
 def build_optimizer(
     model: MixtralForCausalLM,
     optimizer_name: str,
     lr: float,
     weight_decay: float,
-) -> torch.optim.Optimizer:
+) -> torch.optim.Optimizer | _CombinedOptimizer:
     """Build optimizer with proper param groups.
 
     Muon and SOAP require 2D params. Embeddings, biases, norms, and the
@@ -120,29 +141,6 @@ def build_optimizer(
         raise ValueError(f"Unknown optimizer: {optimizer_name}")
 
 
-class _CombinedOptimizer(torch.optim.Optimizer):
-    """Wraps multiple optimizers so they can be used as one."""
-
-    def __init__(self, optimizers: list[torch.optim.Optimizer]):
-        self.optimizers = optimizers
-        self.defaults = optimizers[0].defaults
-        self.state: dict = {}  # type: ignore[assignment]
-        self.param_groups: list[dict] = []  # type: ignore[assignment]
-        for opt in optimizers:
-            self.param_groups.extend(opt.param_groups)
-
-    @override
-    def zero_grad(self, set_to_none: bool = True) -> None:
-        for opt in self.optimizers:
-            opt.zero_grad(set_to_none=set_to_none)
-
-    @override
-    def step(self, closure: Callable[[], float] | None = None) -> float | None:  # type: ignore[override]
-        for opt in self.optimizers:
-            opt.step(closure)
-        return None
-
-
 def get_cosine_lr(step: int, max_steps: int, base_lr: float, warmup_steps: int = 100) -> float:
     """Cosine learning rate schedule with linear warmup."""
     if step < warmup_steps:
@@ -153,6 +151,7 @@ def get_cosine_lr(step: int, max_steps: int, base_lr: float, warmup_steps: int =
 
 def train(_: Any) -> None:
     """Main training function."""
+    start_time = time.monotonic()
     torch.manual_seed(FLAGS.seed)
     torch.cuda.manual_seed_all(FLAGS.seed)
 
@@ -202,21 +201,68 @@ def train(_: Any) -> None:
         for param_group in optimizer.param_groups:
             param_group["lr"] = current_lr
 
-        with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=True):
-            outputs = model(input_ids=input_ids, labels=labels)
+        outputs = model(input_ids=input_ids, labels=labels)
 
-        optimizer.zero_grad()
         outputs.loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
+        optimizer.zero_grad()
 
         if step % FLAGS.log_interval == 0 or step == FLAGS.max_steps - 1:
             lm_loss = outputs.loss.item()
             ppl = math.exp(min(lm_loss, 20.0))
             logging.info("step=%5d | loss=%.4f | ppl=%.2f | lr=%.6f", step, lm_loss, ppl, current_lr)
 
-    if lm_loss > FLAGS.loss_target:
-        raise ValueError(f"Loss target {FLAGS.loss_target} not reached. Final loss: {lm_loss:.4f}")
+    passed = lm_loss <= FLAGS.loss_target
+    failure_msg = None if passed else f"Loss target {FLAGS.loss_target} not reached. Final loss: {lm_loss:.4f}"
+
+    if FLAGS.xml_output_file is not None:
+        _write_junit_xml(
+            test_name=f"convergence_{FLAGS.optimizer}",
+            class_name="moe_c4_convergence",
+            elapsed=time.monotonic() - start_time,
+            failure_msg=failure_msg,
+            output_file=FLAGS.xml_output_file,
+        )
+
+    if not passed:
+        raise ValueError(failure_msg)
+
+
+def _write_junit_xml(
+    test_name: str,
+    class_name: str,
+    elapsed: float,
+    failure_msg: str | None,
+    output_file: str,
+) -> None:
+    """Write a single-testcase JUnit XML report."""
+    import os
+
+    testsuite = ET.Element(
+        "testsuite",
+        name=class_name,
+        tests="1",
+        failures="0" if failure_msg is None else "1",
+        errors="0",
+        time=f"{elapsed:.2f}",
+    )
+    testcase = ET.SubElement(
+        testsuite,
+        "testcase",
+        name=test_name,
+        classname=class_name,
+        time=f"{elapsed:.2f}",
+    )
+    if failure_msg is not None:
+        failure = ET.SubElement(testcase, "failure", message=failure_msg)
+        failure.text = failure_msg
+
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    tree = ET.ElementTree(testsuite)
+    ET.indent(tree)
+    tree.write(output_file, xml_declaration=True, encoding="utf-8")
+    logging.info("JUnit XML report written to %s", output_file)
 
 
 if __name__ == "__main__":
