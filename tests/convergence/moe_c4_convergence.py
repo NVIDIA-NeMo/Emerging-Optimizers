@@ -21,7 +21,7 @@ trained from scratch on streamed C4 data with optimizers from this repo.
 
 import math
 from collections.abc import Iterator
-from typing import Callable, override
+from typing import Any, Callable, override
 
 import datasets
 import torch
@@ -151,13 +151,10 @@ def get_cosine_lr(step: int, max_steps: int, base_lr: float, warmup_steps: int =
     return base_lr * 0.5 * (1.0 + math.cos(math.pi * progress))
 
 
-def train(argv: list[str]) -> None:
+def train(_: Any) -> None:
     """Main training function."""
-    del argv
-
     torch.manual_seed(FLAGS.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(FLAGS.seed)
+    torch.cuda.manual_seed_all(FLAGS.seed)
 
     tokenizer = AutoTokenizer.from_pretrained("mistralai/Mixtral-8x7B-v0.1")
 
