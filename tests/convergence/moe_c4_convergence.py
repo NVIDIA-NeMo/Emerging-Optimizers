@@ -20,6 +20,8 @@ trained from scratch on streamed C4 data with optimizers from this repo.
 """
 
 import math
+from collections.abc import Iterator
+from typing import Callable, override
 
 import datasets
 import torch
@@ -62,8 +64,9 @@ class C4Dataset(IterableDataset):
         self.tokenizer = tokenizer
         self.dataset = datasets.load_dataset("allenai/c4", "en", split=split, streaming=True, trust_remote_code=True)
 
-    def __iter__(self):
-        buffer = []
+    @override
+    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+        buffer: list[int] = []
         for example in self.dataset:
             tokens = self.tokenizer(example["text"], add_special_tokens=False)["input_ids"]
             buffer.extend(tokens)
@@ -124,13 +127,16 @@ class _CombinedOptimizer(torch.optim.Optimizer):
         for opt in optimizers:
             self.param_groups.extend(opt.param_groups)
 
-    def zero_grad(self) -> None:
+    @override
+    def zero_grad(self, set_to_none: bool = True) -> None:
         for opt in self.optimizers:
-            opt.zero_grad(set_to_none=True)
+            opt.zero_grad(set_to_none=set_to_none)
 
-    def step(self, closure=None):
+    @override
+    def step(self, closure: Callable[[], float] | None = None) -> float | None:  # type: ignore[override]
         for opt in self.optimizers:
             opt.step(closure)
+        return None
 
 
 def get_cosine_lr(step: int, max_steps: int, base_lr: float, warmup_steps: int = 100) -> float:
@@ -180,6 +186,7 @@ def train(argv: list[str]) -> None:
     data_iter = iter(dataloader)
 
     logging.info("Starting training...")
+    lm_loss = float("inf")
     for step in range(FLAGS.max_steps):
         try:
             input_ids, labels = next(data_iter)
@@ -202,7 +209,6 @@ def train(argv: list[str]) -> None:
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
-        lm_loss = float("inf")
         if step % FLAGS.log_interval == 0 or step == FLAGS.max_steps - 1:
             lm_loss = outputs.loss.item()
             ppl = math.exp(min(lm_loss, 20.0))
