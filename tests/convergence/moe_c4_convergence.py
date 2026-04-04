@@ -99,18 +99,22 @@ def build_optimizer(
         else:
             params_other.append(p)
 
+    common_kwargs = {
+        "lr": lr,
+        "weight_decay": weight_decay,
+    }
     if optimizer_name == "muon":
-        muon_opt = Muon(params_2d, lr=lr, momentum=0.95, weight_decay=weight_decay)
-        adam_opt = torch.optim.AdamW(params_other, lr=lr * 0.1, weight_decay=weight_decay)
+        muon_opt = Muon(params_2d, **common_kwargs)
+        adam_opt = torch.optim.AdamW(params_other, **common_kwargs)
         return _CombinedOptimizer([muon_opt, adam_opt])
 
     elif optimizer_name == "soap":
-        soap_opt = SOAP(params_2d, lr=lr, weight_decay=weight_decay, precondition_frequency=10)
-        adam_opt = torch.optim.AdamW(params_other, lr=lr, weight_decay=weight_decay)
+        soap_opt = SOAP(params_2d, **common_kwargs, precondition_frequency=1)
+        adam_opt = torch.optim.AdamW(params_other, **common_kwargs)
         return _CombinedOptimizer([soap_opt, adam_opt])
 
     elif optimizer_name == "adamw":
-        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        return torch.optim.AdamW(model.parameters(), **common_kwargs)
 
     else:
         raise ValueError(f"Unknown optimizer: {optimizer_name}")
