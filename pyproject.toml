@@ -77,7 +77,7 @@ docs = [
 test = [
     "coverage>=7.8.1",
     "triton>=3.4.0",
-    "transformers==4.57.6",  # group_mm in HF needs newer than 25.09 NGC PyTorch to work properly
+    "transformers>=5.5.0",
     "datasets>=4.8.4",
 ]
 dev = [
