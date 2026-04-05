@@ -68,16 +68,15 @@ class C4Dataset(IterableDataset):
         self.dataset = datasets.load_dataset("allenai/c4", "en", split=split, streaming=True, trust_remote_code=True)
 
     @override
-    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    def __iter__(self) -> Iterator[torch.Tensor]:
         buffer: list[int] = []
         for example in self.dataset:
             tokens = self.tokenizer(example["text"], add_special_tokens=False)["input_ids"]
             buffer.extend(tokens)
-            while len(buffer) >= self.seq_len + 1:
-                chunk = buffer[: self.seq_len + 1]
-                buffer = buffer[self.seq_len + 1 :]
-                t = torch.tensor(chunk, dtype=torch.long)
-                yield t[:-1], t[1:]
+            while len(buffer) >= self.seq_len:
+                chunk = buffer[: self.seq_len]
+                buffer = buffer[self.seq_len :]
+                yield torch.tensor(chunk, dtype=torch.long)
 
 
 class _CombinedOptimizer:
@@ -189,20 +188,19 @@ def train(_: Any) -> None:
     lm_loss = float("inf")
     for step in range(FLAGS.max_steps):
         try:
-            input_ids, labels = next(data_iter)
+            tokens = next(data_iter)
         except StopIteration:
             data_iter = iter(dataloader)
-            input_ids, labels = next(data_iter)
+            tokens = next(data_iter)
 
-        input_ids = input_ids.cuda()
-        labels = labels.cuda()
+        tokens = tokens.cuda()
 
         current_lr = get_cosine_lr(step, FLAGS.max_steps, FLAGS.lr)
         for param_group in optimizer.param_groups:
             param_group["lr"] = current_lr
 
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=True):
-            outputs = model(input_ids=input_ids, labels=labels)
+            outputs = model(input_ids=tokens, labels=tokens)
 
         outputs.loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
