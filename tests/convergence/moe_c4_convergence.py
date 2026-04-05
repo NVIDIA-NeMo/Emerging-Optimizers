@@ -179,7 +179,7 @@ def train(_: Any) -> None:
     logging.info("Optimizer: %s, lr=%s", FLAGS.optimizer, FLAGS.lr)
 
     dataset = C4Dataset(seq_len=FLAGS.seq_len, tokenizer=tokenizer)
-    dataloader = DataLoader(dataset, batch_size=FLAGS.batch_size, num_workers=2, pin_memory=True)
+    dataloader = DataLoader(dataset, batch_size=FLAGS.batch_size)
 
     model.train()
     data_iter = iter(dataloader)
