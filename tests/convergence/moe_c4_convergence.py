@@ -201,7 +201,8 @@ def train(_: Any) -> None:
         for param_group in optimizer.param_groups:
             param_group["lr"] = current_lr
 
-        outputs = model(input_ids=input_ids, labels=labels)
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=True):
+            outputs = model(input_ids=input_ids, labels=labels)
 
         outputs.loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
