@@ -65,7 +65,7 @@ class C4Dataset(IterableDataset):
         super().__init__()
         self.seq_len = seq_len
         self.tokenizer = tokenizer
-        self.dataset = datasets.load_dataset("allenai/c4", "en", split=split, streaming=True, trust_remote_code=True)
+        self.dataset = datasets.load_dataset("allenai/c4", "en", split=split, streaming=True)
 
     @override
     def __iter__(self) -> Iterator[torch.Tensor]:
