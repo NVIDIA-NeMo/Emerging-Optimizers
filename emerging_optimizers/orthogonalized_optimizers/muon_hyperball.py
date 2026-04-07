@@ -100,9 +100,7 @@ class MuonHyperball(muon.Muon):
             update: The orthogonalized gradient tensor.
         """
         if "hyperball_R" not in self.state[p]:
-            self.state[p]["hyperball_R"] = torch.tensor(
-                self.hyperball_radius, dtype=p.dtype, device=p.device
-            )
+            self.state[p]["hyperball_R"] = torch.tensor(self.hyperball_radius, dtype=p.dtype, device=p.device)
         R = self.state[p]["hyperball_R"]
 
         update_norm = update.norm().clamp_min(self.hyperball_eps)
@@ -121,4 +119,3 @@ class MuonHyperball(muon.Muon):
         # Normalize the result and scale back by R: p = R * (p / ||p||_F) using Frobenius norm.
         p_norm = p.norm().clamp_min(self.hyperball_eps)
         p.mul_(R / p_norm)
-
