@@ -162,6 +162,79 @@ class TsyrkTest(parameterized.TestCase):
         torch.testing.assert_close(result_with_out, result_no_out, atol=atol, rtol=rtol)
 
 
+class TsyrkExValidationTest(parameterized.TestCase):
+    """Tests for input validation raises in tsyrk_ex and tsyrk_ex_small_matrix."""
+
+    def setUp(self):
+        self.device = FLAGS.device
+
+    def test_tsyrk_ex_non_bf16_raises_type_error(self) -> None:
+        a = torch.randn(4, 4, device=self.device, dtype=torch.float32)
+        with self.assertRaisesRegex(TypeError, "must be bfloat16"):
+            triton_kernels.tsyrk_ex(a)
+
+    def test_tsyrk_ex_non_2d_raises_type_error(self) -> None:
+        a = torch.randn(4, device=self.device, dtype=torch.bfloat16)
+        with self.assertRaisesRegex(TypeError, "must be 2D"):
+            triton_kernels.tsyrk_ex(a)
+
+    def test_tsyrk_ex_non_contiguous_raises_type_error(self) -> None:
+        a = torch.randn(8, 8, device=self.device, dtype=torch.bfloat16)[:, ::2]
+        with self.assertRaisesRegex(TypeError, "must be contiguous"):
+            triton_kernels.tsyrk_ex(a)
+
+    def test_tsyrk_ex_c_wrong_shape_raises_runtime_error(self) -> None:
+        a = torch.randn(4, 4, device=self.device, dtype=torch.bfloat16)
+        c = torch.randn(3, 3, device=self.device, dtype=torch.bfloat16)
+        with self.assertRaisesRegex(RuntimeError, r"c must be of shape \(N, N\)"):
+            triton_kernels.tsyrk_ex(a, c, beta=1.0)
+
+    def test_tsyrk_ex_c_non_contiguous_raises_runtime_error(self) -> None:
+        a = torch.randn(8, 8, device=self.device, dtype=torch.bfloat16)
+        c = torch.randn(16, 16, device=self.device, dtype=torch.bfloat16)[::2, ::2]
+        with self.assertRaisesRegex(RuntimeError, "c or c.T must be contiguous"):
+            triton_kernels.tsyrk_ex(a, c, beta=1.0)
+
+    def test_tsyrk_ex_small_non_bf16_raises_type_error(self) -> None:
+        a = torch.randn(4, 4, device=self.device, dtype=torch.float32)
+        with self.assertRaisesRegex(TypeError, "must be bfloat16"):
+            triton_kernels.tsyrk_ex_small_matrix(a)
+
+    def test_tsyrk_ex_small_non_2d_raises_type_error(self) -> None:
+        a = torch.randn(4, device=self.device, dtype=torch.bfloat16)
+        with self.assertRaisesRegex(TypeError, "must be 2D"):
+            triton_kernels.tsyrk_ex_small_matrix(a)
+
+    def test_tsyrk_ex_small_non_contiguous_raises_type_error(self) -> None:
+        a = torch.randn(8, 8, device=self.device, dtype=torch.bfloat16)[:, ::2]
+        with self.assertRaisesRegex(TypeError, "must be contiguous"):
+            triton_kernels.tsyrk_ex_small_matrix(a)
+
+    def test_tsyrk_ex_small_c_wrong_shape_raises_runtime_error(self) -> None:
+        a = torch.randn(4, 4, device=self.device, dtype=torch.bfloat16)
+        c = torch.randn(3, 3, device=self.device, dtype=torch.bfloat16)
+        with self.assertRaisesRegex(RuntimeError, r"c must be of shape \(N, N\)"):
+            triton_kernels.tsyrk_ex_small_matrix(a, c, beta=1.0)
+
+    def test_tsyrk_ex_small_c_non_contiguous_raises_runtime_error(self) -> None:
+        a = torch.randn(8, 8, device=self.device, dtype=torch.bfloat16)
+        c = torch.randn(16, 16, device=self.device, dtype=torch.bfloat16)[::2, ::2]
+        with self.assertRaisesRegex(RuntimeError, "c or c.T must be contiguous"):
+            triton_kernels.tsyrk_ex_small_matrix(a, c, beta=1.0)
+
+    def test_tsyrk_ex_small_out_wrong_shape_raises_runtime_error(self) -> None:
+        a = torch.randn(4, 4, device=self.device, dtype=torch.bfloat16)
+        out = torch.empty(3, 3, device=self.device, dtype=torch.bfloat16)
+        with self.assertRaisesRegex(RuntimeError, "out must be same shape/device/dtype"):
+            triton_kernels.tsyrk_ex_small_matrix(a, out=out)
+
+    def test_tsyrk_ex_small_out_non_contiguous_raises_runtime_error(self) -> None:
+        a = torch.randn(4, 4, device=self.device, dtype=torch.bfloat16)
+        out = torch.empty(8, 8, device=self.device, dtype=torch.bfloat16)[::2, ::2]
+        with self.assertRaisesRegex(RuntimeError, "out must be contiguous"):
+            triton_kernels.tsyrk_ex_small_matrix(a, out=out)
+
+
 class TsyrkIntegerInputTest(parameterized.TestCase):
     def setUp(self):
         self.device = FLAGS.device

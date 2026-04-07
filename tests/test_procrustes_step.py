@@ -257,6 +257,12 @@ class ProcrustesStepTest(parameterized.TestCase):
                 f"Final errors: err1={err1:.4f}, err2={err2:.4f}, best_error={final_error:.4f}",
             )
 
+    def test_order_4_raises_value_error(self) -> None:
+        """Test that procrustes_step raises ValueError for invalid order."""
+        Q = torch.randn(3, 3, device=self.device, dtype=torch.float32)
+        with self.assertRaisesRegex(ValueError, "order must be 2 or 3.*4"):
+            procrustes_step(Q, order=4)
+
 
 if __name__ == "__main__":
     torch.manual_seed(42)

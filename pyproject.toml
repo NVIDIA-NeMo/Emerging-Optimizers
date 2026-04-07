@@ -183,7 +183,6 @@ exclude_also = [
     ".*sm_version",
     "if closure",
     "loss = closure",
-    "raise .*Error",
     "@abstractmethod",
     "if TYPE_CHECKING:",
 ]
