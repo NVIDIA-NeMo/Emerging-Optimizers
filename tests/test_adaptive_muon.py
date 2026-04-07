@@ -52,12 +52,6 @@ class AdaptiveMuonTest(parameterized.TestCase):
             lr=0.01,
             momentum=0.9,
             weight_decay=0.01,
-            nesterov=nesterov,
-            moment2_method=second_moment_method,
-            beta2=0.999,
-            eps=1e-8,
-            weight_decay_method="decoupled",
-            fp32_matmul_prec="highest",
         )
         adaptive_opt.step()
 
@@ -75,12 +69,6 @@ class AdaptiveMuonTest(parameterized.TestCase):
             lr=0.01,
             momentum=0.9,
             weight_decay=0.0,
-            nesterov=False,
-            moment2_method=second_moment_method,
-            beta2=0.999,
-            eps=1e-8,
-            weight_decay_method="decoupled",
-            fp32_matmul_prec="highest",
         )
 
         # Run one step to initialize buffers
@@ -103,25 +91,11 @@ class AdaptiveMuonTest(parameterized.TestCase):
             expected_shape[avg_dim] = 1
             self.assertEqual(list(second_moment.shape), expected_shape)
 
-    def test_non_2d_param_raises_value_error_in_normuon_init(self) -> None:
-        """Test that AdaptiveMuon raises ValueError for non-2D parameters during normuon init."""
-        test_param = nn.Parameter(torch.randn(8, dtype=torch.float32, device=FLAGS.device))
-        test_param.grad = torch.randn_like(test_param)
-
-        adaptive_opt = AdaptiveMuon(
-            [test_param],
-            lr=0.01,
-            momentum=0.9,
-            weight_decay=0.0,
-            nesterov=False,
-            moment2_method="normuon",
-            fp32_matmul_prec="highest",
-        )
-
-        with self.assertRaisesRegex(ValueError, "only supports 2D"):
-            adaptive_opt.step()
-
-    def test_non_2d_param_raises_value_error_in_adamuon_step(self) -> None:
+    @parameterized.parameters(
+        {"moment2_method": "adamuon"},
+        {"moment2_method": "normuon"},
+    )
+    def test_non_2d_param_raises_value_error_in_adamuon_step(self, moment2_method) -> None:
         """Test that AdaptiveMuon raises ValueError for non-2D parameters during step."""
         test_param = nn.Parameter(torch.randn(8, dtype=torch.float32, device=FLAGS.device))
         test_param.grad = torch.randn_like(test_param)
@@ -131,8 +105,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
             lr=0.01,
             momentum=0.9,
             weight_decay=0.0,
-            nesterov=False,
-            fp32_matmul_prec="highest",
+            moment2_method=moment2_method,
         )
 
         with self.assertRaisesRegex(ValueError, "only supports 2D"):
@@ -148,15 +121,9 @@ class AdaptiveMuonTest(parameterized.TestCase):
             lr=0.01,
             momentum=0.9,
             weight_decay=0.0,
-            nesterov=False,
-            moment2_method=None,
-            beta2=0.999,
-            eps=1e-8,
-            weight_decay_method="decoupled",
-            fp32_matmul_prec="highest",
+            moment2_method="unknown",
         )
 
-        # TypeError is raised during step() when initializing moment2_buffer
         with self.assertRaises(TypeError):
             adaptive_opt.step()
 

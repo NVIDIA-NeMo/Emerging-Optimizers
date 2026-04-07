@@ -315,52 +315,28 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
             rtol=1e-6,
         )
 
-    def test_oblique_sgd_negative_lr_raises_value_error(self) -> None:
+    @parameterized.named_parameters(
+        ("sgd_negative_lr", ObliqueSGD, {"lr": -1.0}, "Invalid learning rate"),
+        ("sgd_momentum_out_of_range", ObliqueSGD, {"momentum": 1.0}, "Invalid momentum"),
+        ("sgd_negative_weight_decay", ObliqueSGD, {"weight_decay": -0.1}, "Invalid weight_decay"),
+        ("adam_negative_lr", ObliqueAdam, {"lr": -1.0}, "Invalid learning rate"),
+        ("adam_beta1_out_of_range", ObliqueAdam, {"betas": (1.0, 0.99)}, "Invalid beta1"),
+        ("adam_beta2_out_of_range", ObliqueAdam, {"betas": (0.9, 1.0)}, "Invalid beta2"),
+        ("adam_negative_weight_decay", ObliqueAdam, {"weight_decay": -0.1}, "Invalid weight_decay"),
+    )
+    def test_invalid_param_raises_value_error(self, opt_cls, kwargs, error_msg) -> None:
         param = torch.nn.Parameter(torch.randn(3, 4, device=self.device))
-        with self.assertRaisesRegex(ValueError, "Invalid learning rate"):
-            ObliqueSGD([param], lr=-1.0)
+        with self.assertRaisesRegex(ValueError, error_msg):
+            opt_cls([param], **kwargs)
 
-    def test_oblique_sgd_momentum_out_of_range_raises_value_error(self) -> None:
-        param = torch.nn.Parameter(torch.randn(3, 4, device=self.device))
-        with self.assertRaisesRegex(ValueError, "Invalid momentum"):
-            ObliqueSGD([param], momentum=1.0)
-
-    def test_oblique_sgd_negative_weight_decay_raises_value_error(self) -> None:
-        param = torch.nn.Parameter(torch.randn(3, 4, device=self.device))
-        with self.assertRaisesRegex(ValueError, "Invalid weight_decay"):
-            ObliqueSGD([param], weight_decay=-0.1)
-
-    def test_oblique_sgd_non_2d_param_raises_value_error(self) -> None:
+    @parameterized.named_parameters(
+        ("sgd", ObliqueSGD, {}),
+        ("adam", ObliqueAdam, {}),
+    )
+    def test_non_2d_param_raises_value_error(self, opt_cls, kwargs) -> None:
         param = torch.nn.Parameter(torch.randn(8, device=self.device))
         param.grad = torch.randn_like(param)
-        opt = ObliqueSGD([param])
-        with self.assertRaisesRegex(ValueError, "only supports 2D"):
-            opt.step()
-
-    def test_oblique_adam_negative_lr_raises_value_error(self) -> None:
-        param = torch.nn.Parameter(torch.randn(3, 4, device=self.device))
-        with self.assertRaisesRegex(ValueError, "Invalid learning rate"):
-            ObliqueAdam([param], lr=-1.0)
-
-    def test_oblique_adam_beta1_out_of_range_raises_value_error(self) -> None:
-        param = torch.nn.Parameter(torch.randn(3, 4, device=self.device))
-        with self.assertRaisesRegex(ValueError, "Invalid beta1"):
-            ObliqueAdam([param], betas=(1.0, 0.99))
-
-    def test_oblique_adam_beta2_out_of_range_raises_value_error(self) -> None:
-        param = torch.nn.Parameter(torch.randn(3, 4, device=self.device))
-        with self.assertRaisesRegex(ValueError, "Invalid beta2"):
-            ObliqueAdam([param], betas=(0.9, 1.0))
-
-    def test_oblique_adam_negative_weight_decay_raises_value_error(self) -> None:
-        param = torch.nn.Parameter(torch.randn(3, 4, device=self.device))
-        with self.assertRaisesRegex(ValueError, "Invalid weight_decay"):
-            ObliqueAdam([param], weight_decay=-0.1)
-
-    def test_oblique_adam_non_2d_param_raises_value_error(self) -> None:
-        param = torch.nn.Parameter(torch.randn(8, device=self.device))
-        param.grad = torch.randn_like(param)
-        opt = ObliqueAdam([param])
+        opt = opt_cls([param], **kwargs)
         with self.assertRaisesRegex(ValueError, "only supports 2D"):
             opt.step()
 
