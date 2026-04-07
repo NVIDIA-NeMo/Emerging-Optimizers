@@ -121,3 +121,21 @@ class MuonHyperball(muon.Muon):
         # Normalize the result and scale back by R: p = R * (p / ||p||_F) using Frobenius norm.
         p_norm = p.norm().clamp_min(self.hyperball_eps)
         p.mul_(R / p_norm)
+
+    @staticmethod
+    def _compute_tangent_projection(
+        param: torch.Tensor, grad_like: torch.Tensor
+    ) -> torch.Tensor:
+        """Compute the Riemannian gradient via tangent-space projection.
+        Frobenius sphere (entire matrix on a single sphere).
+
+        Args:
+            param: Parameter tensor (2D).
+            grad_like: Gradient-like tensor (momentum buffer or gradient).
+
+        Returns:
+            The tangent-space projected gradient.
+        """
+
+        projection = (param * grad_like).sum() / param.pow(2).sum().clamp(min=1e-12)
+        return grad_like - projection * param
