@@ -202,7 +202,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         for group in self.param_groups:
             for param_idx, p in enumerate(group["params"]):
-                if p.grad is None:
+                if p.grad is None:  # pragma: no cover
                     continue
 
                 stream_ctx: torch.cuda.StreamContext | nullcontext[None] = nullcontext()
