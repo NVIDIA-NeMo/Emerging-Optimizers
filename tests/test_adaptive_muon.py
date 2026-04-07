@@ -39,10 +39,10 @@ def setUpModule() -> None:
 class AdaptiveMuonTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(5, 7), (33, 65), (127, 257)],
-        second_moment_method=["adamuon", "normuon"],
+        moment2_method=["adamuon", "normuon"],
         nesterov=[True, False],
     )
-    def test_smoke(self, shape, second_moment_method, nesterov) -> None:
+    def test_smoke(self, shape, moment2_method, nesterov) -> None:
         """Smoke test AdaptiveMuon with both second moment methods."""
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=FLAGS.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
@@ -52,14 +52,15 @@ class AdaptiveMuonTest(parameterized.TestCase):
             lr=0.01,
             momentum=0.9,
             weight_decay=0.01,
+            moment2_method=moment2_method,
         )
         adaptive_opt.step()
 
     @parameterized.parameters(
-        {"shape": (8, 16), "second_moment_method": "adamuon"},
-        {"shape": (16, 8), "second_moment_method": "normuon"},
+        {"shape": (8, 16), "moment2_method": "adamuon"},
+        {"shape": (16, 8), "moment2_method": "normuon"},
     )
-    def test_second_moment_matches_shapes(self, shape, second_moment_method) -> None:
+    def test_second_moment_matches_shapes(self, shape, moment2_method) -> None:
         """Test that second moment buffers are properly initialized."""
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=FLAGS.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
@@ -69,6 +70,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
             lr=0.01,
             momentum=0.9,
             weight_decay=0.0,
+            moment2_method=moment2_method,
         )
 
         # Run one step to initialize buffers
@@ -80,16 +82,16 @@ class AdaptiveMuonTest(parameterized.TestCase):
         self.assertIn("momentum_buffer", state)
 
         # Check second moment buffer shape
-        second_moment = state["moment2_buffer"]
-        if second_moment_method == "adamuon":
+        moment2 = state["moment2_buffer"]
+        if moment2_method == "adamuon":
             # Full elementwise buffer
-            self.assertEqual(second_moment.shape, test_param.shape)
-        elif second_moment_method == "normuon":
+            self.assertEqual(moment2.shape, test_param.shape)
+        elif moment2_method == "normuon":
             # Reduced shape buffer
             avg_dim = -1 if shape[-2] >= shape[-1] else -2
             expected_shape = list(shape)
             expected_shape[avg_dim] = 1
-            self.assertEqual(list(second_moment.shape), expected_shape)
+            self.assertEqual(list(moment2.shape), expected_shape)
 
     @parameterized.parameters(
         {"moment2_method": "adamuon"},
