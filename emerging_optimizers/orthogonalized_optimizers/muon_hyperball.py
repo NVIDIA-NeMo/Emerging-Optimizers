@@ -35,7 +35,7 @@ class MuonHyperball(muon.Muon):
 
         W_{t+1} = R \\cdot \\text{normalize}(W_t - \\text{lr} \\cdot R \\cdot \\text{normalize}(\\text{update}))
 
-    where :math:`R` is the user-specified hyperball radius. This keeps the weight matrix at
+    where :math:`R` is the user-specified Frobenius norm. This keeps the weight matrix at
     constant scale while updating.
 
     Warning:
@@ -122,20 +122,3 @@ class MuonHyperball(muon.Muon):
         p_norm = p.norm().clamp_min(self.hyperball_eps)
         p.mul_(R / p_norm)
 
-    @staticmethod
-    def _compute_tangent_projection(
-        param: torch.Tensor, grad_like: torch.Tensor
-    ) -> torch.Tensor:
-        """Compute the Riemannian gradient via tangent-space projection.
-        Frobenius sphere (entire matrix on a single sphere).
-
-        Args:
-            param: Parameter tensor (2D).
-            grad_like: Gradient-like tensor (momentum buffer or gradient).
-
-        Returns:
-            The tangent-space projected gradient.
-        """
-
-        projection = (param * grad_like).sum() / param.pow(2).sum().clamp(min=1e-12)
-        return grad_like - projection * param
