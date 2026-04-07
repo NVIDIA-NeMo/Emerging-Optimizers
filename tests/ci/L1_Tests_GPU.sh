@@ -24,7 +24,7 @@ for test in `find tests/convergence -type f -name '*_test.py'`; do
     coverage run -p --source=emerging_optimizers $test --device=cuda --seed="$fix_seed" -v -2 --xml_output_file="$report_name" || error=1
 done
 
-python tests/convergence/moe_c4_convergence.py --optimizer=muon --loss_target=5.30 -v 2 --xml_output_file="test-results/tests/convergence/moe_c4_convergence_muon.xml" || error=1
-python tests/convergence/moe_c4_convergence.py --optimizer=soap --loss_target=5.45 -v 2 --xml_output_file="test-results/tests/convergence/moe_c4_convergence_soap.xml" || error=1
+python tests/convergence/moe_c4_convergence.py --optimizer=muon --loss_target=5.45 -v -2 --xml_output_file="test-results/tests/convergence/moe_c4_convergence_muon.xml" || error=1
+python tests/convergence/moe_c4_convergence.py --optimizer=soap --loss_target=5.45 -v -2 --xml_output_file="test-results/tests/convergence/moe_c4_convergence_soap.xml" || error=1
 
 exit "${error}"
