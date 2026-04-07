@@ -31,7 +31,12 @@ FLAGS = flags.FLAGS
 def setUpModule() -> None:
     if FLAGS.seed is not None:
         logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(FLAGS.seed)
 
+
+class AdaptiveMuonTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(5, 7), (33, 65), (127, 257)],
         moment2_method=["adamuon", "normuon"],
