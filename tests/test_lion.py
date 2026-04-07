@@ -258,6 +258,30 @@ class LionOptimizerTest(parameterized.TestCase):
         p2_change = (p2.data - p2_original).abs().mean()
         self.assertGreater(p1_change.item(), p2_change.item())
 
+    def test_negative_lr_raises_value_error(self) -> None:
+        """Test that Lion raises ValueError for negative learning rate."""
+        param = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
+        with self.assertRaisesRegex(ValueError, "Invalid learning rate"):
+            Lion([param], lr=-1.0)
+
+    def test_beta0_out_of_range_raises_value_error(self) -> None:
+        """Test that Lion raises ValueError for invalid beta at index 0."""
+        param = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
+        with self.assertRaisesRegex(ValueError, "Invalid beta at index 0"):
+            Lion([param], betas=(1.0, 0.99))
+
+    def test_beta1_out_of_range_raises_value_error(self) -> None:
+        """Test that Lion raises ValueError for invalid beta at index 1."""
+        param = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
+        with self.assertRaisesRegex(ValueError, "Invalid beta at index 1"):
+            Lion([param], betas=(0.9, 1.0))
+
+    def test_negative_weight_decay_raises_value_error(self) -> None:
+        """Test that Lion raises ValueError for negative weight_decay."""
+        param = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
+        with self.assertRaisesRegex(ValueError, "Invalid weight_decay"):
+            Lion([param], weight_decay=-0.1)
+
 
 if __name__ == "__main__":
     absltest.main()

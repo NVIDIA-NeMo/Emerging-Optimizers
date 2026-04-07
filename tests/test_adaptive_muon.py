@@ -103,6 +103,41 @@ class AdaptiveMuonTest(parameterized.TestCase):
             expected_shape[avg_dim] = 1
             self.assertEqual(list(second_moment.shape), expected_shape)
 
+    def test_non_2d_param_raises_value_error_in_normuon_init(self) -> None:
+        """Test that AdaptiveMuon raises ValueError for non-2D parameters during normuon init."""
+        test_param = nn.Parameter(torch.randn(8, dtype=torch.float32, device=FLAGS.device))
+        test_param.grad = torch.randn_like(test_param)
+
+        adaptive_opt = AdaptiveMuon(
+            [test_param],
+            lr=0.01,
+            momentum=0.9,
+            weight_decay=0.0,
+            nesterov=False,
+            moment2_method="normuon",
+            fp32_matmul_prec="highest",
+        )
+
+        with self.assertRaisesRegex(ValueError, "only supports 2D"):
+            adaptive_opt.step()
+
+    def test_non_2d_param_raises_value_error_in_adamuon_step(self) -> None:
+        """Test that AdaptiveMuon raises ValueError for non-2D parameters during step."""
+        test_param = nn.Parameter(torch.randn(8, dtype=torch.float32, device=FLAGS.device))
+        test_param.grad = torch.randn_like(test_param)
+
+        adaptive_opt = AdaptiveMuon(
+            [test_param],
+            lr=0.01,
+            momentum=0.9,
+            weight_decay=0.0,
+            nesterov=False,
+            fp32_matmul_prec="highest",
+        )
+
+        with self.assertRaisesRegex(ValueError, "only supports 2D"):
+            adaptive_opt.step()
+
     def test_unknown_moment2_method_raise_type_error(self) -> None:
         """Test that AdaptiveMuon raises TypeError for unknown moment2_method."""
         test_param = nn.Parameter(torch.randint(-5, 5, (8, 16), dtype=torch.float32, device=FLAGS.device))

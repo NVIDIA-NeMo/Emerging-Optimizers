@@ -141,6 +141,20 @@ class TestPSGDKronContractions(parameterized.TestCase):
         expected_shape[contract_dim] = output_dim
         self.assertEqual(result.shape, torch.Size(expected_shape))
 
+    def test_apply_kronecker_factors_mismatched_dims_raises_value_error(self) -> None:
+        """Test that apply_kronecker_factors raises ValueError when Q_list length != X.dim()."""
+        Q_list = [torch.randn(3, 3, device=self.device)]
+        X = torch.randn(3, 4, 5, device=self.device)
+        with self.assertRaisesRegex(ValueError, "Number of Kronecker factors 1 must match.*3"):
+            apply_kronecker_factors(Q_list, X)
+
+    def test_dim_n_mul_and_permute_shape_mismatch_raises_value_error(self) -> None:
+        """Test that _dim_n_mul_and_permute raises ValueError on shape mismatch."""
+        X = torch.randn(2, 3, 5, device=self.device)
+        M = torch.randn(7, 99, device=self.device)  # M.shape[1]=99 != X.shape[1]=3
+        with self.assertRaisesRegex(ValueError, "Shape mismatch.*3.*99"):
+            _dim_n_mul_and_permute(X, M, contract_dim=1)
+
 
 if __name__ == "__main__":
     torch.manual_seed(42)

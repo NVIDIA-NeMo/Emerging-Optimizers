@@ -189,6 +189,12 @@ class TestSinkhornMapper(parameterized.TestCase):
         # Verify both modes produce the same result
         torch.testing.assert_close(result_non_inplace, result_inplace, atol=1e-5, rtol=1e-5)
 
+    def test_1d_input_raises_value_error(self) -> None:
+        """Test that SinkhornMapper raises ValueError for 1D input."""
+        x = torch.randn(10, device=FLAGS.device, dtype=torch.float32)
+        with self.assertRaisesRegex(ValueError, "at least a 2D tensor.*1D"):
+            SinkhornMapper()(x)
+
 
 class TestSinkhornMuon(parameterized.TestCase):
     """Tests for the SinkhornMuon optimizer."""
@@ -238,6 +244,19 @@ class TestSinkhornMuon(parameterized.TestCase):
             SinkhornMuon([test_param], eps=0.0)
         with self.assertRaises(ValueError):
             SinkhornMuon([test_param], eps=-1e-8)
+
+    def test_zero_doubly_stochastic_tolerance_raises_value_error(self) -> None:
+        """Test that SinkhornMuon raises ValueError for non-positive doubly_stochastic_tolerance."""
+        init_data = torch.randint(1, 10, (5, 5), dtype=torch.float32, device=FLAGS.device)
+        test_param = nn.Parameter(SinkhornMapper(num_iters=50)(init_data))
+        with self.assertRaisesRegex(ValueError, "doubly_stochastic_tolerance must be positive"):
+            SinkhornMuon([test_param], doubly_stochastic_tolerance=0.0)
+
+    def test_non_2d_param_raises_value_error(self) -> None:
+        """Test that SinkhornMuon raises ValueError for non-2D parameters."""
+        test_param = nn.Parameter(torch.randn(8, device=FLAGS.device, dtype=torch.float32))
+        with self.assertRaisesRegex(ValueError, "only supports 2D"):
+            SinkhornMuon([test_param])
 
     def test_zero_lr_only_weight_decay(self) -> None:
         """With lr=0 and independent weight decay, weight decay + sinkhorn should be applied."""

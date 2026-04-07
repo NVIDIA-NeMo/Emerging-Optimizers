@@ -220,6 +220,17 @@ class EigUtilsTest(BaseTestCase):
         ref = p.T @ a @ p
         torch.testing.assert_close(eig_utils.conjugate(a, p), ref, atol=0, rtol=0)
 
+    def test_eigh_with_fallback_reraises_runtime_error_when_force_double(self) -> None:
+        """Test that eigh_with_fallback re-raises when force_double=True and eigh fails."""
+        from unittest.mock import patch
+
+        x = torch.randn(4, 4, device=self.device)
+        x = x @ x.T
+
+        with patch("torch.linalg.eigh", side_effect=RuntimeError("mock eigh failure")):
+            with self.assertRaisesRegex(RuntimeError, "mock eigh failure"):
+                eig_utils.eigh_with_fallback(x, force_double=True)
+
 
 if __name__ == "__main__":
     absltest.main()

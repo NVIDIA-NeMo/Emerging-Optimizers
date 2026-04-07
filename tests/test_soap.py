@@ -358,6 +358,29 @@ class SoapFunctionsTest(parameterized.TestCase):
         torch.testing.assert_close(kronecker_factor_list[0], kronecker_factor_list_ref[0], atol=1e-6, rtol=1e-6)
         torch.testing.assert_close(kronecker_factor_list[1], kronecker_factor_list_ref[1], atol=1e-6, rtol=1e-6)
 
+    def test_init_kronecker_factors_non_2d_raises_type_error(self) -> None:
+        """Test that init_kronecker_factors raises TypeError for non-2D shape."""
+        with self.assertRaisesRegex(TypeError, "only supported for 2D"):
+            soap.init_kronecker_factors((3,))
+
+    def test_kl_shampoo_correction_non_2d_raises_type_error(self) -> None:
+        """Test that update_kronecker_factors_kl_shampoo raises TypeError for non-2D grad."""
+        grad = torch.randn(3, device=self.device)
+        kronecker_factors = [torch.eye(3, device=self.device)]
+        eigenbasis = [torch.eye(3, device=self.device)]
+        with self.assertRaisesRegex(TypeError, "only supported for 2D"):
+            soap.update_kronecker_factors_kl_shampoo(
+                kronecker_factors, grad=grad, shampoo_beta=0.9, eps=1e-8, eigenbasis_list=eigenbasis
+            )
+
+    def test_soap_non_2d_param_raises_type_error(self) -> None:
+        """Test that SOAP raises TypeError for non-2D parameter during step."""
+        param = torch.randn(10, requires_grad=True, device=self.device)
+        optimizer = SOAP([param], lr=0.001)
+        param.grad = torch.randn_like(param)
+        with self.assertRaisesRegex(TypeError, "only supported for 2D"):
+            optimizer.step()
+
 
 class ScheduleTest(parameterized.TestCase):
     def test_soap_optimizer_class_with_linear_schedule(self) -> None:
@@ -429,6 +452,22 @@ class ScheduleTest(parameterized.TestCase):
         # Negative step key raises
         with self.assertRaises(ValueError):
             precondition_schedules.StepSchedule({-1: 5})
+
+    def test_precondition_schedule_zero_min_freq_raises_value_error(self) -> None:
+        with self.assertRaisesRegex(ValueError, "min_freq must be at least 1"):
+            precondition_schedules.LinearSchedule(min_freq=0, max_freq=10, transition_steps=100)
+
+    def test_precondition_schedule_max_freq_below_min_raises_value_error(self) -> None:
+        with self.assertRaisesRegex(ValueError, "max_freq must be >= min_freq"):
+            precondition_schedules.LinearSchedule(min_freq=10, max_freq=5, transition_steps=100)
+
+    def test_precondition_schedule_negative_start_step_raises_value_error(self) -> None:
+        with self.assertRaisesRegex(ValueError, "start_step must be non-negative"):
+            precondition_schedules.LinearSchedule(min_freq=1, max_freq=10, transition_steps=100, start_step=-1)
+
+    def test_linear_schedule_zero_transition_steps_raises_value_error(self) -> None:
+        with self.assertRaisesRegex(ValueError, "transition_steps must be positive"):
+            precondition_schedules.LinearSchedule(min_freq=1, max_freq=10, transition_steps=0)
 
 
 class SoapTest(parameterized.TestCase):

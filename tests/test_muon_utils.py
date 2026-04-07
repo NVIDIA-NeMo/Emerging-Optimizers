@@ -251,6 +251,56 @@ class TestMuonUtils(parameterized.TestCase):
         out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
         torch.testing.assert_close(out_cans9, out_ref, atol=2e-6, rtol=1e-7)
 
+    def test_newton_schulz_1d_input_raises_value_error(self) -> None:
+        """Test that newton_schulz raises ValueError for 1D input."""
+        x = torch.randn(10, device=self.device, dtype=torch.float32)
+        with self.assertRaisesRegex(ValueError, "at least 2 dimensions"):
+            muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
+
+    def test_newton_schulz_non_fp32_raises_value_error(self) -> None:
+        """Test that newton_schulz raises ValueError for non-float32 input."""
+        x = torch.randn(5, 7, device=self.device, dtype=torch.float64)
+        with self.assertRaisesRegex(ValueError, "float32.*float64"):
+            muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
+
+    def test_newton_schulz_custom_without_coefficients_raises_value_error(self) -> None:
+        """Test that newton_schulz raises ValueError for custom type without coefficient_sets."""
+        x = torch.randn(5, 7, device=self.device, dtype=torch.float32)
+        with self.assertRaisesRegex(ValueError, "custom_coefficient_sets must be provided"):
+            muon_utils.newton_schulz(x, steps=5, coefficient_type="custom")
+
+    def test_newton_schulz_invalid_coefficient_type_raises_value_error(self) -> None:
+        """Test that newton_schulz raises ValueError for invalid coefficient_type."""
+        x = torch.randn(5, 7, device=self.device, dtype=torch.float32)
+        with self.assertRaisesRegex(ValueError, "Invalid coefficient type.*nonexistent"):
+            muon_utils.newton_schulz(x, steps=5, coefficient_type="nonexistent")
+
+    def test_get_coefficient_iterator_empty_raises_value_error(self) -> None:
+        """Test that get_coefficient_iterator raises ValueError for empty coefficient_sets."""
+        with self.assertRaisesRegex(ValueError, "must be non-empty"):
+            list(muon_utils.get_coefficient_iterator(5, []))
+
+    def test_get_coefficient_iterator_invalid_mode_raises_value_error(self) -> None:
+        """Test that get_coefficient_iterator raises ValueError for invalid mode."""
+        with self.assertRaisesRegex(ValueError, "Invalid mode.*invalid"):
+            list(muon_utils.get_coefficient_iterator(5, [(1.0, 2.0, 3.0)], mode="invalid"))
+
+    def test_newton_schulz_tp_invalid_partition_dim_raises_value_error(self) -> None:
+        """Test that newton_schulz_tp raises ValueError for invalid partition_dim."""
+        x = torch.randn(5, 7, device=self.device, dtype=torch.float32)
+        with self.assertRaisesRegex(ValueError, "Invalid partition_dim.*2"):
+            muon_utils.newton_schulz_tp(
+                x, steps=5, coefficient_type="quintic", tp_group=None, partition_dim=2, tp_mode="distributed"
+            )
+
+    def test_newton_schulz_tp_invalid_tp_mode_raises_value_error(self) -> None:
+        """Test that newton_schulz_tp raises ValueError for invalid tp_mode."""
+        x = torch.randn(5, 7, device=self.device, dtype=torch.float32)
+        with self.assertRaisesRegex(ValueError, "Invalid tp_mode.*invalid"):
+            muon_utils.newton_schulz_tp(
+                x, steps=5, coefficient_type="quintic", tp_group=None, partition_dim=0, tp_mode="invalid"
+            )
+
 
 @absltest.skipIf(
     _SM_VERSION not in ((8, 0), (9, 0), (10, 0), (10, 3)),
