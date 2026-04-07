@@ -175,10 +175,8 @@ source = ["emerging_optimizers"]
 source = ["emerging_optimizers/", "/workspace/emerging_optimizers"]
 
 [tool.coverage.report]
-exclude_lines = [
-    "except ImportError",
-]
 exclude_also = [
+    "except ImportError",
     "@triton",
     ".*sm_version",
     "if closure",
