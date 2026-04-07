@@ -169,8 +169,8 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
             self._init_group(group)
 
             for p in group["params"]:
-                if p.grad is None:  # pragma: no cover
-                    continue
+                if p.grad is None:
+                    continue  # pragma: no cover
 
                 grad = p.grad
                 state = self.state[p]

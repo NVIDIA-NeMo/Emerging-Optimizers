@@ -142,8 +142,8 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
             weight_decay = group["weight_decay"]
 
             for p in group["params"]:
-                if p.grad is None:  # pragma: no cover
-                    continue
+                if p.grad is None:
+                    continue  # pragma: no cover
 
                 grad = p.grad
                 exp_avg = self.state[p]["exp_avg"]
