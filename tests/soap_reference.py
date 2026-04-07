@@ -332,9 +332,9 @@ class ReferenceSoap(optim.Optimizer):
                 continue
 
             try:
-                _, Q = torch.linalg.eigh(m + 1e-7 * torch.eye(m.shape[0], device=m.device))
+                _, Q = torch.linalg.eigh(m)
             except:
-                _, Q = torch.linalg.eigh(m.to(torch.float64) + 1e-15 * torch.eye(m.shape[0], device=m.device))
+                _, Q = torch.linalg.eigh(m.to(torch.float64))
                 Q = Q.to(m.dtype)
             Q = torch.flip(Q, [1])
 

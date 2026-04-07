@@ -163,9 +163,9 @@ class EigUtilsTest(BaseTestCase):
             [[4.0, 1.0], [1.0, 2.0]],
             device=self.device,
         )
-        L, Q = eig_utils.eigh_with_fallback(x)
+        eigenvalues, eigenvectors = eig_utils.eigh_with_fallback(x)
         # Eigenvalues should be in descending order
-        self.assertTrue(torch.all(L[:-1] >= L[1:]))
+        self.assertTrue(torch.all(eigenvalues[:-1] >= eigenvalues[1:]))
 
     @parameterized.product(
         shape=[(8, 8), (16, 16), (31, 31)],
@@ -176,21 +176,23 @@ class EigUtilsTest(BaseTestCase):
         shape: tuple[int, int],
         force_double: bool,
     ) -> None:
-        """Tests that Q @ diag(L) @ Q^T reconstructs the original matrix."""
-        x = torch.randn(shape, device=self.device)
-        x = x @ x.T  # symmetric positive semi-definite
+        """Tests that eigenvectors @ diag(eigenvalues) @ eigenvectors^T reconstructs the original matrix."""
+        a = torch.randint(-8, 10, shape, device=self.device) / 16.0
 
-        L, Q = eig_utils.eigh_with_fallback(
+        # Create symmetric positive semi-definite matrix
+        x = a @ a.T
+
+        eigenvalues, eigenvectors = eig_utils.eigh_with_fallback(
             x,
             force_double=force_double,
         )
 
-        self.assertEqual(L.dtype, x.dtype)
-        self.assertEqual(Q.dtype, x.dtype)
+        self.assertEqual(eigenvalues.dtype, x.dtype)
+        self.assertEqual(eigenvectors.dtype, x.dtype)
 
         # Reconstructing in double precision to avoid precision loss. The goal is to compare
         # output of eigh.
-        reconstructed = Q.double() @ torch.diag(L.double()) @ Q.T.double()
+        reconstructed = eigenvectors.double() @ torch.diag(eigenvalues.double()) @ eigenvectors.T.double()
         if not force_double:
             atol, rtol = 1e-4, 1e-4
         else:
@@ -200,9 +202,9 @@ class EigUtilsTest(BaseTestCase):
     def test_eigh_with_fallback_diagonal_input_smoke(self) -> None:
         """Tests that eigh_with_fallback works correctly with diagonal input."""
         x = torch.randn(4, 4, device=self.device)
-        L, Q = eig_utils.eigh_with_fallback(x.diag().diag())
-        self.assertEqual(L.shape, (4,))
-        self.assertEqual(Q.shape, (4, 4))
+        eigenvalues, eigenvectors = eig_utils.eigh_with_fallback(x.diag().diag())
+        self.assertEqual(eigenvalues.shape, (4,))
+        self.assertEqual(eigenvectors.shape, (4, 4))
 
     def test_conjugate_assert_2d_input(self) -> None:
         """Tests the conjugate function."""

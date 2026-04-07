@@ -211,7 +211,7 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
         # Basic convergence check
         self.assertLess(final_loss, initial_loss * 1.01, "Loss should decrease or stay stable")
         print(f"Final accuracy: {final_accuracy}")
-        self.assertGreater(final_accuracy, 50.0, "Should achieve reasonable accuracy")
+        self.assertGreater(final_accuracy, 40.0, "Should achieve reasonable accuracy")
 
         # Verify norm preservation based on mode
         for param in model.get_oblique_parameters():

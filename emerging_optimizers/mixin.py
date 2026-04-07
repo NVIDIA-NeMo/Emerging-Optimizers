@@ -18,7 +18,7 @@ from typing import Literal
 import torch
 
 
-WeightDecayT = Literal["decoupled", "independent", "l2"]
+WeightDecayT = Literal["decoupled", "independent", "l2", "palm"]
 
 
 class WeightDecayMixin:
@@ -29,6 +29,7 @@ class WeightDecayMixin:
     - "decoupled": weight decay is applied directly to params without changing gradients
     - "independent": similar as decoupled weight decay, but without tying weight decay and learning rate
     - "l2": classic L2 regularization
+    - "palm": weight decay is applied directly to params with lr^2 scaling
     """
 
     def _apply_weight_decay_inplace(
@@ -49,5 +50,7 @@ class WeightDecayMixin:
             p.add_(p, alpha=-weight_decay)
         elif weight_decay_method == "l2":
             grad.add_(p, alpha=weight_decay)
+        elif weight_decay_method == "palm":
+            p.add_(p, alpha=(-(weight_decay * lr * lr)))
         else:
             raise ValueError(f"Invalid weight decay method: {weight_decay_method}")

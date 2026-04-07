@@ -57,7 +57,7 @@ class Scion(OrthogonalizedOptimizer):
         momentum: The momentum used by the internal SGD.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration. Can be one of
-            ["simple", "quintic", "polar_express"].
+            ["simple", "quintic", "polar_express", "cans"].
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
         spectral_radius: The spectral radius to use for the update, we are scaling the LMO by this spectral radius.
     """

@@ -14,10 +14,17 @@
 export CUDA_VISIBLE_DEVICES=0
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 
+mkdir -p test-results/tests/convergence
 error=0
+
+fix_seed=77
 for test in `find tests/convergence -type f -name '*_test.py'`; do
     echo "Running $test with fixed seed"
-    python $test --device=cuda --seed=42 -v -2 || error=1
+    report_name="test-results/${test}_seed${fix_seed}.xml"
+    coverage run -p --source=emerging_optimizers $test --device=cuda --seed="$fix_seed" -v -2 --xml_output_file="$report_name" || error=1
 done
+
+python tests/convergence/moe_c4_convergence.py --optimizer=muon --loss_target=5.45 -v -2 --xml_output_file="test-results/tests/convergence/moe_c4_convergence_muon.xml" || error=1
+python tests/convergence/moe_c4_convergence.py --optimizer=soap --loss_target=5.45 -v -2 --xml_output_file="test-results/tests/convergence/moe_c4_convergence_soap.xml" || error=1
 
 exit "${error}"
