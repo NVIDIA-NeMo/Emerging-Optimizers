@@ -42,8 +42,6 @@ def polar_via_cusolver(a_torch: torch.Tensor) -> tuple[torch.Tensor, torch.Tenso
     dtype_map = {
         torch.float32: nvmath.CudaDataType.CUDA_R_32F,
         torch.float64: nvmath.CudaDataType.CUDA_R_64F,
-        torch.complex64: nvmath.CudaDataType.CUDA_C_32F,
-        torch.complex128: nvmath.CudaDataType.CUDA_C_64F,
     }
     cuda_dtype = dtype_map[a_torch.dtype]
 
