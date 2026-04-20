@@ -86,44 +86,6 @@ class SoapFunctionsTest(parameterized.TestCase):
         self.assertEqual(L.shape, (3, 3))
         self.assertEqual(R.shape, (4, 4))
 
-    @parameterized.parameters(
-        (1,),
-        (2,),
-        (3,),
-    )
-    def test_adam_warmup_steps_has_ql_qr(self, adam_warmup_steps: int) -> None:
-        """Tests QL/QR existence with adam_warmup_steps.
-
-        Historically, we only initialized QL/QR after the adam_warmup_steps. This test used to verify that
-        behavior. But we found delay initialization is not necessary as memory will be allocated later anyway.
-        This test verifies the new behavior now.
-        """
-
-        param = torch.randn(5, 3, requires_grad=True, device=self.device)
-
-        optimizer = SOAP(
-            [param],
-            lr=0.001,
-            weight_decay=0.01,
-            adam_warmup_steps=adam_warmup_steps,
-        )
-
-        for _ in range(adam_warmup_steps):
-            param.grad = torch.randn_like(param)
-            optimizer.step()
-            state = optimizer.state[param]
-
-            self.assertEqual(state["Q_L"].shape, (5, 5))
-            self.assertEqual(state["Q_R"].shape, (3, 3))
-
-        for _ in range(adam_warmup_steps, adam_warmup_steps + 3):
-            param.grad = torch.randn_like(param)
-            optimizer.step()
-            state = optimizer.state[param]
-
-            self.assertEqual(state["Q_L"].shape, (5, 5))
-            self.assertEqual(state["Q_R"].shape, (3, 3))
-
     def test_update_kronecker_factors(self) -> None:
         shampoo_beta = 0.9
         dim0, dim1 = 3, 10
@@ -368,7 +330,6 @@ class SoapTest(parameterized.TestCase):
             "betas": (0.9, 0.95),
             "eps": 1e-8,
             "shampoo_beta": 0.95,
-            "adam_warmup_steps": 1,
             "fp32_matmul_prec": "highest",
             "power_iter_steps": 1,
         }
@@ -449,7 +410,6 @@ class SoapMultiStreamTest(parameterized.TestCase):
             betas=(0.9, 0.95),
             eps=1e-8,
             shampoo_beta=0.95,
-            adam_warmup_steps=1,
             fp32_matmul_prec="highest",
             use_kl_shampoo=use_kl_shampoo,
             use_eigh=use_eigh,
@@ -529,7 +489,6 @@ class SoapVsReferenceTest(parameterized.TestCase):
         test_optimizer = SOAP(
             [param_test],
             **common_kwargs,
-            adam_warmup_steps=0,
             fp32_matmul_prec="highest",
             qr_fp32_matmul_prec="highest",
             correct_shampoo_beta_bias=False,
@@ -584,7 +543,6 @@ class SoapVsReferenceTest(parameterized.TestCase):
             [param_soap],
             **common_kwargs,
             weight_decay_method="l2",
-            adam_warmup_steps=0,
             fp32_matmul_prec="highest",
             qr_fp32_matmul_prec="highest",
         )

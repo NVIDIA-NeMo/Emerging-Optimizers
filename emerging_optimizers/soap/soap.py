@@ -62,7 +62,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             for more details.
         nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf,
             https://openreview.net/forum?id=OM0jvwB8jIp57ZJjtNEZ)
-        adam_warmup_steps: How many steps to skip preconditioning in the beginning (i.e. use standard AdamW updates)
         correct_bias: Whether to use bias correction in Inner Adam and Kronecker factor matrices EMA
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
@@ -89,7 +88,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         *,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         nesterov: bool = False,
-        adam_warmup_steps: int = 0,
         correct_bias: bool = True,
         fp32_matmul_prec: FP32MatmulPrecT = "high",
         use_eigh: bool = False,
@@ -100,7 +98,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         correct_shampoo_beta_bias: bool | None = None,
         stream_list: list[torch.cuda.Stream] | None = None,
     ) -> None:
-        self.adam_warmup_steps = adam_warmup_steps
         self.nesterov = nesterov
         self.correct_bias = correct_bias
         self.weight_decay_method = weight_decay_method
@@ -234,27 +231,25 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                             kronecker_factor_list=kronecker_factor_list, grad=grad, shampoo_beta=shampoo_beta
                         )
 
-                    # After the adam_warmup_steps are completed, update eigenbases every step
-                    if state["step"] >= self.adam_warmup_steps:
-                        # Always use eigh for the first eigenbasis update
-                        use_eigh = self.use_eigh if state["step"] != self.adam_warmup_steps else True
+                    # Always use eigh for the first eigenbasis update
+                    use_eigh = self.use_eigh if state["step"] != 0 else True
 
-                        with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
-                            updated_eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_exp_avgs(
-                                kronecker_factor_list=kronecker_factor_list,
-                                eigenbasis_list=eigenbasis_list,
-                                exp_avg_sq=state["exp_avg_sq"],
-                                exp_avg=state["exp_avg"],
-                                use_eigh=use_eigh,
-                                power_iter_steps=self.power_iter_steps,
-                            )
-                            state["Q_L"], state["Q_R"] = updated_eigenbasis_list
+                    with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
+                        updated_eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_exp_avgs(
+                            kronecker_factor_list=kronecker_factor_list,
+                            eigenbasis_list=eigenbasis_list,
+                            exp_avg_sq=state["exp_avg_sq"],
+                            exp_avg=state["exp_avg"],
+                            use_eigh=use_eigh,
+                            power_iter_steps=self.power_iter_steps,
+                        )
+                        state["Q_L"], state["Q_R"] = updated_eigenbasis_list
 
-                            # rebind local ref so precondition() below uses the updated Q
-                            eigenbasis_list = updated_eigenbasis_list
+                        # rebind local ref so precondition() below uses the updated Q
+                        eigenbasis_list = updated_eigenbasis_list
 
-                            state["exp_avg"] = exp_avg
-                            state["exp_avg_sq"] = exp_avg_sq
+                        state["exp_avg"] = exp_avg
+                        state["exp_avg_sq"] = exp_avg_sq
 
                     self._apply_weight_decay_inplace(
                         p,
@@ -263,15 +258,13 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         group["weight_decay"],
                     )
 
-                    grad_projected = grad
                     # Project gradients to the eigenbases of Shampoo's preconditioner
-                    if state["step"] >= self.adam_warmup_steps:
-                        with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                            grad_projected = precondition(
-                                grad,
-                                eigenbasis_list=eigenbasis_list,
-                                dims=[[0], [0]],
-                            )
+                    with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                        grad_projected = precondition(
+                            grad,
+                            eigenbasis_list=eigenbasis_list,
+                            dims=[[0], [0]],
+                        )
 
                     # Calculate the Adam update for the projected gradient tensor
                     adam_update = update_functions.calculate_adam_update(
@@ -286,15 +279,12 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     )
 
                     # Projecting back the preconditioned (by ADAM) exponential moving average of gradients
-                    if state["step"] >= self.adam_warmup_steps:
-                        with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                            precond_update = precondition(
-                                adam_update,
-                                eigenbasis_list=eigenbasis_list,
-                                dims=[[0], [1]],
-                            )
-                    else:
-                        precond_update = adam_update
+                    with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                        precond_update = precondition(
+                            adam_update,
+                            eigenbasis_list=eigenbasis_list,
+                            dims=[[0], [1]],
+                        )
 
                     _clip_update_rms_in_place(precond_update, self.max_update_rms)
                     p.add_(precond_update, alpha=-group["lr"])
