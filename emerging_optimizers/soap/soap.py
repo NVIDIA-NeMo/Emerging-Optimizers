@@ -97,6 +97,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         use_kl_shampoo: bool = False,
         correct_shampoo_beta_bias: bool | None = None,
         stream_list: list[torch.cuda.Stream] | None = None,
+        cpu_states_buffer: torch.Tensor | None = None,
     ) -> None:
         self.nesterov = nesterov
         self.correct_bias = correct_bias
@@ -121,6 +122,34 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             "weight_decay": weight_decay,
         }
         super().__init__(params, defaults)
+
+        self.cpu_states_buffer = cpu_states_buffer
+        if cpu_states_buffer is not None:
+            if cpu_states_buffer.dim() != 1:
+                raise TypeError(f"cpu_states_buffer must be 1D, got shape {tuple(cpu_states_buffer.shape)}")
+            if cpu_states_buffer.dtype != torch.float32:
+                raise TypeError(f"cpu_states_buffer must be float32, got {cpu_states_buffer.dtype}")
+            if cpu_states_buffer.device.type != "cpu":
+                raise TypeError(f"cpu_states_buffer must be on CPU, got {cpu_states_buffer.device}")
+            if not cpu_states_buffer.is_pinned():
+                raise TypeError("cpu_states_buffer must be in pinned memory")
+            required_numel = self._required_cpu_states_buffer_numel()
+            if cpu_states_buffer.numel() < required_numel:
+                raise ValueError(
+                    f"cpu_states_buffer has {cpu_states_buffer.numel()} elements, need at least {required_numel}"
+                )
+
+    def _required_cpu_states_buffer_numel(self) -> int:
+        """Total fp32 numel needed to hold every 2D parameter's SOAP state."""
+        total = 0
+        for group in self.param_groups:
+            for p in group["params"]:
+                if p.dim() != 2:
+                    continue
+                m, n = p.shape
+                # exp_avg + exp_avg_sq + L + R + Q_L + Q_R
+                total += 2 * m * n + 2 * m * m + 2 * n * n
+        return total
 
     @torch.no_grad()  # type: ignore[misc]
     def _init_group(
@@ -156,6 +185,89 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 state["L"], state["R"] = init_kronecker_factors(p.shape, device=p.device)
                 state["Q_L"] = torch.eye(p.shape[0], device=p.device)
                 state["Q_R"] = torch.eye(p.shape[1], device=p.device)
+
+    @torch.no_grad()  # type: ignore[misc]
+    def move_state_to_cpu(self, stream: torch.cuda.Stream | None = None) -> torch.cuda.Event:
+        """Move all tensor optimizer state to CPU, releasing the GPU copy.
+
+        Each tensor in the per-parameter state (``exp_avg``, ``exp_avg_sq``, Kronecker factors,
+        eigenbases, ...) is replaced by a view into ``self.cpu_states_buffer`` via a
+        non-blocking D2H transfer. Non-tensor entries (e.g., the step counter) are left alone.
+
+        Args:
+            stream: CUDA stream on which to issue the D2H copies. If ``None``, copies run
+                on the current stream.
+
+        Returns:
+            A CUDA event that is signaled once every D2H copy issued by this call has
+            completed. Wait on it before reading the CPU tensors, e.g.::
+
+                done = opt.move_state_to_cpu(stream=offload_stream)
+                done.synchronize()  # or done.wait(some_stream)
+        """
+        if self.cpu_states_buffer is None:
+            raise RuntimeError("cpu_states_buffer must be provided at construction")
+
+        stream_ctx: torch.cuda.StreamContext | nullcontext[None] = (
+            torch.cuda.stream(stream) if stream is not None else nullcontext()
+        )
+
+        buffer_offset = 0
+        with stream_ctx:
+            for group in self.param_groups:
+                for p in group["params"]:
+                    state = self.state[p]
+                    for key, value in state.items():
+                        if not isinstance(value, torch.Tensor):
+                            continue
+                        numel = value.numel()
+                        dst = self.cpu_states_buffer[buffer_offset : buffer_offset + numel].view(value.shape)
+                        dst.copy_(value, non_blocking=True)
+                        state[key] = dst
+                        buffer_offset += numel
+
+        done_event = torch.cuda.Event()
+        done_event.record(stream if stream is not None else torch.cuda.current_stream())
+        return done_event
+
+    @torch.no_grad()  # type: ignore[misc]
+    def move_states_to_gpu(self, stream: torch.cuda.Stream | None = None) -> torch.cuda.Event:
+        """Move all tensor optimizer state back to each parameter's device.
+
+        Each tensor in the per-parameter state that is not already on the parameter's device
+        is replaced by a fresh GPU tensor via a non-blocking H2D transfer. The CPU source is
+        typically a view into ``self.cpu_states_buffer`` from a prior :meth:`move_state_to_cpu`
+        call; the buffer itself is left in place. Non-tensor entries are left alone.
+
+        Args:
+            stream: CUDA stream on which to issue the H2D copies. If ``None``, copies run
+                on the current stream.
+
+        Returns:
+            A CUDA event that is signaled once every H2D copy issued by this call has
+            completed. Wait on it before using the state on the GPU, e.g.::
+
+                done = opt.move_states_to_gpu(stream=reload_stream)
+                done.synchronize()  # or done.wait(some_stream)
+        """
+        stream_ctx: torch.cuda.StreamContext | nullcontext[None] = (
+            torch.cuda.stream(stream) if stream is not None else nullcontext()
+        )
+
+        with stream_ctx:
+            for group in self.param_groups:
+                for p in group["params"]:
+                    state = self.state[p]
+                    for key, value in state.items():
+                        if not isinstance(value, torch.Tensor):
+                            continue
+                        if value.device == p.device:
+                            continue
+                        state[key] = value.to(p.device, non_blocking=True)
+
+        done_event = torch.cuda.Event()
+        done_event.record(stream if stream is not None else torch.cuda.current_stream())
+        return done_event
 
     if TYPE_CHECKING:
 
