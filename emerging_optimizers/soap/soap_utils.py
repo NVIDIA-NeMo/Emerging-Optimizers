@@ -23,34 +23,9 @@ TensorList: TypeAlias = list[torch.Tensor]
 
 
 __all__ = [
-    "all_eigenbases_met_criteria",
     "get_eigenbasis_eigh",
     "get_eigenbasis_qr",
 ]
-
-
-def all_eigenbases_met_criteria(
-    kronecker_factor_list: TensorList,
-    eigenbasis_list: TensorList,
-    adaptive_update_tolerance: float = 1e-7,
-) -> bool:
-    """Checks if every eigenbasis in the list meets the adaptive update tolerance criteria.
-
-    Args:
-        kronecker_factor_list: List of Kronecker factor matrices
-        eigenbasis_list: List of orthonormal eigenbases of the kronecker factor matrices
-        adaptive_update_tolerance: Tolerance threshold for the normalized diagonal component of approximated
-            eigenvalue matrix.
-
-    Returns:
-        True if all eigenbases meet the criteria (no update needed), False otherwise.
-    """
-    for kronecker_factor, eigenbasis in zip(kronecker_factor_list, eigenbasis_list, strict=True):
-        approx_eigvals = eig_utils.conjugate(kronecker_factor, eigenbasis, diag=True)
-        if not eig_utils.met_approx_eigvals_criteria(kronecker_factor, approx_eigvals, adaptive_update_tolerance):
-            return False
-
-    return True
 
 
 def get_eigenbasis_eigh(

@@ -62,17 +62,11 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             for more details.
         nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf,
             https://openreview.net/forum?id=OM0jvwB8jIp57ZJjtNEZ)
-        precondition_frequency: How often to update the preconditioner. Can be an integer for fixed frequency
-            or a callable function that takes the current step as input and returns the frequency.
-        adam_warmup_steps: How many steps to skip preconditioning in the beginning (i.e. use standard AdamW updates)
         correct_bias: Whether to use bias correction in Inner Adam and Kronecker factor matrices EMA
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
             If False, use orthogonal iteration to compute the eigenbasis.
         qr_fp32_matmul_prec: Precision of the matmul operations in QR decomposition.
-        use_adaptive_criteria: Whether to use criteria to determine if eigenbasis update is needed
-        adaptive_update_tolerance: Tolerance threshold for the update criteria.
-            Only used if use_adaptive_criteria is True.
         power_iter_steps: Number of power iteration steps to perform before QR decomposition.
             More steps can lead to better convergence but increased computation time.
         max_update_rms: Clip the update RMS to this value (0 means no clipping).
@@ -94,30 +88,22 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         *,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         nesterov: bool = False,
-        precondition_frequency: int | Callable[[int], int] = 1,
-        adam_warmup_steps: int = 0,
         correct_bias: bool = True,
         fp32_matmul_prec: FP32MatmulPrecT = "high",
         use_eigh: bool = False,
         qr_fp32_matmul_prec: FP32MatmulPrecT = "high",
-        use_adaptive_criteria: bool = False,
-        adaptive_update_tolerance: float = 1e-7,
         power_iter_steps: int = 1,
         max_update_rms: float = 0.0,
         use_kl_shampoo: bool = False,
         correct_shampoo_beta_bias: bool | None = None,
         stream_list: list[torch.cuda.Stream] | None = None,
     ) -> None:
-        self.precondition_frequency = precondition_frequency
-        self.adam_warmup_steps = adam_warmup_steps
         self.nesterov = nesterov
         self.correct_bias = correct_bias
         self.weight_decay_method = weight_decay_method
         self.fp32_matmul_prec = fp32_matmul_prec
         self.use_eigh = use_eigh
         self.qr_fp32_matmul_prec = qr_fp32_matmul_prec
-        self.use_adaptive_criteria = use_adaptive_criteria
-        self.adaptive_update_tolerance = adaptive_update_tolerance
         self.power_iter_steps = power_iter_steps
         self.max_update_rms = max_update_rms
         self.use_kl_shampoo = use_kl_shampoo
@@ -245,41 +231,25 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                             kronecker_factor_list=kronecker_factor_list, grad=grad, shampoo_beta=shampoo_beta
                         )
 
-                    # After the adam_warmup_steps are completed , update eigenbases at precondition_frequency steps
-                    if _is_eigenbasis_update_step(
-                        state["step"],
-                        self.adam_warmup_steps,
-                        self.precondition_frequency,
-                    ):
-                        # Always use eigh for the first eigenbasis update
-                        use_eigh = self.use_eigh if state["step"] != self.adam_warmup_steps else True
+                    # Always use eigh for the first eigenbasis update
+                    use_eigh = self.use_eigh if state["step"] != 0 else True
 
-                        # Skip eigenbasis update if use_adaptive_criteria is True and all eigenbases meet the criteria.
-                        # Never skip the first eigenbasis update (step == adam_warmup_steps) since QL/QR are still identity.
-                        skip_update = (
-                            self.use_adaptive_criteria
-                            and state["step"] > self.adam_warmup_steps
-                            and soap_utils.all_eigenbases_met_criteria(
-                                kronecker_factor_list, eigenbasis_list, self.adaptive_update_tolerance
-                            )
+                    with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
+                        updated_eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_exp_avgs(
+                            kronecker_factor_list=kronecker_factor_list,
+                            eigenbasis_list=eigenbasis_list,
+                            exp_avg_sq=state["exp_avg_sq"],
+                            exp_avg=state["exp_avg"],
+                            use_eigh=use_eigh,
+                            power_iter_steps=self.power_iter_steps,
                         )
-                        if not skip_update:
-                            with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
-                                updated_eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_exp_avgs(
-                                    kronecker_factor_list=kronecker_factor_list,
-                                    eigenbasis_list=eigenbasis_list,
-                                    exp_avg_sq=state["exp_avg_sq"],
-                                    exp_avg=state["exp_avg"],
-                                    use_eigh=use_eigh,
-                                    power_iter_steps=self.power_iter_steps,
-                                )
-                                state["Q_L"], state["Q_R"] = updated_eigenbasis_list
+                        state["Q_L"], state["Q_R"] = updated_eigenbasis_list
 
-                                # rebind local ref so precondition() below uses the updated Q
-                                eigenbasis_list = updated_eigenbasis_list
+                        # rebind local ref so precondition() below uses the updated Q
+                        eigenbasis_list = updated_eigenbasis_list
 
-                                state["exp_avg"] = exp_avg
-                                state["exp_avg_sq"] = exp_avg_sq
+                        state["exp_avg"] = exp_avg
+                        state["exp_avg_sq"] = exp_avg_sq
 
                     self._apply_weight_decay_inplace(
                         p,
@@ -288,15 +258,13 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         group["weight_decay"],
                     )
 
-                    grad_projected = grad
                     # Project gradients to the eigenbases of Shampoo's preconditioner
-                    if state["step"] >= self.adam_warmup_steps:
-                        with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                            grad_projected = precondition(
-                                grad,
-                                eigenbasis_list=eigenbasis_list,
-                                dims=[[0], [0]],
-                            )
+                    with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                        grad_projected = precondition(
+                            grad,
+                            eigenbasis_list=eigenbasis_list,
+                            dims=[[0], [0]],
+                        )
 
                     # Calculate the Adam update for the projected gradient tensor
                     adam_update = update_functions.calculate_adam_update(
@@ -311,15 +279,12 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     )
 
                     # Projecting back the preconditioned (by ADAM) exponential moving average of gradients
-                    if state["step"] >= self.adam_warmup_steps:
-                        with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                            precond_update = precondition(
-                                adam_update,
-                                eigenbasis_list=eigenbasis_list,
-                                dims=[[0], [1]],
-                            )
-                    else:
-                        precond_update = adam_update
+                    with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                        precond_update = precondition(
+                            adam_update,
+                            eigenbasis_list=eigenbasis_list,
+                            dims=[[0], [1]],
+                        )
 
                     _clip_update_rms_in_place(precond_update, self.max_update_rms)
                     p.add_(precond_update, alpha=-group["lr"])
@@ -570,29 +535,6 @@ def precondition(
         x = torch.tensordot(x, Q, dims=dims)
 
     return x
-
-
-def _is_eigenbasis_update_step(
-    step: int,
-    adam_warmup_steps: int,
-    precondition_frequency: int | Callable[[int], int],
-) -> bool:
-    """Checks if amortized computation of the eigenbasis should be recomputed.
-
-    Args:
-        step: Current step of the optimizer
-        adam_warmup_steps: Number of steps to skip preconditioning in the beginning (i.e. use standard AdamW updates)
-        precondition_frequency: How often to update the preconditioner. Can be an integer for fixed frequency
-            or a callable function that takes the current step as input and returns the frequency.
-    """
-    if step < adam_warmup_steps:
-        return False
-
-    current_frequency = (
-        precondition_frequency if not callable(precondition_frequency) else precondition_frequency(step)
-    )
-
-    return step % current_frequency == 0
 
 
 @torch.compile  # type: ignore[misc]

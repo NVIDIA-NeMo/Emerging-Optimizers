@@ -41,53 +41,6 @@ class EigUtilsTest(BaseTestCase):
     def setUp(self) -> None:
         self.device = FLAGS.device
 
-    def test_adaptive_criteria_met(self) -> None:
-        """Tests the adaptive_criteria_met function for determining when to update eigenbasis."""
-        # Create a diagonal matrix (should not trigger update with small tolerance)
-        n = 4
-        diagonal_matrix = torch.eye(n, device=self.device)
-
-        # Test with small tolerance - should not update since matrix is diagonal
-        self.assertTrue(
-            eig_utils.met_approx_eigvals_criteria(
-                diagonal_matrix,
-                diagonal_matrix.diag(),
-                tolerance=0.1,
-            ),
-            msg="Should not update for diagonal matrix with small tolerance",
-        )
-
-        # Create a matrix with significant off-diagonal elements
-        off_diagonal_matrix = torch.tensor(
-            [
-                [1.0, 0.5, 0.3, 0.2],
-                [0.5, 1.0, 0.4, 0.3],
-                [0.3, 0.4, 1.0, 0.5],
-                [0.2, 0.3, 0.5, 1.0],
-            ],
-            device=self.device,
-        )
-
-        # Test with small tolerance - should update since matrix has significant off-diagonal elements
-        self.assertFalse(
-            eig_utils.met_approx_eigvals_criteria(
-                off_diagonal_matrix,
-                off_diagonal_matrix.diag(),
-                tolerance=0.1,
-            ),
-            msg="Should update for matrix with significant off-diagonal elements and small tolerance",
-        )
-
-        # Test with large tolerance - should not update even with off-diagonal elements
-        self.assertTrue(
-            eig_utils.met_approx_eigvals_criteria(
-                off_diagonal_matrix,
-                off_diagonal_matrix.diag(),
-                tolerance=10.0,
-            ),
-            msg="Should not update for any matrix with large tolerance",
-        )
-
     @parameterized.parameters(  # type: ignore[misc]
         {"N": 4, "power_iter_steps": 1},
         {"N": 8, "power_iter_steps": 2},
