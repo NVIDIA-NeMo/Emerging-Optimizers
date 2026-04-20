@@ -129,7 +129,7 @@ def build_optimizer(
         return _CombinedOptimizer([muon_opt, adam_opt])
 
     elif optimizer_name == "soap":
-        soap_opt = SOAP(params_2d, **common_kwargs, precondition_frequency=1)
+        soap_opt = SOAP(params_2d, **common_kwargs)
         adam_opt = torch.optim.AdamW(params_other, **common_kwargs)
         return _CombinedOptimizer([soap_opt, adam_opt])
 

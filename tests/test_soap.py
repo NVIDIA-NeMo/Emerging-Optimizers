@@ -21,11 +21,7 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.soap import REKLS, SOAP, soap
-from emerging_optimizers.soap.soap import (
-    _clip_update_rms_in_place,
-    _is_eigenbasis_update_step,
-)
-from emerging_optimizers.utils import precondition_schedules
+from emerging_optimizers.soap.soap import _clip_update_rms_in_place
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -110,7 +106,6 @@ class SoapFunctionsTest(parameterized.TestCase):
             lr=0.001,
             weight_decay=0.01,
             adam_warmup_steps=adam_warmup_steps,
-            precondition_frequency=1,
         )
 
         for _ in range(adam_warmup_steps):
@@ -225,27 +220,6 @@ class SoapFunctionsTest(parameterized.TestCase):
             rtol=1e-6,
             msg="Project and project_back did not recover the original tensor.",
         )
-
-    @parameterized.parameters(
-        (5, 10, 10, False),
-        (15, 10, 5, True),
-        (20, 10, 10, True),
-        (21, 10, 10, False),
-        (30, 10, 10, True),
-        (31, 10, 10, False),
-    )
-    def test_is_eigenbasis_update_step_fixed_frequency(
-        self, step: int, adam_warmup_steps: int, precondition_frequency: int, expected: bool
-    ) -> None:
-        """Test _is_eigenbasis_update_step with fixed frequency."""
-        result = _is_eigenbasis_update_step(step, adam_warmup_steps, precondition_frequency)
-        self.assertEqual(result, expected)
-
-    def test_soap_optimizer_fixed_frequency(self) -> None:
-        """Test that SOAP optimizer can be created with fixed precondition frequency (default case)."""
-        param = torch.randn(10, 5, requires_grad=True)
-        optimizer = SOAP([param], lr=1e-3, precondition_frequency=10)
-        self.assertEqual(optimizer.precondition_frequency, 10)
 
     @parameterized.parameters(
         (1.0,),
@@ -382,94 +356,6 @@ class SoapFunctionsTest(parameterized.TestCase):
             optimizer.step()
 
 
-class ScheduleTest(parameterized.TestCase):
-    def test_soap_optimizer_class_with_linear_schedule(self) -> None:
-        """Test that SOAP optimizer can be created with class-based precondition frequency schedule."""
-        param = torch.randn(10, 5, requires_grad=True)
-        schedule = precondition_schedules.LinearSchedule(min_freq=2, max_freq=10, transition_steps=100)
-        optimizer = SOAP([param], lr=1e-3, precondition_frequency=schedule)
-        self.assertTrue(optimizer.precondition_frequency == schedule)
-
-        self.assertEqual(schedule(0), 2)
-        self.assertEqual(schedule(50), 6)
-        self.assertEqual(schedule(100), 10)
-
-        adam_warmup = 1
-
-        self.assertTrue(_is_eigenbasis_update_step(10, adam_warmup, schedule))
-        self.assertFalse(_is_eigenbasis_update_step(11, adam_warmup, schedule))
-        self.assertTrue(_is_eigenbasis_update_step(60, adam_warmup, schedule))
-        self.assertFalse(_is_eigenbasis_update_step(61, adam_warmup, schedule))
-        self.assertTrue(_is_eigenbasis_update_step(120, adam_warmup, schedule))
-        self.assertFalse(_is_eigenbasis_update_step(121, adam_warmup, schedule))
-
-        self.assertFalse(_is_eigenbasis_update_step(2, 10, schedule))
-
-    def test_cosine_schedule(self) -> None:
-        schedule = precondition_schedules.CosineSchedule(min_freq=1, max_freq=50, transition_steps=100)
-
-        # At midpoint, progress=0.5 so freq = max - (max-min)*0.5 = (max+min)/2, rounded to int
-        self.assertEqual(schedule(50), 25)
-        self.assertEqual(schedule(100), 1)
-
-        # Before start_step returns min_freq
-        schedule_delayed = precondition_schedules.CosineSchedule(
-            min_freq=5, max_freq=50, transition_steps=100, start_step=10
-        )
-        self.assertEqual(schedule_delayed(5), 5)
-
-        # Negative step raises
-        with self.assertRaises(ValueError):
-            schedule(-1)
-
-        # Invalid init raises
-        with self.assertRaises(ValueError):
-            precondition_schedules.CosineSchedule(min_freq=1, max_freq=50, transition_steps=0)
-
-    def test_step_schedule(self) -> None:
-        schedule = precondition_schedules.StepSchedule({0: 1, 100: 5, 500: 20})
-
-        self.assertEqual(schedule(0), 1)
-        self.assertEqual(schedule(50), 1)
-        self.assertEqual(schedule(100), 5)
-        self.assertEqual(schedule(250), 5)
-        self.assertEqual(schedule(500), 20)
-        self.assertEqual(schedule(10000), 20)
-
-        # Before start_step returns min_freq
-        schedule_delayed = precondition_schedules.StepSchedule({0: 2, 100: 10}, start_step=50)
-        self.assertEqual(schedule_delayed(25), 2)
-        self.assertEqual(schedule_delayed(100), 10)
-
-        # Empty dict raises
-        with self.assertRaises(ValueError):
-            precondition_schedules.StepSchedule({})
-
-        # Invalid frequency raises
-        with self.assertRaises(ValueError):
-            precondition_schedules.StepSchedule({0: 0})
-
-        # Negative step key raises
-        with self.assertRaises(ValueError):
-            precondition_schedules.StepSchedule({-1: 5})
-
-    def test_precondition_schedule_zero_min_freq_raises_value_error(self) -> None:
-        with self.assertRaisesRegex(ValueError, "min_freq must be at least 1"):
-            precondition_schedules.LinearSchedule(min_freq=0, max_freq=10, transition_steps=100)
-
-    def test_precondition_schedule_max_freq_below_min_raises_value_error(self) -> None:
-        with self.assertRaisesRegex(ValueError, "max_freq must be >= min_freq"):
-            precondition_schedules.LinearSchedule(min_freq=10, max_freq=5, transition_steps=100)
-
-    def test_precondition_schedule_negative_start_step_raises_value_error(self) -> None:
-        with self.assertRaisesRegex(ValueError, "start_step must be non-negative"):
-            precondition_schedules.LinearSchedule(min_freq=1, max_freq=10, transition_steps=100, start_step=-1)
-
-    def test_linear_schedule_zero_transition_steps_raises_value_error(self) -> None:
-        with self.assertRaisesRegex(ValueError, "transition_steps must be positive"):
-            precondition_schedules.LinearSchedule(min_freq=1, max_freq=10, transition_steps=0)
-
-
 class SoapTest(parameterized.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -481,11 +367,9 @@ class SoapTest(parameterized.TestCase):
             "weight_decay": 0.01,
             "betas": (0.9, 0.95),
             "eps": 1e-8,
-            "precondition_frequency": 1,
             "shampoo_beta": 0.95,
             "adam_warmup_steps": 1,
             "fp32_matmul_prec": "highest",
-            "use_adaptive_criteria": False,
             "power_iter_steps": 1,
         }
 
@@ -522,23 +406,6 @@ class SoapTest(parameterized.TestCase):
         )
 
         for _ in range(5):
-            param.grad = torch.randn_like(param)
-            optimizer.step()
-            param.grad = None
-
-    @parameterized.parameters(  # type: ignore[misc]
-        {"use_eigh": True},
-        {"use_eigh": False},
-    )
-    def test_use_adaptive_criteria_10steps_smoke(self, use_eigh: bool):
-        param = torch.randn(5, 3, requires_grad=True, device=self.device)
-        optimizer = SOAP(
-            [param],
-            **{**self.default_config, "use_adaptive_criteria": True},
-            use_eigh=use_eigh,
-        )
-
-        for _ in range(10):
             param.grad = torch.randn_like(param)
             optimizer.step()
             param.grad = None
@@ -581,7 +448,6 @@ class SoapMultiStreamTest(parameterized.TestCase):
             weight_decay=0.01,
             betas=(0.9, 0.95),
             eps=1e-8,
-            precondition_frequency=1,
             shampoo_beta=0.95,
             adam_warmup_steps=1,
             fp32_matmul_prec="highest",
@@ -639,12 +505,9 @@ class SoapVsReferenceTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
         num_steps=[2, 5, 7],
-        precondition_frequency=[1, 2, 5],
         correct_bias=[False, True],
     )
-    def test_update_matches_reference(
-        self, shape: tuple, num_steps: int, precondition_frequency: int, correct_bias: bool
-    ):
+    def test_update_matches_reference(self, shape: tuple, num_steps: int, correct_bias: bool):
         """Test that SOAP optimizer matches reference implementation for basic config."""
         # Create two identical parameters
         param_test = torch.randint(-2, 3, shape, dtype=torch.float32, device=self.device)
@@ -660,7 +523,6 @@ class SoapVsReferenceTest(parameterized.TestCase):
             shampoo_beta=0.5,
             eps=1e-15,
             weight_decay=0.125,
-            precondition_frequency=precondition_frequency,
             correct_bias=correct_bias,
         )
 
@@ -675,6 +537,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
         ref_optimizer = soap_reference.ReferenceSoap(
             [param_ref],
             **common_kwargs,
+            precondition_frequency=1,
         )
         # Run optimization steps with identical gradients
         for step in range(num_steps):
@@ -702,9 +565,8 @@ class SoapVsReferenceTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
         num_steps=[2, 5, 7],
-        precondition_frequency=[1, 2, 5],
     )
-    def test_eigenbasis_matches_reference(self, shape: tuple, num_steps: int, precondition_frequency: int):
+    def test_eigenbasis_matches_reference(self, shape: tuple, num_steps: int):
         param_soap = torch.randint(-2, 3, shape, dtype=torch.float32, device=self.device)
         param_ref = param_soap.clone()
 
@@ -715,7 +577,6 @@ class SoapVsReferenceTest(parameterized.TestCase):
             shampoo_beta=0.75,
             eps=1e-8,
             weight_decay=0,
-            precondition_frequency=precondition_frequency,
             correct_bias=False,
         )
 
@@ -730,6 +591,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
         ref_optimizer = soap_reference.ReferenceSoap(
             [param_ref],
             **common_kwargs,
+            precondition_frequency=1,
         )
 
         for step in range(num_steps):
