@@ -53,6 +53,7 @@ flags.DEFINE_integer("benchmark_steps", 5, "Optimizer steps to time.")
 flags.DEFINE_bool("use_eigh", False, "Use eigh instead of QR iteration.")
 flags.DEFINE_string("dtype", "bfloat16", "Parameter dtype: float32, bfloat16, or float16.")
 flags.DEFINE_integer("num_streams", None, "Number of CUDA streams for SOAP. None means no stream_list.")
+flags.DEFINE_bool("cpu_offload", False, "Round-trip optimizer state to pinned CPU memory each step.")
 
 # Qwen3-30B-A3B linear layer shapes (out_features, in_features) per transformer block.
 QWEN3_30B_A3B_ATTN_SHAPES: list[tuple[str, tuple[int, int]]] = [
@@ -146,16 +147,37 @@ def main(_: Any) -> None:
 
     stream_list = [torch.cuda.Stream() for _ in range(FLAGS.num_streams)] if FLAGS.num_streams else None
 
+    cpu_states_buffer: torch.Tensor | None = None
+    offload_stream: torch.cuda.Stream | None = None
+    required_numel = 0
+    if FLAGS.cpu_offload:
+        required_numel = sum(
+            2 * p.shape[0] * p.shape[1] + 2 * p.shape[0] ** 2 + 2 * p.shape[1] ** 2 for p in params if p.dim() == 2
+        )
+        try:
+            cpu_states_buffer = torch.empty(required_numel, dtype=torch.float32, pin_memory=True)
+        except torch.AcceleratorError as e:
+            if "out of memory" not in str(e).lower():
+                raise
+            print(f"\nPinning {required_numel * 4 / 1e9:.2f} GB of host memory failed ({e});")
+            print("  falling back to pageable (pin_memory=False). Copies will be blocking.")
+            cpu_states_buffer = torch.empty(required_numel, dtype=torch.float32, pin_memory=False)
+        offload_stream = torch.cuda.Stream()
+
     optimizer = SOAP(
         params,
         lr=0.25,
         use_eigh=FLAGS.use_eigh,
         stream_list=stream_list,
+        cpu_states_buffer=cpu_states_buffer,
     )
 
     print("\nSOAP settings:")
     print(f"  use_eigh    : {FLAGS.use_eigh}")
     print(f"  num_streams : {FLAGS.num_streams}")
+    print(f"  cpu_offload : {FLAGS.cpu_offload}")
+    if FLAGS.cpu_offload:
+        print(f"  CPU buffer  : {required_numel:,} fp32 elements ({required_numel * 4 / 1e9:.2f} GB pinned)")
 
     print(f"\nWarming up ({FLAGS.warmup_steps} steps)...")
     for _ in range(FLAGS.warmup_steps):
@@ -166,13 +188,27 @@ def main(_: Any) -> None:
     print(f"Benchmarking ({benchmark_steps} steps)...")
 
     step_times: list[float] = []
+    offload_times: list[float] = []
+    reload_times: list[float] = []
+    mem_after_offload_gb: float | None = None
     for _ in range(benchmark_steps):
         torch.cuda.synchronize()
         t0 = time.perf_counter()
         optimizer.step()
         torch.cuda.synchronize()
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-        step_times.append(elapsed_ms)
+        step_times.append((time.perf_counter() - t0) * 1000)
+
+        if FLAGS.cpu_offload:
+            t0 = time.perf_counter()
+            done = optimizer.move_state_to_cpu(stream=offload_stream)
+            done.synchronize()
+            offload_times.append((time.perf_counter() - t0) * 1000)
+            mem_after_offload_gb = torch.cuda.memory_allocated(device) / (1024**3)
+
+            t0 = time.perf_counter()
+            done = optimizer.move_states_to_gpu(stream=offload_stream)
+            done.synchronize()
+            reload_times.append((time.perf_counter() - t0) * 1000)
 
     avg_ms = sum(step_times) / len(step_times)
     min_ms = min(step_times)
@@ -188,6 +224,13 @@ def main(_: Any) -> None:
 
     peak_mem = torch.cuda.max_memory_allocated(device) / (1024**3)
     print(f"  Peak GPU mem   : {peak_mem:.2f} GB")
+
+    if FLAGS.cpu_offload:
+        print(f"  Avg offload ms : {sum(offload_times) / len(offload_times):.2f}")
+        print(f"  Avg reload ms  : {sum(reload_times) / len(reload_times):.2f}")
+        if mem_after_offload_gb is not None:
+            print(f"  GPU mem after offload: {mem_after_offload_gb:.2f} GB")
+
     print("=" * 70)
 
 

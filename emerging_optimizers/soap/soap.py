@@ -131,13 +131,14 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 raise TypeError(f"cpu_states_buffer must be float32, got {cpu_states_buffer.dtype}")
             if cpu_states_buffer.device.type != "cpu":
                 raise TypeError(f"cpu_states_buffer must be on CPU, got {cpu_states_buffer.device}")
-            if not cpu_states_buffer.is_pinned():
-                raise TypeError("cpu_states_buffer must be in pinned memory")
             required_numel = self._required_cpu_states_buffer_numel()
             if cpu_states_buffer.numel() < required_numel:
                 raise ValueError(
                     f"cpu_states_buffer has {cpu_states_buffer.numel()} elements, need at least {required_numel}"
                 )
+
+            if not cpu_states_buffer.is_pinned():
+                logging.error("cpu_states_buffer is not pinned, H2D/D2H copy will be blocking.")
 
     def _required_cpu_states_buffer_numel(self) -> int:
         """Total fp32 numel needed to hold every 2D parameter's SOAP state."""
