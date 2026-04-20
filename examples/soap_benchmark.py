@@ -200,7 +200,7 @@ def main(_: Any) -> None:
 
         if FLAGS.cpu_offload:
             t0 = time.perf_counter()
-            done = optimizer.move_state_to_cpu(stream=offload_stream)
+            done = optimizer.move_states_to_cpu(stream=offload_stream)
             done.synchronize()
             offload_times.append((time.perf_counter() - t0) * 1000)
             mem_after_offload_gb = torch.cuda.memory_allocated(device) / (1024**3)

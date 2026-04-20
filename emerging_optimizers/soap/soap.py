@@ -124,6 +124,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         super().__init__(params, defaults)
 
         self.cpu_states_buffer = cpu_states_buffer
+        self._offloaded_strides: dict[tuple[torch.Tensor, str], tuple[int, ...]] = {}
         if cpu_states_buffer is not None:
             if cpu_states_buffer.dim() != 1:
                 raise TypeError(f"cpu_states_buffer must be 1D, got shape {tuple(cpu_states_buffer.shape)}")
@@ -188,7 +189,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 state["Q_R"] = torch.eye(p.shape[1], device=p.device)
 
     @torch.no_grad()  # type: ignore[misc]
-    def move_state_to_cpu(self, stream: torch.cuda.Stream | None = None) -> torch.cuda.Event:
+    def move_states_to_cpu(self, stream: torch.cuda.Stream | None = None) -> torch.cuda.Event:
         """Move all tensor optimizer state to CPU, releasing the GPU copy.
 
         Each tensor in the per-parameter state (``exp_avg``, ``exp_avg_sq``, Kronecker factors,
@@ -203,7 +204,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             A CUDA event that is signaled once every D2H copy issued by this call has
             completed. Wait on it before reading the CPU tensors, e.g.::
 
-                done = opt.move_state_to_cpu(stream=offload_stream)
+                done = opt.move_states_to_cpu(stream=offload_stream)
                 done.synchronize()  # or done.wait(some_stream)
         """
         if self.cpu_states_buffer is None:
@@ -221,6 +222,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     for key, value in state.items():
                         if not isinstance(value, torch.Tensor):
                             continue
+                        self._offloaded_strides[(p, key)] = value.stride()
                         numel = value.numel()
                         dst = self.cpu_states_buffer[buffer_offset : buffer_offset + numel].view(value.shape)
                         dst.copy_(value, non_blocking=True)
@@ -237,7 +239,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         Each tensor in the per-parameter state that is not already on the parameter's device
         is replaced by a fresh GPU tensor via a non-blocking H2D transfer. The CPU source is
-        typically a view into ``self.cpu_states_buffer`` from a prior :meth:`move_state_to_cpu`
+        typically a view into ``self.cpu_states_buffer`` from a prior :meth:`move_states_to_cpu`
         call; the buffer itself is left in place. Non-tensor entries are left alone.
 
         Args:
@@ -262,9 +264,13 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     for key, value in state.items():
                         if not isinstance(value, torch.Tensor):
                             continue
-                        if value.device == p.device:
-                            continue
-                        state[key] = value.to(p.device, non_blocking=True)
+                        stride = self._offloaded_strides.get((p, key))
+                        if stride is None:
+                            state[key] = value.to(p.device, non_blocking=True)
+                        else:
+                            gpu = torch.empty_strided(value.shape, stride, dtype=value.dtype, device=p.device)
+                            gpu.copy_(value, non_blocking=True)
+                            state[key] = gpu
 
         done_event = torch.cuda.Event()
         done_event.record(stream if stream is not None else torch.cuda.current_stream())

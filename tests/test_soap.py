@@ -317,6 +317,55 @@ class SoapFunctionsTest(parameterized.TestCase):
         with self.assertRaisesRegex(TypeError, "only supported for 2D"):
             optimizer.step()
 
+    @parameterized.parameters(  # type: ignore[misc]
+        {"shape": (15, 31)},
+        {"shape": (31, 15)},
+        {"shape": (255, 257)},
+    )
+    def test_move_states_to_cpu_and_back_preserves_stats(self, shape: tuple) -> None:
+        """State must round-trip bit-exactly through ``move_states_to_cpu`` + ``move_states_to_gpu``."""
+        if self.device == "cpu":
+            self.skipTest("cpu_states_buffer requires pinned memory and a CUDA device")
+
+        m, n = shape
+        required_numel = 2 * m * n + 2 * m * m + 2 * n * n
+        cpu_buffer = torch.empty(required_numel, dtype=torch.float32, pin_memory=True)
+
+        param = torch.randn(shape, requires_grad=True, device=self.device)
+        optimizer = SOAP([param], lr=1e-3, cpu_states_buffer=cpu_buffer)
+
+        # Run a few steps to populate non-trivial state (past the step-0 bootstrap branch).
+        for _ in range(3):
+            param.grad = torch.randn_like(param)
+            optimizer.step()
+            param.grad = None
+
+        # Snapshot the current state.
+        snapshot = {
+            key: value.clone() if isinstance(value, torch.Tensor) else value
+            for key, value in optimizer.state[param].items()
+        }
+
+        # Round-trip through pinned CPU memory.
+        optimizer.move_states_to_cpu()
+        optimizer.move_states_to_gpu()
+
+        # Every state entry must match the snapshot exactly.
+        for key, expected in snapshot.items():
+            actual = optimizer.state[param][key]
+            if isinstance(expected, torch.Tensor):
+                self.assertEqual(actual.device, expected.device, msg=f"device mismatch for '{key}'")
+                self.assertEqual(actual.shape, expected.shape, msg=f"shape mismatch for '{key}'")
+                torch.testing.assert_close(
+                    actual,
+                    expected,
+                    atol=0,
+                    rtol=0,
+                    msg=lambda msg, key=key: f"State '{key}' mismatch after CPU round-trip:\n{msg}",
+                )
+            else:
+                self.assertEqual(actual, expected, msg=f"Non-tensor '{key}' mismatch")
+
 
 class SoapTest(parameterized.TestCase):
     @classmethod
@@ -382,6 +431,48 @@ class SoapTest(parameterized.TestCase):
             param.grad = torch.randn_like(param)
             optimizer.step()
             param.grad = None
+
+    def test_offload_matches_no_offload(self) -> None:
+        """SOAP with per-step CPU offload round-trip must match SOAP without offload exactly."""
+        if self.device == "cpu":
+            self.skipTest("cpu_states_buffer requires pinned memory and a CUDA device")
+
+        shapes = [(5, 3), (10, 10), (15, 31), (31, 15)]
+        num_steps = 5
+
+        params_no_offload = [torch.randn(s, requires_grad=True, device=self.device) for s in shapes]
+        params_offload = [p.clone().detach().requires_grad_(True) for p in params_no_offload]
+
+        required_numel = sum(2 * m * n + 2 * m * m + 2 * n * n for m, n in shapes)
+        cpu_buffer = torch.empty(required_numel, dtype=torch.float32, pin_memory=True)
+
+        opt_no_offload = SOAP(params_no_offload, **self.default_config)
+        opt_offload = SOAP(params_offload, **self.default_config, cpu_states_buffer=cpu_buffer)
+
+        for step in range(num_steps):
+            grads = [torch.randn_like(p) for p in params_no_offload]
+            for p, g in zip(params_no_offload, grads):
+                p.grad = g.clone()
+            for p, g in zip(params_offload, grads):
+                p.grad = g.clone()
+
+            opt_no_offload.step()
+
+            opt_offload.move_states_to_gpu()
+            opt_offload.step()
+            opt_offload.move_states_to_cpu()
+
+            for i, (p_off, p_no_off) in enumerate(zip(params_offload, params_no_offload)):
+                torch.testing.assert_close(
+                    p_off,
+                    p_no_off,
+                    atol=0,
+                    rtol=0,
+                    msg=lambda msg, step=step, i=i: (f"Param {i} (shape={shapes[i]}) mismatch at step {step}:\n{msg}"),
+                )
+
+            for p in params_no_offload + params_offload:
+                p.grad = None
 
 
 class SoapMultiStreamTest(parameterized.TestCase):
@@ -509,6 +600,68 @@ class SoapVsReferenceTest(parameterized.TestCase):
             # Step both optimizers
             test_optimizer.step()
             ref_optimizer.step()
+
+            torch.testing.assert_close(
+                param_test,
+                param_ref,
+                atol=1e-4,
+                rtol=1e-4,
+                msg=lambda msg: f"Parameter mismatch at step {step}:\n{msg}",
+            )
+
+            param_test.grad = None
+            param_ref.grad = None
+
+    @parameterized.product(
+        shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
+        num_steps=[2, 5, 7],
+        correct_bias=[False, True],
+    )
+    def test_update_with_cpu_offload_matches_reference(self, shape: tuple, num_steps: int, correct_bias: bool):
+        """SOAP with CPU offload round-trip each step should still match the reference."""
+        param_test = torch.randint(-2, 3, shape, dtype=torch.float32, device=self.device)
+        param_ref = param_test.clone()
+
+        if correct_bias and shape == (15, 31):
+            self.skipTest("Skipping large tensor test with correct_bias.")
+
+        common_kwargs = dict(
+            lr=2,
+            betas=(0.75, 0.75),
+            shampoo_beta=0.5,
+            eps=1e-15,
+            weight_decay=0.125,
+            correct_bias=correct_bias,
+        )
+
+        m, n = shape
+        required_numel = 2 * m * n + 2 * m * m + 2 * n * n
+        cpu_states_buffer = torch.empty(required_numel, dtype=torch.float32, pin_memory=True)
+
+        test_optimizer = SOAP(
+            [param_test],
+            **common_kwargs,
+            fp32_matmul_prec="highest",
+            qr_fp32_matmul_prec="highest",
+            correct_shampoo_beta_bias=False,
+            cpu_states_buffer=cpu_states_buffer,
+        )
+        ref_optimizer = soap_reference.ReferenceSoap(
+            [param_ref],
+            **common_kwargs,
+            precondition_frequency=1,
+        )
+
+        for step in range(num_steps):
+            grad = torch.randint_like(param_test, -2, 3)
+            param_test.grad = grad.clone()
+            param_ref.grad = grad.clone()
+
+            ref_optimizer.step()
+            test_optimizer.step()
+            # Round-trip state through pinned CPU memory each step.
+            test_optimizer.move_states_to_cpu()
+            test_optimizer.move_states_to_gpu()
 
             torch.testing.assert_close(
                 param_test,
