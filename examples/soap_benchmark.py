@@ -188,27 +188,30 @@ def main(_: Any) -> None:
     print(f"Benchmarking ({benchmark_steps} steps)...")
 
     step_times: list[float] = []
-    offload_times: list[float] = []
     reload_times: list[float] = []
     mem_after_offload_gb: float | None = None
     for _ in range(benchmark_steps):
+        if FLAGS.cpu_offload:
+            t0 = time.perf_counter()
+            reload_event = optimizer.move_states_to_gpu(stream=offload_stream)
+            torch.cuda.current_stream().wait_event(reload_event)
+            reload_times.append((time.perf_counter() - t0) * 1000)
+
         torch.cuda.synchronize()
         t0 = time.perf_counter()
         optimizer.step()
+
+        if FLAGS.cpu_offload:
+            assert offload_stream is not None
+            offload_stream.wait_stream(torch.cuda.current_stream())
+            offload_event = optimizer.move_states_to_cpu(stream=offload_stream)
+            torch.cuda.current_stream().wait_event(offload_event)
+
         torch.cuda.synchronize()
         step_times.append((time.perf_counter() - t0) * 1000)
 
         if FLAGS.cpu_offload:
-            t0 = time.perf_counter()
-            done = optimizer.move_states_to_cpu(stream=offload_stream)
-            done.synchronize()
-            offload_times.append((time.perf_counter() - t0) * 1000)
             mem_after_offload_gb = torch.cuda.memory_allocated(device) / (1024**3)
-
-            t0 = time.perf_counter()
-            done = optimizer.move_states_to_gpu(stream=offload_stream)
-            done.synchronize()
-            reload_times.append((time.perf_counter() - t0) * 1000)
 
     avg_ms = sum(step_times) / len(step_times)
     min_ms = min(step_times)
@@ -226,7 +229,6 @@ def main(_: Any) -> None:
     print(f"  Peak GPU mem   : {peak_mem:.2f} GB")
 
     if FLAGS.cpu_offload:
-        print(f"  Avg offload ms : {sum(offload_times) / len(offload_times):.2f}")
         print(f"  Avg reload ms  : {sum(reload_times) / len(reload_times):.2f}")
         if mem_after_offload_gb is not None:
             print(f"  GPU mem after offload: {mem_after_offload_gb:.2f} GB")
