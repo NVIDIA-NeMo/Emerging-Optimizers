@@ -151,12 +151,12 @@ def main(_: Any) -> None:
     offload_stream: torch.cuda.Stream | None = None
     required_numel = 0
     if FLAGS.cpu_offload:
-        required_numel = sum(
-            2 * p.shape[0] * p.shape[1] + 2 * p.shape[0] ** 2 + 2 * p.shape[1] ** 2 for p in params if p.dim() == 2
-        )
+        # Query the required size from a scratch optimizer (state is lazy-init'd so this is cheap),
+        # then reconstruct below with the allocated buffer so it goes through the normal validation.
+        required_numel = SOAP(params, lr=0.25, use_eigh=FLAGS.use_eigh).required_cpu_states_buffer_numel()
         try:
             cpu_states_buffer = torch.empty(required_numel, dtype=torch.float32, pin_memory=True)
-        except torch.AcceleratorError as e:
+        except RuntimeError as e:
             if "out of memory" not in str(e).lower():
                 raise
             print(f"\nPinning {required_numel * 4 / 1e9:.2f} GB of host memory failed ({e});")
