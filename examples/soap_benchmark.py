@@ -202,7 +202,7 @@ def main(_: Any) -> None:
         optimizer.step()
 
         if FLAGS.cpu_offload:
-            assert offload_stream is not None
+            assert offload_stream is not None  # Help mypy understand that offload_stream is a Stream after this.
             offload_stream.wait_stream(torch.cuda.current_stream())
             offload_event = optimizer.move_states_to_cpu(stream=offload_stream)
             torch.cuda.current_stream().wait_event(offload_event)
