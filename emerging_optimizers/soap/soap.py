@@ -276,6 +276,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     for key, value in state.items():
                         if not isinstance(value, torch.Tensor):
                             continue
+                        if value.device == p.device:
+                            continue
                         stride = self._offloaded_strides.get((p, key))
                         if stride is None:
                             state[key] = value.to(p.device, non_blocking=True)
