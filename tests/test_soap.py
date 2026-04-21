@@ -14,6 +14,7 @@
 # limitations under the License.
 import math
 from functools import partial
+from itertools import chain
 
 import soap_reference
 import torch
@@ -432,7 +433,7 @@ class SoapTest(parameterized.TestCase):
             optimizer.step()
             param.grad = None
 
-    def test_offload_matches_no_offload(self) -> None:
+    def test_serialized_offload_matches_no_offload(self) -> None:
         """SOAP with per-step CPU offload round-trip must match SOAP without offload exactly."""
         if self.device == "cpu":
             self.skipTest("cpu_states_buffer requires pinned memory and a CUDA device")
@@ -471,8 +472,120 @@ class SoapTest(parameterized.TestCase):
                     msg=lambda msg, step=step, i=i: (f"Param {i} (shape={shapes[i]}) mismatch at step {step}:\n{msg}"),
                 )
 
-            for p in params_no_offload + params_offload:
+            for p in chain(params_no_offload, params_offload):
                 p.grad = None
+
+    def test_async_offload_matches_no_offload(self) -> None:
+        """SOAP with per-step CPU offload round-trip on a dedicated stream must match SOAP without offload exactly."""
+        if self.device == "cpu":
+            self.skipTest("cpu_states_buffer requires pinned memory and a CUDA device")
+
+        shapes = [(5, 3), (10, 10), (15, 31), (31, 15)]
+        num_steps = 5
+
+        params_no_offload = [torch.randn(s, requires_grad=True, device=self.device) for s in shapes]
+        params_offload = [p.clone().detach().requires_grad_(True) for p in params_no_offload]
+
+        required_numel = sum(2 * m * n + 2 * m * m + 2 * n * n for m, n in shapes)
+        cpu_buffer = torch.empty(required_numel, dtype=torch.float32, pin_memory=True)
+
+        opt_no_offload = SOAP(params_no_offload, **self.default_config)
+        opt_offload = SOAP(params_offload, **self.default_config, cpu_states_buffer=cpu_buffer)
+
+        offload_stream = torch.cuda.Stream()
+
+        for step in range(num_steps):
+            grads = [torch.randn_like(p) for p in params_no_offload]
+            for p, g in zip(params_no_offload, grads):
+                p.grad = g.clone()
+            for p, g in zip(params_offload, grads):
+                p.grad = g.clone()
+
+            opt_no_offload.step()
+
+            # Reload on offload_stream; main stream waits for H2D before running step.
+            reload_done = opt_offload.move_states_to_gpu(stream=offload_stream)
+            torch.cuda.current_stream().wait_event(reload_done)
+            opt_offload.step()
+            # Offload stream waits for step() to finish before issuing D2H.
+            offload_stream.wait_stream(torch.cuda.current_stream())
+            opt_offload.move_states_to_cpu(stream=offload_stream)
+
+            for i, (p_off, p_no_off) in enumerate(zip(params_offload, params_no_offload)):
+                torch.testing.assert_close(
+                    p_off,
+                    p_no_off,
+                    atol=0,
+                    rtol=0,
+                    msg=lambda msg, step=step, i=i: (f"Param {i} (shape={shapes[i]}) mismatch at step {step}:\n{msg}"),
+                )
+
+            for p in chain(params_no_offload, params_offload):
+                p.grad = None
+
+    @parameterized.parameters(  # type: ignore[misc]
+        # Not 1D.
+        {
+            "shape": (100, 10),
+            "dtype": torch.float32,
+            "offload_device": "cpu",
+            "pinned": True,
+            "exc": TypeError,
+            "regex": "must be 1D",
+        },
+        # Wrong dtype.
+        {
+            "shape": (1000,),
+            "dtype": torch.float64,
+            "offload_device": "cpu",
+            "pinned": True,
+            "exc": TypeError,
+            "regex": "must be float32",
+        },
+        # Wrong device.
+        {
+            "shape": (1000,),
+            "dtype": torch.float32,
+            "offload_device": "cuda",
+            "pinned": False,
+            "exc": TypeError,
+            "regex": "must be on CPU",
+        },
+        # Too few elements for the required state.
+        {
+            "shape": (1,),
+            "dtype": torch.float32,
+            "offload_device": "cpu",
+            "pinned": True,
+            "exc": ValueError,
+            "regex": "need at least",
+        },
+        # Valid layout but not pinned — logs an error instead of raising.
+        {
+            "shape": (1000,),
+            "dtype": torch.float32,
+            "offload_device": "cpu",
+            "pinned": False,
+            "exc": None,
+            "regex": "not pinned",
+        },
+    )
+    def test_cpu_states_buffer_validation(self, shape, dtype, offload_device, pinned, exc, regex) -> None:
+        """``cpu_states_buffer`` must be 1D float32 pinned CPU memory large enough for all state."""
+        if offload_device == "cuda" and not torch.cuda.is_available():
+            self.skipTest("CUDA not available")
+        param = torch.randn(5, 3, requires_grad=True, device=self.device)
+        buffer = torch.empty(shape, dtype=dtype, device=offload_device, pin_memory=pinned)
+        if exc is not None:
+            with self.assertRaisesRegex(exc, regex):
+                SOAP([param], lr=1e-3, cpu_states_buffer=buffer)
+        else:
+            with self.assertLogs(level="ERROR") as cm:
+                SOAP([param], lr=1e-3, cpu_states_buffer=buffer)
+            self.assertTrue(
+                any(regex in record for record in cm.output),
+                msg=f"Expected log containing {regex!r}, got {cm.output}",
+            )
 
 
 class SoapMultiStreamTest(parameterized.TestCase):

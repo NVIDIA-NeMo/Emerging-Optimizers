@@ -50,6 +50,16 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
     gradient correlation matrix eigenbasis-based preconditioning to adapt to the local geometry of the
     optimization landscape.
 
+    Warning:
+        It is usually beneficial for training frameworks to manage resources as well as synchronizing asynchronous
+        operations. So the optimizer does NOT manage streams or CPU buffers but taking them as inputs instead.
+
+        * When use multiple streams, they are synchronized with default stream, i.e. wait for default stream before
+          start and go back to default stream only when all streams in stream_list have finished step(...).
+        * For CPU states offloading to be overlapped with compute, the CPU buffer must be pinned. An ERROR level log
+          will be reported if the CPU buffer is not pinned. Code will still function but with blocking copies.
+        * Synchronizing of states offloading can be managed either by the stream or the returned event.
+
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate to use
@@ -75,6 +85,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             testability because reference implementation of Soap doesn't bias correct shampoo beta.
         stream_list: Optional list of CUDA streams. When provided, each parameter in the inner loop uses a
             stream from this list in round-robin fashion.
+        cpu_states_buffer: Optional CPU buffer to use for offloading optimizer state. Must be pinned for
+            non-blocking transfers.
     """
 
     def __init__(
@@ -123,7 +135,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         }
         super().__init__(params, defaults)
 
-        self.cpu_states_buffer = cpu_states_buffer
+        self._cpu_states_buffer = cpu_states_buffer
         self._offloaded_strides: dict[tuple[torch.Tensor, str], tuple[int, ...]] = {}
         if cpu_states_buffer is not None:
             if cpu_states_buffer.dim() != 1:
@@ -204,10 +216,10 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             A CUDA event that is signaled once every D2H copy issued by this call has
             completed. Wait on it before reading the CPU tensors, e.g.::
 
-                done = opt.move_states_to_cpu(stream=offload_stream)
-                done.synchronize()  # or done.wait(some_stream)
+                offload_event = opt.move_states_to_cpu(stream=offload_stream)
+                offload_event.wait(some_stream)
         """
-        if self.cpu_states_buffer is None:
+        if self._cpu_states_buffer is None:
             raise RuntimeError("cpu_states_buffer must be provided at construction")
 
         stream_ctx: torch.cuda.StreamContext | nullcontext[None] = (
@@ -224,7 +236,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                             continue
                         self._offloaded_strides[(p, key)] = value.stride()
                         numel = value.numel()
-                        dst = self.cpu_states_buffer[buffer_offset : buffer_offset + numel].view(value.shape)
+                        dst = self._cpu_states_buffer[buffer_offset : buffer_offset + numel].view(value.shape)
                         dst.copy_(value, non_blocking=True)
                         state[key] = dst
                         buffer_offset += numel
@@ -250,8 +262,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             A CUDA event that is signaled once every H2D copy issued by this call has
             completed. Wait on it before using the state on the GPU, e.g.::
 
-                done = opt.move_states_to_gpu(stream=reload_stream)
-                done.synchronize()  # or done.wait(some_stream)
+                offload_event = opt.move_states_to_gpu(stream=reload_stream)
+                some_stream.wait_event(offload_event)
         """
         stream_ctx: torch.cuda.StreamContext | nullcontext[None] = (
             torch.cuda.stream(stream) if stream is not None else nullcontext()
