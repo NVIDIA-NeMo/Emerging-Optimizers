@@ -139,20 +139,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self._cpu_states_buffer = cpu_states_buffer
         self._offloaded_strides: dict[tuple[torch.Tensor, str], tuple[int, ...]] = {}
         if cpu_states_buffer is not None:
-            if cpu_states_buffer.dim() != 1:
-                raise TypeError(f"cpu_states_buffer must be 1D, got shape {tuple(cpu_states_buffer.shape)}")
-            if cpu_states_buffer.dtype != torch.float32:
-                raise TypeError(f"cpu_states_buffer must be float32, got {cpu_states_buffer.dtype}")
-            if cpu_states_buffer.device.type != "cpu":
-                raise TypeError(f"cpu_states_buffer must be on CPU, got {cpu_states_buffer.device}")
-            required_numel = SOAP.required_cpu_states_buffer_numel(params)
-            if cpu_states_buffer.numel() < required_numel:
-                raise ValueError(
-                    f"cpu_states_buffer has {cpu_states_buffer.numel()} elements, need at least {required_numel}"
-                )
-
-            if not cpu_states_buffer.is_pinned():
-                logging.error("cpu_states_buffer is not pinned, H2D/D2H copy will be blocking.")
+            self._validate_cpu_states_buffer(cpu_states_buffer)
 
     @staticmethod
     def required_cpu_states_buffer_numel(params: ParamsT) -> int:
@@ -164,7 +151,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         def _add(p: torch.Tensor) -> int:
             if p.dim() != 2:
-                return 0
+                raise TypeError("SOAP is only supported for 2D tensors")
             m, n = p.shape
             # exp_avg + exp_avg_sq + L + R + Q_L + Q_R
             return 2 * m * n + 2 * m * m + 2 * n * n
@@ -178,6 +165,22 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             else:
                 total += _add(item)
         return total
+
+    def _validate_cpu_states_buffer(self, cpu_states_buffer: torch.Tensor) -> None:
+        """Check that ``cpu_states_buffer`` matches requirements"""
+        if cpu_states_buffer.dim() != 1:
+            raise TypeError(f"cpu_states_buffer must be 1D, got shape {tuple(cpu_states_buffer.shape)}")
+        if cpu_states_buffer.dtype != torch.float32:
+            raise TypeError(f"cpu_states_buffer must be float32, got {cpu_states_buffer.dtype}")
+        if cpu_states_buffer.device.type != "cpu":
+            raise TypeError(f"cpu_states_buffer must be on CPU, got {cpu_states_buffer.device}")
+        required_numel = self.required_cpu_states_buffer_numel(self.param_groups)
+        if cpu_states_buffer.numel() < required_numel:
+            raise ValueError(
+                f"cpu_states_buffer has {cpu_states_buffer.numel()} elements, need at least {required_numel}"
+            )
+        if not cpu_states_buffer.is_pinned():
+            logging.error("cpu_states_buffer is not pinned, H2D/D2H copy will be blocking.")
 
     @torch.no_grad()  # type: ignore[misc]
     def _init_group(
@@ -196,7 +199,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         """
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
-                continue
+                continue  # pragma: no cover
 
             if p.dim() != 2:
                 raise TypeError("SOAP is only supported for 2D tensors")

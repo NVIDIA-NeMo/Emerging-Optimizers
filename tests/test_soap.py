@@ -367,6 +367,71 @@ class SoapFunctionsTest(parameterized.TestCase):
             else:
                 self.assertEqual(actual, expected, msg=f"Non-tensor '{key}' mismatch")
 
+    @parameterized.parameters(  # type: ignore[misc]
+        # Not 1D.
+        {
+            "shape": (100, 10),
+            "dtype": torch.float32,
+            "offload_device": "cpu",
+            "pinned": True,
+            "exc": TypeError,
+            "regex": "must be 1D",
+        },
+        # Wrong dtype.
+        {
+            "shape": (1000,),
+            "dtype": torch.float64,
+            "offload_device": "cpu",
+            "pinned": True,
+            "exc": TypeError,
+            "regex": "must be float32",
+        },
+        # Wrong device.
+        {
+            "shape": (1000,),
+            "dtype": torch.float32,
+            "offload_device": "cuda",
+            "pinned": False,
+            "exc": TypeError,
+            "regex": "must be on CPU",
+        },
+        # Too few elements.
+        {
+            "shape": (1,),
+            "dtype": torch.float32,
+            "offload_device": "cpu",
+            "pinned": True,
+            "exc": ValueError,
+            "regex": "need at least",
+        },
+        # Valid layout but not pinned — logs an error instead of raising.
+        {
+            "shape": (1000,),
+            "dtype": torch.float32,
+            "offload_device": "cpu",
+            "pinned": False,
+            "exc": None,
+            "regex": "not pinned",
+        },
+    )
+    def test_validate_cpu_states_buffer(self, shape, dtype, offload_device, pinned, exc, regex) -> None:
+        """``_validate_cpu_states_buffer`` rejects bad layouts and logs for unpinned buffers."""
+        if offload_device == "cuda" and not torch.cuda.is_available():
+            self.skipTest("CUDA not available")
+        param = torch.randn(5, 3, requires_grad=True)
+        optimizer = SOAP([param], lr=1e-3)
+        buffer = torch.empty(shape, dtype=dtype, device=offload_device, pin_memory=pinned)
+        if exc is not None:
+            with self.assertRaisesRegex(exc, regex):
+                optimizer._validate_cpu_states_buffer(buffer)
+        else:
+            with self.assertLogs(level="ERROR") as cm:
+                optimizer._validate_cpu_states_buffer(buffer)
+            self.assertTrue(
+                any(regex in record for record in cm.output),
+                msg=f"Expected log containing {regex!r}, got {cm.output}",
+            )
+
 
 class SoapTest(parameterized.TestCase):
     @classmethod
@@ -524,70 +589,6 @@ class SoapTest(parameterized.TestCase):
 
             for p in chain(params_no_offload, params_offload):
                 p.grad = None
-
-    @parameterized.parameters(  # type: ignore[misc]
-        # Not 1D.
-        {
-            "shape": (100, 10),
-            "dtype": torch.float32,
-            "offload_device": "cpu",
-            "pinned": True,
-            "exc": TypeError,
-            "regex": "must be 1D",
-        },
-        # Wrong dtype.
-        {
-            "shape": (1000,),
-            "dtype": torch.float64,
-            "offload_device": "cpu",
-            "pinned": True,
-            "exc": TypeError,
-            "regex": "must be float32",
-        },
-        # Wrong device.
-        {
-            "shape": (1000,),
-            "dtype": torch.float32,
-            "offload_device": "cuda",
-            "pinned": False,
-            "exc": TypeError,
-            "regex": "must be on CPU",
-        },
-        # Too few elements for the required state.
-        {
-            "shape": (1,),
-            "dtype": torch.float32,
-            "offload_device": "cpu",
-            "pinned": True,
-            "exc": ValueError,
-            "regex": "need at least",
-        },
-        # Valid layout but not pinned — logs an error instead of raising.
-        {
-            "shape": (1000,),
-            "dtype": torch.float32,
-            "offload_device": "cpu",
-            "pinned": False,
-            "exc": None,
-            "regex": "not pinned",
-        },
-    )
-    def test_cpu_states_buffer_validation(self, shape, dtype, offload_device, pinned, exc, regex) -> None:
-        """``cpu_states_buffer`` must be 1D float32 pinned CPU memory large enough for all state."""
-        if offload_device == "cuda" and not torch.cuda.is_available():
-            self.skipTest("CUDA not available")
-        param = torch.randn(5, 3, requires_grad=True, device=self.device)
-        buffer = torch.empty(shape, dtype=dtype, device=offload_device, pin_memory=pinned)
-        if exc is not None:
-            with self.assertRaisesRegex(exc, regex):
-                SOAP([param], lr=1e-3, cpu_states_buffer=buffer)
-        else:
-            with self.assertLogs(level="ERROR") as cm:
-                SOAP([param], lr=1e-3, cpu_states_buffer=buffer)
-            self.assertTrue(
-                any(regex in record for record in cm.output),
-                msg=f"Expected log containing {regex!r}, got {cm.output}",
-            )
 
 
 class SoapMultiStreamTest(parameterized.TestCase):
