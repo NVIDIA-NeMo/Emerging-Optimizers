@@ -145,7 +145,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 raise TypeError(f"cpu_states_buffer must be float32, got {cpu_states_buffer.dtype}")
             if cpu_states_buffer.device.type != "cpu":
                 raise TypeError(f"cpu_states_buffer must be on CPU, got {cpu_states_buffer.device}")
-            required_numel = self.required_cpu_states_buffer_numel()
+            required_numel = SOAP.required_cpu_states_buffer_numel(params)
             if cpu_states_buffer.numel() < required_numel:
                 raise ValueError(
                     f"cpu_states_buffer has {cpu_states_buffer.numel()} elements, need at least {required_numel}"
@@ -154,16 +154,29 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             if not cpu_states_buffer.is_pinned():
                 logging.error("cpu_states_buffer is not pinned, H2D/D2H copy will be blocking.")
 
-    def required_cpu_states_buffer_numel(self) -> int:
-        """Total fp32 numel needed to hold every 2D parameter's SOAP state."""
+    @staticmethod
+    def required_cpu_states_buffer_numel(params: ParamsT) -> int:
+        """Total fp32 numel needed to hold every 2D parameter's SOAP state.
+
+        Accepts the same ``params`` format as the constructor: a flat iterable of tensors,
+        an iterable of param-group dicts, or an iterable of ``(name, tensor)`` pairs.
+        """
+
+        def _add(p: torch.Tensor) -> int:
+            if p.dim() != 2:
+                return 0
+            m, n = p.shape
+            # exp_avg + exp_avg_sq + L + R + Q_L + Q_R
+            return 2 * m * n + 2 * m * m + 2 * n * n
+
         total = 0
-        for group in self.param_groups:
-            for p in group["params"]:
-                if p.dim() != 2:
-                    continue
-                m, n = p.shape
-                # exp_avg + exp_avg_sq + L + R + Q_L + Q_R
-                total += 2 * m * n + 2 * m * m + 2 * n * n
+        for item in params:
+            if isinstance(item, dict):
+                total += sum(_add(p) for p in item["params"])
+            elif isinstance(item, tuple):
+                total += _add(item[1])
+            else:
+                total += _add(item)
         return total
 
     @torch.no_grad()  # type: ignore[misc]

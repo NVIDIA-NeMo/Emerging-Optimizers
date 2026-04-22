@@ -151,9 +151,7 @@ def main(_: Any) -> None:
     offload_stream: torch.cuda.Stream | None = None
     required_numel = 0
     if FLAGS.cpu_offload:
-        # Query the required size from a scratch optimizer (state is lazy-init'd so this is cheap),
-        # then reconstruct below with the allocated buffer so it goes through the normal validation.
-        required_numel = SOAP(params, lr=0.25, use_eigh=FLAGS.use_eigh).required_cpu_states_buffer_numel()
+        required_numel = SOAP.required_cpu_states_buffer_numel(params)
         try:
             cpu_states_buffer = torch.empty(required_numel, dtype=torch.float32, pin_memory=True)
         except RuntimeError as e:
