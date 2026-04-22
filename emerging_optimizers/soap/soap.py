@@ -212,6 +212,14 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         To run on a side stream, wrap the call in ``with torch.cuda.stream(s):`` and record
         your own event if you need to synchronize later.
+
+        Note:
+            Matching stride before and after offloading is not strictly necessary for correctness. But changing
+            in stride/contiguity can change GPU kernel selection (in tensordot for example) which can in turn change
+            results numerically.
+            We use a test reference based off original SOAP code on github, in which tensor stride/contiguity
+            and floating point arithmetics are not carefully controlled. We decided to match stride in CPU offloading
+            so that results can still be checked against the reference.
         """
         if self._cpu_states_buffer is None:
             raise RuntimeError("cpu_states_buffer must be provided at construction")

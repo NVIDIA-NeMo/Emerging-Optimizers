@@ -203,7 +203,7 @@ def main(_: Any) -> None:
         optimizer.step()
 
         if FLAGS.cpu_offload:
-            assert offload_stream is not None  # Help mypy understand that offload_stream is a Stream after this.
+            assert offload_stream is not None  # Help mypy understand offload_stream can only be a Stream after this.
             offload_stream.wait_stream(torch.cuda.current_stream())
             with torch.cuda.stream(offload_stream):
                 optimizer.move_states_to_cpu()
