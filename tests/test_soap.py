@@ -504,12 +504,14 @@ class SoapTest(parameterized.TestCase):
             opt_no_offload.step()
 
             # Reload on offload_stream; main stream waits for H2D before running step.
-            reload_done = opt_offload.move_states_to_gpu(stream=offload_stream)
-            torch.cuda.current_stream().wait_event(reload_done)
+            with torch.cuda.stream(offload_stream):
+                opt_offload.move_states_to_gpu()
+            torch.cuda.current_stream().wait_stream(offload_stream)
             opt_offload.step()
             # Offload stream waits for step() to finish before issuing D2H.
             offload_stream.wait_stream(torch.cuda.current_stream())
-            opt_offload.move_states_to_cpu(stream=offload_stream)
+            with torch.cuda.stream(offload_stream):
+                opt_offload.move_states_to_cpu()
 
             for i, (p_off, p_no_off) in enumerate(zip(params_offload, params_no_offload)):
                 torch.testing.assert_close(

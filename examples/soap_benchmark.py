@@ -193,8 +193,9 @@ def main(_: Any) -> None:
     for _ in range(benchmark_steps):
         if FLAGS.cpu_offload:
             t0 = time.perf_counter()
-            reload_event = optimizer.move_states_to_gpu(stream=offload_stream)
-            torch.cuda.current_stream().wait_event(reload_event)
+            with torch.cuda.stream(offload_stream):
+                optimizer.move_states_to_gpu()
+            torch.cuda.current_stream().wait_stream(offload_stream)
             reload_times.append((time.perf_counter() - t0) * 1000)
 
         torch.cuda.synchronize()
@@ -204,8 +205,9 @@ def main(_: Any) -> None:
         if FLAGS.cpu_offload:
             assert offload_stream is not None  # Help mypy understand that offload_stream is a Stream after this.
             offload_stream.wait_stream(torch.cuda.current_stream())
-            offload_event = optimizer.move_states_to_cpu(stream=offload_stream)
-            torch.cuda.current_stream().wait_event(offload_event)
+            with torch.cuda.stream(offload_stream):
+                optimizer.move_states_to_cpu()
+            torch.cuda.current_stream().wait_stream(offload_stream)
 
         torch.cuda.synchronize()
         step_times.append((time.perf_counter() - t0) * 1000)
