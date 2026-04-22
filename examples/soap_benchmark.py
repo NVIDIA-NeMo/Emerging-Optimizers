@@ -192,6 +192,7 @@ def main(_: Any) -> None:
     mem_samples_gb: list[float] = []
     for _ in range(benchmark_steps):
         if FLAGS.cpu_offload:
+            assert offload_stream is not None  # Help mypy understand offload_stream can only be a Stream after this.
             t0 = time.perf_counter()
             with torch.cuda.stream(offload_stream):
                 optimizer.move_states_to_gpu()
@@ -203,7 +204,7 @@ def main(_: Any) -> None:
         optimizer.step()
 
         if FLAGS.cpu_offload:
-            assert offload_stream is not None  # Help mypy understand offload_stream can only be a Stream after this.
+            assert offload_stream is not None
             offload_stream.wait_stream(torch.cuda.current_stream())
             with torch.cuda.stream(offload_stream):
                 optimizer.move_states_to_cpu()
