@@ -189,7 +189,7 @@ def main(_: Any) -> None:
 
     step_times: list[float] = []
     reload_times: list[float] = []
-    mem_after_offload_gb: float | None = None
+    mem_samples_gb: list[float] = []
     for _ in range(benchmark_steps):
         if FLAGS.cpu_offload:
             t0 = time.perf_counter()
@@ -209,29 +209,28 @@ def main(_: Any) -> None:
 
         torch.cuda.synchronize()
         step_times.append((time.perf_counter() - t0) * 1000)
-
-        if FLAGS.cpu_offload:
-            mem_after_offload_gb = torch.cuda.memory_allocated(device) / (1024**3)
+        mem_samples_gb.append(torch.cuda.memory_allocated(device) / (1024**3))
 
     avg_ms = sum(step_times) / len(step_times)
     min_ms = min(step_times)
     max_ms = max(step_times)
     median_ms = sorted(step_times)[len(step_times) // 2]
 
+    avg_mem = sum(mem_samples_gb) / len(mem_samples_gb)
+    min_mem = min(mem_samples_gb)
+    max_mem = max(mem_samples_gb)
+    median_mem = sorted(mem_samples_gb)[len(mem_samples_gb) // 2]
+
     print(f"\n{'Results':=^70}")
     print(f"  Steps          : {benchmark_steps}")
-    print(f"  Avg step time  : {avg_ms:.2f} ms")
-    print(f"  Median         : {median_ms:.2f} ms")
-    print(f"  Min            : {min_ms:.2f} ms")
-    print(f"  Max            : {max_ms:.2f} ms")
+    print(f"  Step time ms   : avg={avg_ms:.2f} median={median_ms:.2f} min={min_ms:.2f} max={max_ms:.2f}")
+    print(f"  Live mem GB    : avg={avg_mem:.2f} median={median_mem:.2f} min={min_mem:.2f} max={max_mem:.2f}")
 
     peak_mem = torch.cuda.max_memory_allocated(device) / (1024**3)
     print(f"  Peak GPU mem   : {peak_mem:.2f} GB")
 
     if FLAGS.cpu_offload:
         print(f"  Avg reload ms  : {sum(reload_times) / len(reload_times):.2f}")
-        if mem_after_offload_gb is not None:
-            print(f"  GPU mem after offload: {mem_after_offload_gb:.2f} GB")
 
     print("=" * 70)
 
