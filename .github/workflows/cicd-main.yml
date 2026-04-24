@@ -46,8 +46,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: test
     if: |
-      needs.pre-flight.outputs.is_ci_workload == 'false'
-      && needs.pre-flight.outputs.docs_only == 'false'
+      !(needs.pre-flight.outputs.is_ci_workload == 'true'
+      || needs.pre-flight.outputs.is_deployment_workflow == 'true'
+      || needs.pre-flight.outputs.docs_only == 'true')
     steps:
       - name: Running CI tests
         run: |
@@ -62,7 +63,6 @@ jobs:
         || needs.pre-flight.outputs.is_ci_workload == 'true'
         || needs.pre-flight.outputs.force_run_all == 'true'
       )
-      && needs.pre-flight.outputs.docs_only == 'false'
       && !cancelled()
     with:
       image-name: emerging_optimizers
