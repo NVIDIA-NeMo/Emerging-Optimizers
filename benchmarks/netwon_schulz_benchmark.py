@@ -35,7 +35,7 @@ flags.DEFINE_integer("n", 2048, "Number of matrix columns.")
 flags.DEFINE_integer("warmup_steps", 1, "Warmup iterations before timing.")
 flags.DEFINE_integer("benchmark_steps", 5, "Benchmark iterations to time.")
 flags.DEFINE_integer("ns_steps", 5, "Newton-Schulz iterations per pass.")
-flags.DEFINE_enum("matmul_precision", "highest", ["highest", "high", "medium"], "Float32 matmul precision.")
+flags.DEFINE_enum("matmul_precision", "medium", ["highest", "high", "medium"], "Float32 matmul precision.")
 flags.DEFINE_enum("device", "cuda", ["cpu", "cuda"], "Device to run on.")
 flags.DEFINE_enum(
     "partition_dim",
