@@ -21,6 +21,8 @@ from typing import Any
 
 import torch
 from absl import app, flags
+from transformer_engine.pytorch.newton_schulz import CusolverMpCtx
+from transformer_engine.pytorch.newton_schulz import newton_schulz as te_newton_schulz
 
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schulz_tp
 from emerging_optimizers.utils import fp32_matmul_precision
@@ -42,6 +44,12 @@ flags.DEFINE_enum(
     "Tensor dimension to shard. Required when WORLD_SIZE > 1, must be unset otherwise.",
 )
 flags.DEFINE_enum("tp_mode", "distributed", ["distributed", "duplicated"], "Tensor-parallel mode.")
+flags.DEFINE_enum(
+    "backend",
+    "emerging",
+    ["emerging", "te"],
+    "Newton-Schulz implementation: 'emerging' (this repo) or 'te' (TransformerEngine cuSolverMp).",
+)
 
 
 def main(_: Any) -> None:
@@ -78,6 +86,31 @@ def main(_: Any) -> None:
         local_shape[partition_dim] //= tp_size
     x = torch.randn(local_shape, device=device, dtype=torch.float32)
 
+    te_ctx = None
+    x_init = None
+    if FLAGS.backend == "te":
+        if device.type != "cuda":
+            raise ValueError("--backend=te requires --device=cuda.")
+        if tp_group is None:
+            raise ValueError("--backend=te requires WORLD_SIZE > 1.")
+        if partition_dim != 1:
+            raise ValueError("--backend=te requires --partition_dim=1 (column-distributed). UNVERIFIED.")
+        te_ctx = CusolverMpCtx(tp_group)
+        x_init = x.clone()
+
+    def run() -> None:
+        if te_ctx is not None:
+            te_newton_schulz(x, te_ctx, num_iterations=FLAGS.ns_steps)
+        else:
+            newton_schulz_tp(
+                x,
+                steps=FLAGS.ns_steps,
+                coefficient_type="quintic",
+                tp_group=tp_group,
+                partition_dim=partition_dim,
+                tp_mode=FLAGS.tp_mode,
+            )
+
     def sync() -> None:
         if device.type == "cuda":
             torch.cuda.synchronize(device)
@@ -96,31 +129,22 @@ def main(_: Any) -> None:
         print(f"  tp_size          : {tp_size}")
         print(f"  partition_dim    : {partition_dim}")
         print(f"  tp_mode          : {FLAGS.tp_mode}")
+        print(f"  backend          : {FLAGS.backend}")
 
     step_times: list[float] = []
     with fp32_matmul_precision(FLAGS.matmul_precision), torch.no_grad():
         for _ in range(FLAGS.warmup_steps):
-            newton_schulz_tp(
-                x,
-                steps=FLAGS.ns_steps,
-                coefficient_type="quintic",
-                tp_group=tp_group,
-                partition_dim=partition_dim,
-                tp_mode=FLAGS.tp_mode,
-            )
+            if x_init is not None:
+                x.copy_(x_init)
+            run()
         sync()
 
         for _ in range(FLAGS.benchmark_steps):
+            if x_init is not None:
+                x.copy_(x_init)
             sync()
             t0 = time.perf_counter()
-            newton_schulz_tp(
-                x,
-                steps=FLAGS.ns_steps,
-                coefficient_type="quintic",
-                tp_group=tp_group,
-                partition_dim=partition_dim,
-                tp_mode=FLAGS.tp_mode,
-            )
+            run()
             sync()
             step_times.append((time.perf_counter() - t0) * 1000)
 
@@ -135,6 +159,8 @@ def main(_: Any) -> None:
         print(f"  Max    : {max(step_times):.2f} ms")
         print("=" * 70)
 
+    if te_ctx is not None:
+        te_ctx.destroy()
     if tp_group is not None:
         torch.distributed.destroy_process_group()
 
