@@ -75,7 +75,7 @@ _COEFFICIENT_SETS = {
     "deepseekv4": [
         # From DeepSeekV4: https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/resolve/main/DeepSeek_V4.pdf
         *((3.4445, -4.7750, 2.0315),) * 8,
-        *((2, -1.5, 0.5),) * 2,
+        *((2.0, -1.5, 0.5),) * 2,
     ],
 }
 
@@ -196,7 +196,8 @@ def newton_schulz(
     else:
         raise ValueError(f"Invalid coefficient type: {coefficient_type}")
 
-    iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in ("polar_express", "cans") else "cycle"
+    repeat_last_types = ("polar_express", "cans", "deepseekv4")
+    iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in repeat_last_types else "cycle"
     coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
     ns_step_fn = newton_schulz_step

@@ -154,7 +154,7 @@ class TestMuonUtils(parameterized.TestCase):
         size=[(512, 512), (512, 256), (256, 512)],
         coefficient_type=["polar_express", "deepseekv4"],
     )
-    def test_polar_express_and_deepseekv4_better_than_quintic(self, size, coefficient_type):
+    def test_polar_express_and_deepseekv4_10steps_better_than_quintic(self, size, coefficient_type):
         dim1, dim2 = size
         # Create a matrix with terrible condition number
         min_dim = min(dim1, dim2)
@@ -175,7 +175,7 @@ class TestMuonUtils(parameterized.TestCase):
 
         # Compare polar express vs quintic Newton-Schulz methods
         out_svd = (u @ v.T).float()
-        out_polar_express = muon_utils.newton_schulz(x, steps=8, coefficient_type=coefficient_type)
+        out_polar_express = muon_utils.newton_schulz(x, steps=10, coefficient_type=coefficient_type)
         out_quintic = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
 
         l2_norm_diff_polar = torch.norm(out_polar_express.float() - out_svd.float(), p=2)
