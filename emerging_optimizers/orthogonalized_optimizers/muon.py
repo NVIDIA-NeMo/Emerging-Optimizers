@@ -36,7 +36,7 @@ MuonScaleT = Literal["shape_scaling", "spectral", "unit_rms_norm"]
 class Muon(OrthogonalizedOptimizer):
     """Muon: MomentUm Orthogonalized by Newton-schulz
 
-    Muon runs standard SGD-momentum with Nesterov momentum, and then performs an orthogonalization
+    Muon runs EMA style momentum with Nesterov momentum, and then performs an orthogonalization
     post-processing step, in which each 2D parameter's update is replaced with the nearest orthogonal
     matrix. To efficiently orthogonalize each update, Newton-Schulz iteration is used, which has the
     advantage that it may be stably run on tensor cores on GPUs.
