@@ -211,7 +211,7 @@ class TestMuonUtils(parameterized.TestCase):
         (511, 257),
         (257, 513),
     )
-    def test_get_polar_express_9steps_close_to_reference(self, dim1, dim2):
+    def test_polar_express_9steps_close_to_reference(self, dim1, dim2):
         x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
         out_pe9 = muon_utils.newton_schulz(x, steps=9, coefficient_type="polar_express")
 
@@ -242,7 +242,7 @@ class TestMuonUtils(parameterized.TestCase):
         (511, 257),
         (257, 513),
     )
-    def test_get_cans_9steps_close_to_reference(self, dim1, dim2):
+    def test_cans_9steps_close_to_reference(self, dim1, dim2):
         x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
         out_cans9 = muon_utils.newton_schulz(x, steps=9, coefficient_type="cans")
         coeff = deepcopy(muon_utils._COEFFICIENT_SETS["cans"])
