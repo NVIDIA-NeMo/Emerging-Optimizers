@@ -25,7 +25,7 @@ __all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "get_coefficient_ite
 
 CoeffIterMode = Literal["cycle", "repeat_last"]
 
-NSCoeffT = Literal["simple", "quintic", "polar_express", "cans", "aol", "custom"]
+NSCoeffT = Literal["simple", "quintic", "polar_express", "cans", "aol", "deepseekv4", "custom"]
 
 _COEFFICIENT_SETS = {
     # Values are rounded to closest representable in single precision.
@@ -72,6 +72,9 @@ _COEFFICIENT_SETS = {
         (2.7573, -3.2939, 1.4254),
         (2.7215, -3.0494, 1.3169),
     ],
+    "deepseekv4":
+    # From DeepSeekV4: https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/resolve/main/DeepSeek_V4.pdf
+    [(3.4445, -4.7750, 2.0315)] * 8 + [(2.0, -1.5, 0.5)] * 2,
 }
 
 
@@ -148,6 +151,7 @@ def newton_schulz(
       - "polar_express": Polar Express iteration with optimized coefficients.
       - "cans": CANS iteration with Remez + adaptive interval coefficients.
       - "aol": AOL coefficient set.
+      - "deepseekv4": DeepSeekV4 coefficient set.
       - "custom": Custom coefficient sets.
 
     Arguments:
@@ -191,7 +195,8 @@ def newton_schulz(
     else:
         raise ValueError(f"Invalid coefficient type: {coefficient_type}")
 
-    iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in ("polar_express", "cans") else "cycle"
+    repeat_last_types = ("polar_express", "cans", "deepseekv4")
+    iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in repeat_last_types else "cycle"
     coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
     ns_step_fn = newton_schulz_step
