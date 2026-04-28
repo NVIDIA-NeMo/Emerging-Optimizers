@@ -315,6 +315,32 @@ class TestMuonUtils(parameterized.TestCase):
             )
 
 
+class TestNewtonSchulzStepBatched(parameterized.TestCase):
+    def setUp(self):
+        self.device = FLAGS.device
+        self.prev_precision = torch.get_float32_matmul_precision()
+        torch.set_float32_matmul_precision("highest")
+
+    def tearDown(self):
+        torch.set_float32_matmul_precision(self.prev_precision)
+
+    @parameterized.parameters(
+        (2, 16, 16, 0),
+        (4, 16, 32, 0),
+        (16, 128, 128, 1e-8),
+        (32, 128, 256, 1e-8),
+    )
+    def test_batch_newton_schulz_step_matches_or_close_to_unbatched(self, batch, dim1, dim2, atol):
+        x = torch.randint(-3, 4, (batch, dim1, dim2), device=self.device, dtype=torch.float32)
+        x = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=1e-7)
+
+        a, b, c = 0.5, 1, 0.25
+        batched = muon_utils.newton_schulz_step_batched(x, a, b, c)
+        per_item = torch.stack([muon_utils.newton_schulz_step(x[i], a, b, c) for i in range(batch)])
+
+        torch.testing.assert_close(batched, per_item, atol=atol, rtol=0)
+
+
 @absltest.skipIf(
     _SM_VERSION not in ((8, 0), (9, 0), (10, 0), (10, 3)),
     f"Correctness of Triton kernel on SM {_SM_VERSION} cannot be guaranteed.",

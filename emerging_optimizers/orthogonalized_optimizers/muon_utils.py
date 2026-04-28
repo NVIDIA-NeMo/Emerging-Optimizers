@@ -319,6 +319,32 @@ def newton_schulz_step(
     return X
 
 
+def newton_schulz_step_batched(
+    X: torch.Tensor, a: float, b: float, c: float, tp_group: torch.distributed.ProcessGroup | None = None
+) -> torch.Tensor:
+    """Perform a single Newton-Schulz iteration step on a batched ND input.
+
+    Equivalent to :func:`newton_schulz_step` but accepts ``X`` of shape ``(B, M, N)`` and applies the
+    iteration independently to each batch element via :func:`torch.baddbmm`.
+
+    Arguments:
+        X: The batched tensor to be orthogonalized, shape ``(B, M, N)``.
+        a: The a coefficient.
+        b: The b coefficient.
+        c: The c coefficient.
+        tp_group: The process group to use for the all-reduce.
+
+    Returns:
+        The orthogonalization of X, same shape as input.
+    """
+    A = X @ X.mT
+    if tp_group is not None:
+        torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
+    B = torch.baddbmm(A, A, A, alpha=c, beta=b)
+    X = torch.baddbmm(X, B, X, alpha=1.0, beta=a)
+    return X
+
+
 def newton_schulz_step_tsyrk(
     X: torch.Tensor, a: float, b: float, c: float, tp_group: torch.distributed.ProcessGroup | None = None
 ) -> torch.Tensor:
