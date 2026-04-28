@@ -181,13 +181,13 @@ class TestMuonUtils(parameterized.TestCase):
         l2_norm_diff_polar = torch.norm(out_polar_express.float() - out_svd.float(), p=2)
         l2_norm_diff_quintic = torch.norm(out_quintic.float() - out_svd.float(), p=2)
 
-        logging.info(f"Polar express norm difference: {l2_norm_diff_polar:.6f}")
+        logging.info(f"{coefficient_type} norm difference: {l2_norm_diff_polar:.6f}")
         logging.info(f"Quintic norm difference: {l2_norm_diff_quintic:.6f}")
 
         self.assertLess(
             l2_norm_diff_polar,
             l2_norm_diff_quintic,
-            f"Polar Express norm is larger than Quintic norm: {l2_norm_diff_polar:.6f} > {l2_norm_diff_quintic:.6f}",
+            f"{coefficient_type} norm is larger than Quintic norm: {l2_norm_diff_polar:.6f} > {l2_norm_diff_quintic:.6f}",
         )
 
     @parameterized.product(
