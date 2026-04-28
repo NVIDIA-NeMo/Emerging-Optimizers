@@ -154,7 +154,7 @@ class TestMuonUtils(parameterized.TestCase):
         size=[(512, 512), (512, 256), (256, 512)],
         coefficient_type=["polar_express", "deepseekv4"],
     )
-    def test_polar_express_and_deepseekv4better_than_quintic(self, size, coefficient_type):
+    def test_polar_express_and_deepseekv4_better_than_quintic(self, size, coefficient_type):
         dim1, dim2 = size
         # Create a matrix with terrible condition number
         min_dim = min(dim1, dim2)
