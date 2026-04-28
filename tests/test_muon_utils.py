@@ -53,7 +53,7 @@ def newton_schulz_ref(x: torch.Tensor, coefficient_sets: list[tuple[float, float
         x = x.mT
 
     # Ensure spectral norm is at most 1
-    X = x / (x.norm(dim=(-2, -1), keepdim=True) + 1e-7)
+    X = x / (x.norm(dim=(-2, -1), keepdim=True).clamp_min(1e-7))
 
     # Perform the NS iterations
     for i in range(steps):
