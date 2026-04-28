@@ -150,12 +150,12 @@ class TestMuonUtils(parameterized.TestCase):
             rtol=1e-6,
         )
 
-    @parameterized.parameters(
-        (512, 512),
-        (512, 256),
-        (256, 512),
+    @parameterized.product(
+        size=[(512, 512), (512, 256), (256, 512)],
+        coefficient_type=["polar_express", "deepseekv4"],
     )
-    def test_polar_express_better_than_quintic(self, dim1, dim2):
+    def test_polar_express_and_deepseekv4better_than_quintic(self, size, coefficient_type):
+        dim1, dim2 = size
         # Create a matrix with terrible condition number
         min_dim = min(dim1, dim2)
 
@@ -175,7 +175,7 @@ class TestMuonUtils(parameterized.TestCase):
 
         # Compare polar express vs quintic Newton-Schulz methods
         out_svd = (u @ v.T).float()
-        out_polar_express = muon_utils.newton_schulz(x, steps=8, coefficient_type="polar_express")
+        out_polar_express = muon_utils.newton_schulz(x, steps=8, coefficient_type=coefficient_type)
         out_quintic = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
 
         l2_norm_diff_polar = torch.norm(out_polar_express.float() - out_svd.float(), p=2)
@@ -219,6 +219,19 @@ class TestMuonUtils(parameterized.TestCase):
         coeff.append(coeff[-1])
         out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
         torch.testing.assert_close(out_pe9, out_ref, atol=2e-6, rtol=1e-7)
+
+    @parameterized.parameters(
+        (511, 513),
+        (511, 257),
+        (257, 513),
+    )
+    def test_deepseekv4_close_to_reference(self, dim1, dim2):
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        out_dsv4 = muon_utils.newton_schulz(x, steps=10, coefficient_type="deepseekv4")
+
+        coeff = deepcopy(muon_utils._COEFFICIENT_SETS["deepseekv4"])
+        out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
+        torch.testing.assert_close(out_dsv4, out_ref, atol=2e-6, rtol=1e-7)
 
     @parameterized.parameters(
         (512, 512),
