@@ -30,7 +30,7 @@ from emerging_optimizers.utils import FP32MatmulPrecT
 
 _args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate used by the internal SGD.
-        momentum: The momentum used by the internal SGD, EMA style.
+        momentum: The momentum used by the internal SGD, EMA-style.
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
         nesterov: Whether to use Nesterov-style momentum in the internal SGD.
