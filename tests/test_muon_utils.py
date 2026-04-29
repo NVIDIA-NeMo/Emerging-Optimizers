@@ -261,16 +261,16 @@ class TestNewtonSchulz(parameterized.TestCase):
         out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
         torch.testing.assert_close(out_cans9, out_ref, atol=2e-6, rtol=1e-7)
 
-    def test_newton_schulz_1d_input_raises_value_error(self) -> None:
-        """Test that newton_schulz raises ValueError for 1D input."""
+    def test_newton_schulz_1d_input_raises_type_error(self) -> None:
+        """Test that newton_schulz raises TypeError for 1D input."""
         x = torch.randn(10, device=self.device, dtype=torch.float32)
-        with self.assertRaisesRegex(ValueError, "at least 2 dimensions"):
+        with self.assertRaisesRegex(TypeError, "must be 2d or 3d"):
             muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
 
-    def test_newton_schulz_non_fp32_raises_value_error(self) -> None:
-        """Test that newton_schulz raises ValueError for non-float32 input."""
+    def test_newton_schulz_non_fp32_raises_type_error(self) -> None:
+        """Test that newton_schulz raises TypeError for non-float32 input."""
         x = torch.randn(5, 7, device=self.device, dtype=torch.float64)
-        with self.assertRaisesRegex(ValueError, "float32.*float64"):
+        with self.assertRaisesRegex(TypeError, "float32.*float64"):
             muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
 
     def test_newton_schulz_custom_without_coefficients_raises_value_error(self) -> None:
@@ -284,6 +284,12 @@ class TestNewtonSchulz(parameterized.TestCase):
         x = torch.randn(5, 7, device=self.device, dtype=torch.float32)
         with self.assertRaisesRegex(ValueError, "Invalid coefficient type.*nonexistent"):
             muon_utils.newton_schulz(x, steps=5, coefficient_type="nonexistent")
+
+    def test_newton_schulz_use_syrk_with_3d_raises_type_error(self) -> None:
+        """Test that newton_schulz raises TypeError for 3D input with use_syrk=True."""
+        x = torch.randn(2, 4, 8, device=self.device, dtype=torch.float32)
+        with utils.fp32_matmul_precision("medium"), self.assertRaisesRegex(TypeError, "use_syrk does not support"):
+            muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic", use_syrk=True)
 
 
 class TestMuonUtils(parameterized.TestCase):
@@ -333,7 +339,7 @@ class TestMuonUtils(parameterized.TestCase):
             )
 
 
-class TestNewtonSchulzStepBatched(parameterized.TestCase):
+class TestBatchedNewtonSchulzStep(parameterized.TestCase):
     def setUp(self):
         self.device = FLAGS.device
         self.prev_precision = torch.get_float32_matmul_precision()

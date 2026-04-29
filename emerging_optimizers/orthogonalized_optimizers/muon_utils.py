@@ -155,7 +155,7 @@ def newton_schulz(
       - "custom": Custom coefficient sets.
 
     Arguments:
-        x: The tensor to be orthogonalized.
+        x: The tensor to be orthogonalized. Must be 2D ``(M, N)`` or 3D ``(B, M, N)`` (batched).
         steps: Number of Newton-Schulz iterations.
         coefficient_type: Type of coefficient set to use for the Newton-Schulz iteration.
         custom_coefficient_sets: Custom coefficient sets to use for the Newton-Schulz iteration.
@@ -169,9 +169,9 @@ def newton_schulz(
         The orthogonalization of x.
     """
     if x.ndim < 2 or x.ndim > 3:
-        raise ValueError(f"Input tensor x must be 2d or 3d (batched 2d), got {x.ndim}d")
+        raise TypeError(f"Input tensor x must be 2d or 3d (batched 2d), got {x.ndim}d")
     if x.dtype != torch.float32:
-        raise ValueError(f"Input tensor x must be in float32, got {x.dtype}")
+        raise TypeError(f"Input tensor x must be in float32, got {x.dtype}")
 
     # transpose tensor to perform whitening on the smaller dimension
     if transpose is None:
@@ -206,12 +206,12 @@ def newton_schulz(
         # NOTE: There is a small difference to calling FP32 I/O BF16 compute kernels because the final result
         # is converted to BF16 before converting back to FP32. The rest should be the same as long as epilogue
         # is always in FP32.
-        X = X.to(torch.bfloat16)
-        logging.log_first_n(logging.INFO, "Using BF16 I/O kernels for Newton-Schulz iteration.", 1)
         if use_syrk:
             if X.ndim > 2:
                 raise TypeError("use_syrk does not support N-d input.")
             ns_step_fn = newton_schulz_step_tsyrk
+        X = X.to(torch.bfloat16)
+        logging.log_first_n(logging.INFO, "Using BF16 I/O kernels for Newton-Schulz iteration.", 1)
 
     for a, b, c in coeff_iter:
         X = ns_step_fn(X, a, b, c, tp_group=tp_group)
@@ -323,14 +323,14 @@ def newton_schulz_step(
 def batched_newton_schulz_step(
     X: torch.Tensor, a: float, b: float, c: float, tp_group: torch.distributed.ProcessGroup | None = None
 ) -> torch.Tensor:
-    """Perform a single Newton-Schulz iteration step on a batched batched (3d) input.
+    """Perform a single Newton-Schulz iteration step on a batched (3d) input.
 
     Equivalent to :func:`newton_schulz_step` but accepts ``X`` of shape ``(B, M, N)`` and applies the
     iteration independently to each batch element via :func:`torch.baddbmm`.
 
     Note:
-        A standalone function is created for 3d because :func:`torch.baddbmm` may not select the same kernel for 2d
-        input as :func:`torch.addmm` can cause mismatches.
+        This standalone function is created for 3d because :func:`torch.baddbmm`may not select the same kernel for 2d
+        input as :func:`torch.addmm`, which may cause mismatches.
 
     Arguments:
         X: The batched tensor to be orthogonalized, shape ``(B, M, N)``.
