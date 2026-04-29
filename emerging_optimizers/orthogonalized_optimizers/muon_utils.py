@@ -199,7 +199,7 @@ def newton_schulz(
     iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in repeat_last_types else "cycle"
     coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
-    ns_step_fn = newton_schulz_step
+    ns_step_fn = newton_schulz_step if X.ndim == 2 else newton_schulz_step_batched
     # Perform the NS iterations
     if torch.get_float32_matmul_precision() == "medium":
         # PyTorch doesn't really have FP32 I/O BF16 compute kernels for precision "medium"
@@ -210,6 +210,8 @@ def newton_schulz(
         X = X.to(torch.bfloat16)
         logging.log_first_n(logging.INFO, "Using BF16 I/O kernels for Newton-Schulz iteration.", 1)
         if use_syrk:
+            if X.ndim > 2:
+                raise TypeError("use_syrk does not support N-d input.")
             ns_step_fn = newton_schulz_step_tsyrk
 
     for a, b, c in coeff_iter:

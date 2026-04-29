@@ -69,7 +69,7 @@ def newton_schulz_ref(x: torch.Tensor, coefficient_sets: list[tuple[float, float
     return X
 
 
-class TestMuonUtils(parameterized.TestCase):
+class TestNewtonSchulz(parameterized.TestCase):
     def setUp(self):
         self.prev_precision = torch.get_float32_matmul_precision()
         torch.set_float32_matmul_precision("highest")
@@ -119,6 +119,19 @@ class TestMuonUtils(parameterized.TestCase):
             atol=1e-6,
             rtol=1e-7,
         )
+
+    @parameterized.parameters(
+        (2, 256, 256),
+        (4, 128, 256),
+        (3, 256, 128),
+    )
+    def test_newtonschulz_3d_input_closes_to_per_slice(self, batch, dim1, dim2):
+        x = torch.randint(-3, 4, (batch, dim1, dim2), device=self.device, dtype=torch.float32)
+        out_3d = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
+        out_per_slice = torch.stack(
+            [muon_utils.newton_schulz(x[i], steps=5, coefficient_type="quintic") for i in range(batch)]
+        )
+        torch.testing.assert_close(out_3d, out_per_slice, atol=1e-6, rtol=0)
 
     @parameterized.parameters(
         (511, 513),
@@ -189,22 +202,6 @@ class TestMuonUtils(parameterized.TestCase):
             l2_norm_diff_quintic,
             f"{coefficient_type} norm is larger than Quintic norm: {l2_norm_diff_polar:.6f} > {l2_norm_diff_quintic:.6f}",
         )
-
-    @parameterized.product(
-        size_pairs=[(512, 512), (512, 256), (256, 512), (97, 37), (37, 97)],
-        mode=["shape_scaling", "spectral", "unit_rms_norm"],
-    )
-    def test_get_scale_factor(self, size_pairs, mode):
-        size_out, size_in = size_pairs
-        scale = muon.get_muon_scale_factor(size_out, size_in, mode)
-        if mode == "shape_scaling":
-            self.assertEqual(scale, math.sqrt(max(1, size_out / size_in)))
-        elif mode == "spectral":
-            self.assertEqual(scale, math.sqrt(max(size_out, size_in)))
-        elif mode == "unit_rms_norm":
-            self.assertEqual(scale, math.sqrt(size_out / size_in))
-        else:
-            raise ValueError(f"Invalid mode: {mode}")
 
     @parameterized.parameters(
         (511, 513),
@@ -287,6 +284,27 @@ class TestMuonUtils(parameterized.TestCase):
         x = torch.randn(5, 7, device=self.device, dtype=torch.float32)
         with self.assertRaisesRegex(ValueError, "Invalid coefficient type.*nonexistent"):
             muon_utils.newton_schulz(x, steps=5, coefficient_type="nonexistent")
+
+
+class TestMuonUtils(parameterized.TestCase):
+    def setUp(self):
+        self.device = FLAGS.device
+
+    @parameterized.product(
+        size_pairs=[(512, 512), (512, 256), (256, 512), (97, 37), (37, 97)],
+        mode=["shape_scaling", "spectral", "unit_rms_norm"],
+    )
+    def test_get_scale_factor(self, size_pairs, mode):
+        size_out, size_in = size_pairs
+        scale = muon.get_muon_scale_factor(size_out, size_in, mode)
+        if mode == "shape_scaling":
+            self.assertEqual(scale, math.sqrt(max(1, size_out / size_in)))
+        elif mode == "spectral":
+            self.assertEqual(scale, math.sqrt(max(size_out, size_in)))
+        elif mode == "unit_rms_norm":
+            self.assertEqual(scale, math.sqrt(size_out / size_in))
+        else:
+            raise ValueError(f"Invalid mode: {mode}")
 
     def test_get_coefficient_iterator_empty_raises_value_error(self) -> None:
         """Test that get_coefficient_iterator raises ValueError for empty coefficient_sets."""
