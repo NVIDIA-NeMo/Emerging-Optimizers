@@ -125,7 +125,7 @@ class TestNewtonSchulz(parameterized.TestCase):
         (4, 128, 256),
         (3, 256, 128),
     )
-    def test_newtonschulz_3d_input_closes_to_per_slice(self, batch, dim1, dim2):
+    def test_newtonschulz_3d_input_close_to_per_slice(self, batch, dim1, dim2):
         x = torch.randint(-3, 4, (batch, dim1, dim2), device=self.device, dtype=torch.float32)
         out_3d = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
         out_per_slice = torch.stack(
