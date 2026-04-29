@@ -167,7 +167,7 @@ jobs:
             runner: ${{ needs.pre-flight.outputs.runner_prefix }}
             timeout: 30
           - script: L0_Tests_CPU
-            runner: linux-amd64-cpu16
+            runner: ${{ needs.pre-flight.outputs.runner_prefix }}
             timeout: 30
             cpu-only: true
     needs: [pre-flight, cicd-container-build]
