@@ -55,7 +55,7 @@ jobs:
           echo "Running CI tests"
 
   cicd-container-build:
-    uses: ./.github/workflows/_build_container.yml
+    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_build_container.yml@v0.94.1
     needs: [pre-flight, cicd-wait-in-queue]
     if: |
       (
@@ -67,7 +67,10 @@ jobs:
     with:
       image-name: emerging-optimizers
       dockerfile: docker/Dockerfile.ci
+      image-label: emerging-optimizers
+      use-inline-cache: false
       runner: ${{ needs.pre-flight.outputs.runner_prefix }}
+      registry: 766267172432.dkr.ecr.us-east-1.amazonaws.com
 
   cicd-unit-tests:
     strategy:
