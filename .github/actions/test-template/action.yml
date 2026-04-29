@@ -62,7 +62,7 @@ runs:
     - name: Docker pull image
       shell: bash
       run: |
-        docker pull ${inputs.registry}/${{ inputs.image }}:${{ github.run_id }}
+        docker pull ${{ inputs.registry }}/${{ inputs.image }}:${{ github.run_id }}
 
     - name: Checkout repository
       uses: actions/checkout@v6
