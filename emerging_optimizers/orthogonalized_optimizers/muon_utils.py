@@ -168,9 +168,8 @@ def newton_schulz(
     Returns:
         The orthogonalization of x.
     """
-    # Muon is not for 1d parameters
-    if x.ndim < 2:
-        raise ValueError("Input tensor x must have at least 2 dimensions since Muon is not for 1d parameters.")
+    if x.ndim < 2 or x.ndim > 3:
+        raise ValueError(f"Input tensor x must be 2d or 3d (batched 2d), got {x.ndim}d")
     if x.dtype != torch.float32:
         raise ValueError(f"Input tensor x must be in float32, got {x.dtype}")
 
@@ -199,7 +198,7 @@ def newton_schulz(
     iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in repeat_last_types else "cycle"
     coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
-    ns_step_fn = newton_schulz_step if X.ndim == 2 else newton_schulz_step_batched
+    ns_step_fn = newton_schulz_step if X.ndim == 2 else batched_newton_schulz_step
     # Perform the NS iterations
     if torch.get_float32_matmul_precision() == "medium":
         # PyTorch doesn't really have FP32 I/O BF16 compute kernels for precision "medium"
@@ -321,13 +320,17 @@ def newton_schulz_step(
     return X
 
 
-def newton_schulz_step_batched(
+def batched_newton_schulz_step(
     X: torch.Tensor, a: float, b: float, c: float, tp_group: torch.distributed.ProcessGroup | None = None
 ) -> torch.Tensor:
-    """Perform a single Newton-Schulz iteration step on a batched ND input.
+    """Perform a single Newton-Schulz iteration step on a batched batched (3d) input.
 
     Equivalent to :func:`newton_schulz_step` but accepts ``X`` of shape ``(B, M, N)`` and applies the
     iteration independently to each batch element via :func:`torch.baddbmm`.
+
+    Note:
+        A standalone function is created for 3d because :func:`torch.baddbmm` may not select the same kernel for 2d
+        input as :func:`torch.addmm` can cause mismatches.
 
     Arguments:
         X: The batched tensor to be orthogonalized, shape ``(B, M, N)``.

@@ -353,7 +353,7 @@ class TestNewtonSchulzStepBatched(parameterized.TestCase):
         x = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=1e-7)
 
         a, b, c = 0.5, 1, 0.25
-        batched = muon_utils.newton_schulz_step_batched(x, a, b, c)
+        batched = muon_utils.batched_newton_schulz_step(x, a, b, c)
         per_item = torch.stack([muon_utils.newton_schulz_step(x[i], a, b, c) for i in range(batch)])
 
         torch.testing.assert_close(batched, per_item, atol=atol, rtol=0)
