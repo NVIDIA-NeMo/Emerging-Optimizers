@@ -32,13 +32,6 @@ on:
         default: 766267172432.dkr.ecr.us-east-1.amazonaws.com
         type: string
         description: "The registry to use for the build"
-    secrets:
-      AZURE_CLIENT_ID:
-        required: true
-      AZURE_TENANT_ID:
-        required: true
-      AZURE_SUBSCRIPTION_ID:
-        required: true
 
 jobs:
   pre-flight:

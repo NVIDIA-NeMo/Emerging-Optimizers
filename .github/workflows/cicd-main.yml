@@ -117,7 +117,7 @@ jobs:
 
   cicd-nightly-tests:
     needs: [pre-flight, cicd-container-build]
-    runs-on: ${{ needs.pre-flight.outputs.runner_prefix }}-gpu-x2
+    runs-on: ${{ needs.pre-flight.outputs.runner_prefix }}
     name: L1_Tests_GPU
     environment: nemo-ci
     if: |
@@ -138,11 +138,7 @@ jobs:
           timeout: 60
           is_unit_test: "true"
           image: emerging_optimizers
-          has-azure-credentials: "true"
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          runner: ${{ needs.pre-flight.outputs.runner_prefix }}-gpu-x2
+          runner: ${{ needs.pre-flight.outputs.runner_prefix }}
 
       - name: Upload Test Results
         if: always()
