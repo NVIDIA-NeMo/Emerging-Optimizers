@@ -21,8 +21,6 @@ from typing import Any
 
 import torch
 from absl import app, flags
-from transformer_engine.pytorch.newton_schulz import CusolverMpCtx
-from transformer_engine.pytorch.newton_schulz import newton_schulz as te_newton_schulz
 
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schulz_tp
 from emerging_optimizers.utils import fp32_matmul_precision
@@ -87,6 +85,7 @@ def main(_: Any) -> None:
     x = torch.randn(local_shape, device=device, dtype=torch.float32)
 
     te_ctx = None
+    te_newton_schulz = None
     x_init = None
     if FLAGS.backend == "te":
         if device.type != "cuda":
@@ -95,6 +94,9 @@ def main(_: Any) -> None:
             raise ValueError("--backend=te requires WORLD_SIZE > 1.")
         if partition_dim != 1:
             raise ValueError("--backend=te requires --partition_dim=1 (column-distributed). UNVERIFIED.")
+        from transformer_engine.pytorch.newton_schulz import CusolverMpCtx
+        from transformer_engine.pytorch.newton_schulz import newton_schulz as te_newton_schulz
+
         te_ctx = CusolverMpCtx(tp_group)
         x_init = x.clone()
 
