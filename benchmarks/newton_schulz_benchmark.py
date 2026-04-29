@@ -83,10 +83,12 @@ def main(_: Any) -> None:
             raise ValueError(f"Shape {matrix_shape} is not divisible by tp_size={tp_size} on dim {partition_dim}.")
         local_shape[partition_dim] //= tp_size
     x = torch.randn(local_shape, device=device, dtype=torch.float32)
+    # Save the initial random state so every benchmark pass starts from the same input.
+    # Required for the te backend (in-place orthogonalization); harmless for emerging.
+    x_init = x.clone()
 
     te_ctx = None
     te_newton_schulz = None
-    x_init = None
     if FLAGS.backend == "te":
         if device.type != "cuda":
             raise ValueError("--backend=te requires --device=cuda.")
@@ -98,7 +100,6 @@ def main(_: Any) -> None:
         from transformer_engine.pytorch.newton_schulz import newton_schulz as te_newton_schulz
 
         te_ctx = CusolverMpCtx(tp_group)
-        x_init = x.clone()
 
     def run() -> None:
         if te_ctx is not None:
@@ -136,14 +137,12 @@ def main(_: Any) -> None:
     step_times: list[float] = []
     with fp32_matmul_precision(FLAGS.matmul_precision), torch.no_grad():
         for _ in range(FLAGS.warmup_steps):
-            if x_init is not None:
-                x.copy_(x_init)
+            x.copy_(x_init)
             run()
         sync()
 
         for _ in range(FLAGS.benchmark_steps):
-            if x_init is not None:
-                x.copy_(x_init)
+            x.copy_(x_init)
             sync()
             t0 = time.perf_counter()
             run()
