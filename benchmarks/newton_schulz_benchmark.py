@@ -151,6 +151,8 @@ def main(_: Any) -> None:
             run()
         sync()
 
+        if device.type == "cuda":
+            torch.cuda.profiler.start()
         for _ in range(FLAGS.benchmark_steps):
             x.copy_(x_init)
             sync()
@@ -158,6 +160,8 @@ def main(_: Any) -> None:
             run()
             sync()
             step_times.append((time.perf_counter() - t0) * 1000)
+        if device.type == "cuda":
+            torch.cuda.profiler.stop()
 
     if is_rank0:
         avg_ms = sum(step_times) / len(step_times)
