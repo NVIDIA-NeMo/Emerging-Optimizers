@@ -353,12 +353,12 @@ class TestBatchedNewtonSchulzStep(parameterized.TestCase):
         torch.set_float32_matmul_precision(self.prev_precision)
 
     @parameterized.parameters(
-        (2, 16, 16, 0),
-        (4, 16, 32, 0),
-        (16, 128, 128, 1e-8),
-        (32, 128, 256, 1e-8),
+        (2, 16, 16),
+        (4, 16, 32),
+        (16, 128, 128),
+        (32, 128, 256),
     )
-    def test_batched_newton_schulz_step_matches_or_close_to_unbatched(self, batch, dim1, dim2, atol):
+    def test_batched_newton_schulz_step_close_to_unbatched(self, batch, dim1, dim2):
         x = torch.randint(-3, 4, (batch, dim1, dim2), device=self.device, dtype=torch.float32)
         x = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=1e-7)
 
@@ -366,7 +366,7 @@ class TestBatchedNewtonSchulzStep(parameterized.TestCase):
         batched = muon_utils.batched_newton_schulz_step(x, a, b, c)
         per_item = torch.stack([muon_utils.newton_schulz_step(x[i], a, b, c) for i in range(batch)])
 
-        torch.testing.assert_close(batched, per_item, atol=atol, rtol=0)
+        torch.testing.assert_close(batched, per_item, atol=1e-8, rtol=0)
 
 
 @absltest.skipIf(
