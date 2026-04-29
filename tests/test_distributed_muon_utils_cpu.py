@@ -59,6 +59,24 @@ class DistributedNewtonSchulzStepCpuTest(parameterized.TestCase):
 
         torch.testing.assert_close(ref_out.chunk(world_size, dim=1)[rank], dist_out)
 
+    @parameterized.parameters(
+        {"shape": (3, 21, 16)},
+        {"shape": (4, 16, 32)},
+    )
+    def test_batched_close_to_non_distributed(self, shape):
+        x = torch.nn.functional.normalize(torch.randint(-5, 5, shape, device="cpu", dtype=torch.float32), dim=(-2, -1))
+        # All-reduce ensures that every rank gets the same x
+        torch.distributed.all_reduce(x, op=torch.distributed.ReduceOp.SUM)
+
+        world_size = torch.distributed.get_world_size()
+        rank = torch.distributed.get_rank()
+        local_x = x.chunk(world_size, dim=-1)[rank]
+
+        dist_out = muon_utils.batched_newton_schulz_step(local_x, *self.coefs, tp_group=torch.distributed.group.WORLD)
+        ref_out = muon_utils.batched_newton_schulz_step(x, *self.coefs)
+
+        torch.testing.assert_close(ref_out.chunk(world_size, dim=-1)[rank], dist_out)
+
     @absltest.skipIf(int(os.environ.get("WORLD_SIZE", 1)) < 4, "test requires at least 2 ranks")
     @parameterized.product(
         shape=((21, 16), (16, 32)),

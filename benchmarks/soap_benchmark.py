@@ -81,6 +81,7 @@ def main(_: Any) -> None:
     print(f"Benchmarking ({benchmark_steps} steps)...")
 
     step_times: list[float] = []
+    torch.cuda.profiler.start()
     for _ in range(benchmark_steps):
         torch.cuda.synchronize()
         t0 = time.perf_counter()
@@ -88,6 +89,7 @@ def main(_: Any) -> None:
         torch.cuda.synchronize()
         elapsed_ms = (time.perf_counter() - t0) * 1000
         step_times.append(elapsed_ms)
+    torch.cuda.profiler.stop()
 
     avg_ms = sum(step_times) / len(step_times)
     min_ms = min(step_times)
