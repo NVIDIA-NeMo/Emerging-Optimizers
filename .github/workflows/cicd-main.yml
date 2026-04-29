@@ -71,6 +71,7 @@ jobs:
       use-inline-cache: false
       runner: ${{ needs.pre-flight.outputs.runner_prefix }}
       registry: 766267172432.dkr.ecr.us-east-1.amazonaws.com
+      enable-pull-cache: false
 
   cicd-unit-tests:
     strategy:
