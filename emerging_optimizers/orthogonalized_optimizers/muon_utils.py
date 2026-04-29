@@ -329,8 +329,8 @@ def batched_newton_schulz_step(
     iteration independently to each batch element via :func:`torch.baddbmm`.
 
     Note:
-        This standalone function is created for 3d because :func:`torch.baddbmm`may not select the same kernel for 2d
-        input as :func:`torch.addmm`, which may cause mismatches.
+        This standalone function is created for 3d because :func:`torch.baddbmm` may not select the same kernel for
+        2d input as :func:`torch.addmm`, which may cause mismatches.
 
     Arguments:
         X: The batched tensor to be orthogonalized, shape ``(B, M, N)``.

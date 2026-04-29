@@ -261,9 +261,13 @@ class TestNewtonSchulz(parameterized.TestCase):
         out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
         torch.testing.assert_close(out_cans9, out_ref, atol=2e-6, rtol=1e-7)
 
-    def test_newton_schulz_1d_input_raises_type_error(self) -> None:
-        """Test that newton_schulz raises TypeError for 1D input."""
-        x = torch.randn(10, device=self.device, dtype=torch.float32)
+    @parameterized.parameters(
+        ((10,),),
+        ((2, 3, 4, 5),),
+    )
+    def test_newton_schulz_wrong_input_shape_raises_type_error(self, shape) -> None:
+        """Test that newton_schulz raises TypeError for non-2D/3D input."""
+        x = torch.randn(*shape, device=self.device, dtype=torch.float32)
         with self.assertRaisesRegex(TypeError, "must be 2d or 3d"):
             muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
 
@@ -354,7 +358,7 @@ class TestBatchedNewtonSchulzStep(parameterized.TestCase):
         (16, 128, 128, 1e-8),
         (32, 128, 256, 1e-8),
     )
-    def test_batch_newton_schulz_step_matches_or_close_to_unbatched(self, batch, dim1, dim2, atol):
+    def test_batched_newton_schulz_step_matches_or_close_to_unbatched(self, batch, dim1, dim2, atol):
         x = torch.randint(-3, 4, (batch, dim1, dim2), device=self.device, dtype=torch.float32)
         x = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=1e-7)
 
