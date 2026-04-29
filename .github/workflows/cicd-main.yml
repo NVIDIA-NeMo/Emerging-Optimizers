@@ -190,7 +190,7 @@ jobs:
           script: ${{ matrix.script }}
           timeout: ${{ matrix.timeout || 10 }}
           is_unit_test: "true"
-          image: emerging-optimizers
+          container-image: ${{ needs.pre-flight.outputs.registry }}/emerging-optimizers:${{ github.sha }}
           cpu-only: ${{ matrix.cpu-only || false }}
           test-data-path: ${{ needs.pre-flight.outputs.test_data_path }}
           runner: ${{ matrix.runner }}
@@ -226,7 +226,7 @@ jobs:
           script: L1_Tests_GPU
           timeout: 60
           is_unit_test: "true"
-          image: emerging-optimizers
+          container-image: ${{ needs.pre-flight.outputs.registry }}/emerging-optimizers:${{ github.sha }}
           runner: ${{ needs.pre-flight.outputs.runner_prefix }}
           test-data-path: ${{ needs.pre-flight.outputs.test_data_path }}
 
