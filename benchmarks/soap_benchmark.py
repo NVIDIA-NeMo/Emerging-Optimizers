@@ -32,7 +32,8 @@ flags.DEFINE_integer("num_streams", None, "Number of CUDA streams for SOAP. None
 
 def main(_: Any) -> None:
     """Run the SOAP benchmark."""
-    assert torch.cuda.is_available(), "CUDA is required for this benchmark."
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is required for this benchmark.")
     device = torch.device("cuda")
 
     dtype_map = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}
@@ -53,7 +54,7 @@ def main(_: Any) -> None:
     print("\nModel configuration:")
     print(f"  Layers           : {num_layers}")
     print(f"  Experts per layer: {num_experts}")
-    print(f"  Total parameters : {total_params:,} ({total_params * dtype.itemsize / 1e9:.2f} GB)")
+    print(f"  Total parameters : {total_params:,} ({total_params * dtype.itemsize / 1024**3:.2f} GiB)")
     print(f"  Num tensors      : {len(params)}")
     print(f"  Param dtype      : {dtype}")
     print_shape_breakdown(shape_counts)
@@ -100,8 +101,8 @@ def main(_: Any) -> None:
     print(f"  Min            : {min_ms:.2f} ms")
     print(f"  Max            : {max_ms:.2f} ms")
 
-    peak_mem = torch.cuda.max_memory_allocated(device) / (1024**3)
-    print(f"  Peak GPU mem   : {peak_mem:.2f} GB")
+    peak_mem = torch.cuda.max_memory_allocated(device) / 1024**3
+    print(f"  Peak GPU mem   : {peak_mem:.2f} GiB")
     print("=" * 70)
 
 
