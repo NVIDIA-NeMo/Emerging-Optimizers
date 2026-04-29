@@ -115,7 +115,7 @@ jobs:
                 }
               }
             }' | jq -r '.data.repository.pullRequests.nodes[].number' | while read -r number; do
-              echo "type=registry,ref=${{ matrix.registry }}/megatron-bridge:$number-buildcache,mode=max"
+              echo "type=registry,ref=${{ needs.pre-flight.outputs.registry }}/emerging-optimizers:$number-buildcache,mode=max"
             done)
 
           echo "LAST_PRS<<EOF" | tee -a $GITHUB_OUTPUT
