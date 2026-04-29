@@ -27,6 +27,11 @@ on:
         default: linux-amd64-gpu-rtxa6000-latest-2-nemo
         type: string
         description: "The runner to use for the build"
+      registry:
+        required: false
+        default: 766267172432.dkr.ecr.us-east-1.amazonaws.com
+        type: string
+        description: "The registry to use for the build"
     secrets:
       AZURE_CLIENT_ID:
         required: true
@@ -67,7 +72,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
   build:
-    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_build_container.yml@v0.29.0
+    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_build_container.yml@v0.94.1
     needs: [pre-flight]
     with:
       image-name: ${{ inputs.image-name }}
@@ -76,8 +81,4 @@ jobs:
       prune-filter-timerange: 24h
       use-inline-cache: false
       runner: ${{ inputs.runner }}
-      has-azure-credentials: true
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      registry: ${{ inputs.registry }}
