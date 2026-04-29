@@ -173,7 +173,6 @@ jobs:
     needs: [pre-flight, cicd-container-build]
     runs-on: ${{ matrix.runner }}
     name: ${{ matrix.script }}
-    environment: nemo-ci
     if: |
       (
         success()
@@ -208,15 +207,14 @@ jobs:
     needs: [pre-flight, cicd-container-build]
     runs-on: ${{ needs.pre-flight.outputs.runner_prefix }}
     name: L1_Tests_GPU
-    environment: nemo-ci
-    if: |
-      github.event_name == 'schedule'
-      && (
-        success()
-        || needs.pre-flight.outputs.is_ci_workload == 'true'
-        || needs.pre-flight.outputs.force_run_all == 'true'
-      )
-      && !cancelled()
+    # if: |
+    #   github.event_name == 'schedule'
+    #   && (
+    #     success()
+    #     || needs.pre-flight.outputs.is_ci_workload == 'true'
+    #     || needs.pre-flight.outputs.force_run_all == 'true'
+    #   )
+    #   && !cancelled()
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -398,7 +396,6 @@ jobs:
       )
       && needs.pre-flight.outputs.is_ci_workload == 'false'
       && !cancelled()
-    environment: nemo-ci
     steps:
       - name: Generate fake coverage report
         uses: actions/github-script@v8
