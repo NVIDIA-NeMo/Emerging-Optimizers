@@ -89,11 +89,6 @@ jobs:
           submodules: recursive
           ref: ${{ steps.sha.outputs.main }}
 
-      - name: Setup python
-        uses: actions/setup-python@v6
-        with:
-          python-version: 3.12
-
       - name: Install GH CLI
         shell: bash
         run: |
@@ -150,7 +145,7 @@ jobs:
           file: ./docker/Dockerfile.ci
           push: true
           context: .
-          platforms: platforms=linux/amd64
+          platforms: linux/amd64
           cache-from: |
             type=registry,ref=${{ needs.pre-flight.outputs.registry }}/emerging-optimizers:${{ steps.cache_keys.outputs.key }}-buildcache,mode=max
             type=registry,ref=${{ needs.pre-flight.outputs.registry }}/emerging-optimizers:main-buildcache,mode=max
