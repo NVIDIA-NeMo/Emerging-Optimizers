@@ -37,6 +37,8 @@ jobs:
       non_nvidia_runner_prefix: nemo-ci-aws-gpu-x2-ephemeral
       default_test_data_path: /mnt/datadrive/TestData/nemo-fw/TestData
       non_nvidia_test_data_path: /mnt/datadrive/TestData/nemo-fw/TestData
+      default_registry: 766267172432.dkr.ecr.us-east-1.amazonaws.com
+      non_nvidia_registry: 766267172432.dkr.ecr.us-east-1.amazonaws.com
       sso_users_filename: ${{ vars.SSO_USERS_FILENAME }}
     secrets:
       NVIDIA_MANAGEMENT_ORG_PAT: ${{ secrets.NVIDIA_MANAGEMENT_ORG_PAT }}
@@ -137,7 +139,7 @@ jobs:
             KEY="$BRANCH_SANITIZED"
           fi
           echo "key=$KEY" | tee -a "$GITHUB_OUTPUT"
-          echo "cache-to=type=registry,ref=${{ matrix.registry }}/megatron-bridge:${KEY}-buildcache,mode=max" | tee -a "$GITHUB_OUTPUT"
+          echo "cache-to=type=registry,ref=${{ needs.pre-flight.outputs.registry }}/emerging-optimizers:${KEY}-buildcache,mode=max" | tee -a "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v5
