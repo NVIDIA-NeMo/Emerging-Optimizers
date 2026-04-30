@@ -33,7 +33,7 @@ jobs:
   pre-flight:
     uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_cicd_preflight.yml@v0.80.1
     with:
-      default_runner_prefix: nemo-ci-aws-gpu-x2-ephemeral
+      default_runner_prefix: nemo-ci-aws-gpu-x2
       non_nvidia_runner_prefix: nemo-ci-aws-gpu-x2-ephemeral
       default_test_data_path: /mnt/datadrive/TestData/nemo-fw/TestData
       non_nvidia_test_data_path: /mnt/datadrive/TestData/nemo-fw/TestData
@@ -207,14 +207,14 @@ jobs:
     needs: [pre-flight, cicd-container-build]
     runs-on: ${{ needs.pre-flight.outputs.runner_prefix }}
     name: L1_Tests_GPU
-    # if: |
-    #   github.event_name == 'schedule'
-    #   && (
-    #     success()
-    #     || needs.pre-flight.outputs.is_ci_workload == 'true'
-    #     || needs.pre-flight.outputs.force_run_all == 'true'
-    #   )
-    #   && !cancelled()
+    if: |
+      github.event_name == 'schedule'
+      && (
+        success()
+        || needs.pre-flight.outputs.is_ci_workload == 'true'
+        || needs.pre-flight.outputs.force_run_all == 'true'
+      )
+      && !cancelled()
     steps:
       - name: Checkout
         uses: actions/checkout@v6
