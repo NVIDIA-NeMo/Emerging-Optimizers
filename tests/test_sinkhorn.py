@@ -77,7 +77,10 @@ class TestSinkhornMapper(parameterized.TestCase):
         (13, 9),
     )
     def test_output_is_almost_doubly_stochastic_with_integer_input(self, num_rows, num_cols):
-        """With integer inputs and sufficient iterations, output should be exactly doubly stochastic."""
+        """
+        With integer inputs and sufficient iterations, output should be doubly stochastic only with some noise
+        around 0.
+        """
         # Use integer inputs to get exact results
         x = torch.randint(1, 10, (num_rows, num_cols), device=FLAGS.device, dtype=torch.float32)
         x = SinkhornMapper(num_iters=100)(x)
