@@ -12,7 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Callable, Literal, overload, override
+from typing import TYPE_CHECKING, Callable, Literal, override
+
+
+if TYPE_CHECKING:
+    from typing import overload
 
 import torch
 from torch.optim.optimizer import ParamsT
@@ -42,9 +46,9 @@ class AdaptiveMuon(muon.Muon):
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups.
         lr: Learning rate.
-        momentum_beta: The exponential decay rate for momentum.
+        momentum: The exponential decay rate for momentum.
         weight_decay: Weight decay coefficient.
-        use_nesterov: Whether to use Nesterov momentum.
+        nesterov: Whether to use Nesterov momentum.
         weight_decay_method: The weight decay method to use.
         fp32_matmul_prec: Precision for FP32 matrix multiplication.
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration.
@@ -64,10 +68,10 @@ class AdaptiveMuon(muon.Muon):
         self,
         params: ParamsT,
         lr: float,
-        momentum_beta: float,
+        momentum: float,
         weight_decay: float,
         *,
-        use_nesterov: bool,
+        nesterov: bool,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         fp32_matmul_prec: FP32MatmulPrecT,
         coefficient_type: NSCoeffT = "quintic",
@@ -82,9 +86,9 @@ class AdaptiveMuon(muon.Muon):
         super().__init__(
             params,
             lr=lr,
-            momentum_beta=momentum_beta,
+            momentum=momentum,
             weight_decay=weight_decay,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
             coefficient_type=coefficient_type,
@@ -99,40 +103,50 @@ class AdaptiveMuon(muon.Muon):
             group.setdefault("beta2", beta2)
             group.setdefault("eps", eps)
 
-    def _initialize_moment2(
+    @torch.no_grad()  # type: ignore[misc]
+    @override
+    def _init_group(
         self,
-        state: dict[str, torch.Tensor],
-        grad: torch.Tensor,
+        group: dict,
+        skip_non_grad_params: bool = True,
     ) -> None:
-        """Initialize the second moment buffer if it doesn't exist.
+        """Performs lazy state initialization for parameters.
 
-        The shape of the buffer depends on the moment2_method:
-        - "adamuon": Full elementwise buffer with same shape as grad
+        Extends the base class to also initialize the second moment buffer.
+        The shape of the moment2 buffer depends on the moment2_method:
+        - "adamuon": Full elementwise buffer with same shape as parameter
         - "normuon": Reduced shape buffer (averaged along -1 if shape[-2] >= shape[-1], else -2)
         - "namo": Scalar buffer (EMA of squared Frobenius norm of gradient)
 
         Args:
-            state: The optimizer state dict for a parameter.
-            grad: The gradient tensor (used for shape/dtype).
+            group: Parameter group dictionary.
+            skip_non_grad_params: If True, skip parameters without gradients.
         """
-        if "moment2_buffer" not in state:
-            if self.moment2_method == "adamuon":
-                # Full elementwise second moment
-                moment2 = torch.zeros_like(grad)
-            elif self.moment2_method == "normuon":
-                # Row/column-wise second moment - reduced along one dimension
-                # Determine which dimension to reduce based on parameter shape
-                avg_dim = -1 if grad.shape[-2] >= grad.shape[-1] else -2
-                # Specify the shape with reduced dimension
-                moment2_shape = list(grad.shape)
-                moment2_shape[avg_dim] = 1
-                moment2 = torch.zeros(moment2_shape, dtype=grad.dtype, device=grad.device)
-            elif self.moment2_method == "namo":
-                moment2 = torch.zeros(1, dtype=grad.dtype, device=grad.device)
-            else:
-                raise TypeError(f"Invalid second moment method: {self.moment2_method}")
+        for p in group["params"]:
+            if skip_non_grad_params and p.grad is None:
+                continue
+            state = self.state[p]
 
-            state["moment2_buffer"] = moment2
+            if len(state) == 0:
+                state["momentum_buffer"] = torch.zeros_like(p.data)
+
+                if self.moment2_method == "adamuon":
+                    # Full elementwise second moment
+                    state["moment2_buffer"] = torch.zeros_like(p.data)
+                elif self.moment2_method == "normuon":
+                    # Row/column-wise second moment - reduced along one dimension
+                    if p.data.ndim != 2:
+                        raise ValueError(
+                            f"{self.__class__.__name__} only supports 2D parameters, got shape {tuple(p.data.shape)}"
+                        )
+                    avg_dim = -1 if p.data.shape[-2] >= p.data.shape[-1] else -2
+                    moment2_shape = list(p.data.shape)
+                    moment2_shape[avg_dim] = 1
+                    state["moment2_buffer"] = torch.zeros(moment2_shape, dtype=p.data.dtype, device=p.data.device)
+                elif self.moment2_method == "namo":
+                    state["moment2_buffer"] = torch.tensor(0.0, dtype=p.data.dtype, device=p.data.device)
+                else:
+                    raise TypeError(f"Invalid second moment method: {self.moment2_method}")
 
     def _apply_moment2_normalization(
         self,
@@ -213,11 +227,13 @@ class AdaptiveMuon(muon.Muon):
         else:
             raise TypeError(f"Invalid second moment method: {self.moment2_method}")
 
-    @overload
-    def step(self, closure: None = ...) -> None: ...
+    if TYPE_CHECKING:
 
-    @overload
-    def step(self, closure: Callable[[], float]) -> float: ...
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override
@@ -233,6 +249,8 @@ class AdaptiveMuon(muon.Muon):
             loss = closure()
 
         for group in self.param_groups:
+            self._init_group(group)
+
             for p in group["params"]:
                 if p.dim() != 2:
                     raise ValueError(f"{self.__class__.__name__} only supports 2D parameters")
@@ -240,10 +258,6 @@ class AdaptiveMuon(muon.Muon):
                 if grad is None:
                     continue
                 state = self.state[p]
-
-                if "momentum_buffer" not in state:
-                    state["momentum_buffer"] = torch.zeros_like(grad)
-                    self._initialize_moment2(state, grad)
 
                 exp_avg = state["momentum_buffer"]
 
@@ -257,10 +271,10 @@ class AdaptiveMuon(muon.Muon):
                 raw_grad = grad if self.moment2_method == "namo" else None
 
                 # update momentum buffer with EMA of gradient
-                exp_avg.lerp_(grad, 1 - group["momentum_beta"])
+                exp_avg.lerp_(grad, 1 - group["momentum"])
 
-                if self.use_nesterov:
-                    grad = grad.lerp(exp_avg, group["momentum_beta"])
+                if self.nesterov:
+                    grad = grad.lerp(exp_avg, group["momentum"])
                 else:
                     grad = exp_avg
 

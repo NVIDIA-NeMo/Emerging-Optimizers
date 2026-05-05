@@ -63,7 +63,7 @@ class Muon(OrthogonalizedOptimizer):
     Args:
         {_args_doc}
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration. Can be one of
-            ["simple", "quintic", "polar_express"].
+            ["simple", "quintic", "polar_express", "cans"].
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
         scale_mode: The type of scale factor to use for the update. Defaults to "spectral" style scaling.
         extra_scale_factor: The additional scale factor to use for the update. Setting it to 0.2 can closely match
@@ -75,10 +75,10 @@ class Muon(OrthogonalizedOptimizer):
         self,
         params: ParamsT,
         lr: float = 3e-4,
-        momentum_beta: float = 0.95,
+        momentum: float = 0.95,
         weight_decay: float = 0.01,
         *,
-        use_nesterov: bool = False,
+        nesterov: bool = False,
         weight_decay_method: WeightDecayT = "decoupled",
         fp32_matmul_prec: FP32MatmulPrecT = "medium",
         coefficient_type: NSCoeffT = "quintic",
@@ -121,8 +121,8 @@ class Muon(OrthogonalizedOptimizer):
         super().__init__(
             params,
             lr,
-            momentum_beta,
-            use_nesterov=use_nesterov,
+            momentum,
+            nesterov=nesterov,
             weight_decay=weight_decay,
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,

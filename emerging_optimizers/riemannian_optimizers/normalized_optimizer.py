@@ -12,13 +12,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Callable, overload, override
+from typing import TYPE_CHECKING, Callable, override
+
+
+if TYPE_CHECKING:
+    from typing import overload
 
 import torch
 from torch.optim.optimizer import Optimizer
 
+from emerging_optimizers import mixin as opt_mixin
+from emerging_optimizers import registry
 
-class ObliqueSGD(Optimizer):
+
+__all__ = ["ObliqueSGD", "ObliqueAdam"]
+
+
+@registry.register_optimizer("oblique_sgd")
+class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
     """SGD optimizer for row- or column-normalized 2D parameters on oblique manifolds.
 
     This optimizer performs SGD on oblique manifolds, where parameters are constrained
@@ -36,6 +47,7 @@ class ObliqueSGD(Optimizer):
         lr: learning rate
         momentum: momentum coefficient
         weight_decay: weight decay coefficient
+        weight_decay_method: Method to apply weight decay.
         dim: The dimension to normalize over
         eps: epsilon for numerical stability
     """
@@ -46,6 +58,7 @@ class ObliqueSGD(Optimizer):
         lr: float = 1e-3,
         momentum: float = 0.9,
         weight_decay: float = 0.0,
+        weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         dim: int = 0,
         eps: float = 1e-8,
     ) -> None:
@@ -63,13 +76,16 @@ class ObliqueSGD(Optimizer):
             dim=dim,
             eps=eps,
         )
+        self.weight_decay_method = weight_decay_method
         super().__init__(params, defaults)
 
-    @overload
-    def step(self, closure: None = ...) -> None: ...
+    if TYPE_CHECKING:
 
-    @overload
-    def step(self, closure: Callable[[], float]) -> float: ...
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override
@@ -103,10 +119,12 @@ class ObliqueSGD(Optimizer):
                 buf = state["momentum_buffer"]
 
                 # theory style momentum
-                buf = torch.add(grad, buf, alpha=mom)
+                torch.add(grad, buf, alpha=mom, out=buf)
 
-                # Apply Riemannian gradient update
-                _compute_riemannian_grad_and_update(param, buf, dim, lr, wd)
+                riem_grad = _compute_riemannian_grad(param, buf, dim)
+
+                self._apply_weight_decay_inplace(param, riem_grad, lr, wd)
+                param.add_(riem_grad, alpha=-lr)
 
                 # Retraction back to the manifold, the hyper-sphere
                 torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=eps, out=param)
@@ -114,7 +132,8 @@ class ObliqueSGD(Optimizer):
         return loss
 
 
-class ObliqueAdam(Optimizer):
+@registry.register_optimizer("oblique_adam")
+class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
     """Adam optimizer for row- or column-normalized 2D parameters on oblique manifolds.
 
     This optimizer adapts an Adam-like algorithm to work on oblique manifolds, where
@@ -128,6 +147,7 @@ class ObliqueAdam(Optimizer):
         lr: float = 1e-3,
         betas: tuple[float, float] = (0.9, 0.99),
         weight_decay: float = 0.0,
+        weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         dim: int = 0,
         eps: float = 1e-8,
         correct_bias: bool = True,
@@ -138,6 +158,7 @@ class ObliqueAdam(Optimizer):
             lr: The learning rate.
             betas: The coefficients used for computing running averages of gradient and its square.
             weight_decay: The weight decay coefficient.
+            weight_decay_method: Method to apply weight decay.
             dim: The dimension to normalize over.
             eps: The epsilon for numerical stability.
             correct_bias: Whether to correct bias in Adam-like computation.
@@ -159,13 +180,16 @@ class ObliqueAdam(Optimizer):
             eps=eps,
             correct_bias=correct_bias,
         )
+        self.weight_decay_method = weight_decay_method
         super().__init__(params, defaults)
 
-    @overload
-    def step(self, closure: None = ...) -> None: ...
+    if TYPE_CHECKING:
 
-    @overload
-    def step(self, closure: Callable[[], float]) -> float: ...
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override
@@ -224,8 +248,10 @@ class ObliqueAdam(Optimizer):
 
                 norm_grad = (exp_avg / bias_correction1) / (exp_avg_sq.sqrt() / bias_correction2 + eps)
 
-                # Apply Riemannian gradient update
-                _compute_riemannian_grad_and_update(param, norm_grad, dim, lr, wd)
+                riem_grad = _compute_riemannian_grad(param, norm_grad, dim)
+
+                self._apply_weight_decay_inplace(param, riem_grad, lr, wd)
+                param.add_(riem_grad, alpha=-lr)
 
                 # Retraction back to the manifold, i.e. the hyper-sphere
                 torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=eps, out=param)
@@ -233,24 +259,17 @@ class ObliqueAdam(Optimizer):
         return loss
 
 
-def _compute_riemannian_grad_and_update(
-    param: torch.Tensor, grad_like: torch.Tensor, dim: int, lr: float, wd: float
-) -> None:
-    """Compute Riemannian gradient for oblique manifold and update parameter in-place.
+def _compute_riemannian_grad(param: torch.Tensor, grad_like: torch.Tensor, dim: int) -> torch.Tensor:
+    """Compute the Riemannian gradient for the oblique manifold.
 
     Args:
         param: Parameter tensor (2D)
-        grad_like: Gradient-like tensor (momentum buffer or normalized gradient)
+        grad_like: Gradient-like tensor (momentum buffer or gradient)
         dim: The dimension to normalize over
-        lr: Learning rate
-        wd: Weight decay coefficient
+
+    Returns:
+        The tangent-space projected gradient.
     """
 
     inner = (param * grad_like).sum(dim=dim, keepdim=True)
-    riem_grad = torch.add(grad_like, param * inner, alpha=-1)
-
-    # Add decoupled weight decay
-    param.mul_(1 - lr * wd)
-
-    # Apply update in-place
-    param.add_(riem_grad, alpha=-lr)
+    return torch.add(grad_like, param * inner, alpha=-1)

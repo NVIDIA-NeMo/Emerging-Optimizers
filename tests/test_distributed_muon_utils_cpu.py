@@ -13,12 +13,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import sys
 
 import numpy as np
 import torch
+from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
+
+
+flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
+FLAGS = flags.FLAGS
+
+
+def setUpModule() -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(FLAGS.seed)
 
 
 class DistributedNewtonSchulzStepCpuTest(parameterized.TestCase):
@@ -167,9 +182,9 @@ class TestTensorParallelNewtonSchulz(parameterized.TestCase):
     @parameterized.product(
         shape=((20, 16), (16, 32)),
         partition_dim=(0, 1),
-        mode=("distributed", "duplicated"),
+        tp_mode=("distributed", "duplicated"),
     )
-    def test_1step_close_to_non_distributed(self, shape, partition_dim, mode):
+    def test_1step_close_to_non_distributed(self, shape, partition_dim, tp_mode):
         if shape[partition_dim] % torch.distributed.get_world_size() != 0:
             self.skipTest("Skipping because incompatible shape and world size")
         x = torch.randint(-5, 5, shape, device="cpu", dtype=torch.float32)
@@ -186,7 +201,7 @@ class TestTensorParallelNewtonSchulz(parameterized.TestCase):
             coefficient_type="simple",
             tp_group=torch.distributed.group.WORLD,
             partition_dim=partition_dim,
-            mode=mode,
+            tp_mode=tp_mode,
         )
 
         ref_out = muon_utils.newton_schulz(x, steps=1, coefficient_type="simple")
@@ -197,6 +212,17 @@ class TestTensorParallelNewtonSchulz(parameterized.TestCase):
 if __name__ == "__main__":
     torch.distributed.init_process_group(backend="gloo")
     torch.set_float32_matmul_precision("highest")
+
+    rank = torch.distributed.get_rank()
+
+    for i, arg in enumerate(sys.argv):
+        if arg.startswith("--xml_output_file="):
+            base, ext = os.path.splitext(arg)
+
+            # Attach rank to the output file name
+            sys.argv[i] = f"{base}_rank{rank}{ext}"
+            break
+
     absltest.main()
 
     torch.distributed.destroy_process_group()

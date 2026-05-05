@@ -45,7 +45,7 @@ class PolarGrad(OrthogonalizedOptimizer):
         - *PolarGrad: A Class of Matrix-Gradient Optimizers from a Unifying Preconditioning Perspective.* arXiv:2505.21799 (2025).
           [`arXiv:2505.21799 <https://arxiv.org/abs/2505.21799>`_]
         - Lau, T. T.-K. *PolarGrad Optimizer Implementation.*
-          [`GitHub <https://github.com/timlautk/polargrad/blob/main/polar_grad.py>`_]
+          [`polar_grad.py <https://github.com/timlautk/polargrad/blob/main/polar_grad.py>`_]
 
     Warning:
         - This optimizer requires that all parameters passed in are 2D.
@@ -55,7 +55,7 @@ class PolarGrad(OrthogonalizedOptimizer):
     Args:
         {_args_doc}
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration. Can be one of
-            ["simple", "quintic", "polar_express"].
+            ["simple", "quintic", "polar_express", "cans"].
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
         extra_scale_factor: The additional scale factor to use for the update. Setting it to 0.2 can closely match
             the update RMS norm of AdamW as suggested by https://arxiv.org/abs/2502.16982.
@@ -65,18 +65,19 @@ class PolarGrad(OrthogonalizedOptimizer):
         self,
         params: ParamsT,
         lr: float = 3e-4,
-        momentum_beta: float = 0.95,
+        momentum: float = 0.95,
         weight_decay: float = 0.01,
         *,
-        use_nesterov: bool = False,
+        nesterov: bool = False,
         weight_decay_method: WeightDecayT = "decoupled",
         fp32_matmul_prec: FP32MatmulPrecT = "highest",
         coefficient_type: NSCoeffT = "quintic",
         num_ns_steps: int = 5,
         extra_scale_factor: float = 1.0,
     ) -> None:
-        if num_ns_steps < 1:
-            raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
+        if num_ns_steps < 0:
+            # 0 NS steps is allowed for some tests to bypass Newton-Schulz iterations and have exact match.
+            raise ValueError(f"num_ns_steps must be positive, got {num_ns_steps}")
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
@@ -94,8 +95,8 @@ class PolarGrad(OrthogonalizedOptimizer):
         super().__init__(
             params,
             lr,
-            momentum_beta,
-            use_nesterov=use_nesterov,
+            momentum,
+            nesterov=nesterov,
             weight_decay=weight_decay,
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,

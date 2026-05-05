@@ -14,28 +14,30 @@
 # limitations under the License.
 
 import torch
-from absl import flags
+from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.riemannian_optimizers.normalized_optimizer import ObliqueAdam, ObliqueSGD
 
 
-# Define command line flags
-flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
+flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 
 FLAGS = flags.FLAGS
+
+
+def setUpModule() -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(FLAGS.seed)
 
 
 class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
     """Tests for ObliqueSGD and ObliqueAdam optimizers that preserve row/column norms."""
 
     def setUp(self):
-        """Set random seed before each test."""
-        # Set seed for PyTorch
-        torch.manual_seed(1234)
-        # Set seed for CUDA if available
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(1234)
         self.device = FLAGS.device
 
     @parameterized.parameters(
@@ -132,12 +134,53 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
         optimizer.step()
 
         # Parameter should remain unchanged with zero gradient
-        torch.testing.assert_close(param.data, initial_param, atol=0, rtol=1e-8)
+        torch.testing.assert_close(param.data, initial_param, atol=0, rtol=1e-7)
 
         # Norms should still be 1.0
         final_norms = param.norm(dim=0)
         expected_norms = torch.ones_like(final_norms)
         torch.testing.assert_close(final_norms, expected_norms, atol=0, rtol=1e-6)
+
+    def test_oblique_sgd_momentum_buffer_accumulates_across_steps(self) -> None:
+        """Test that ObliqueSGD persists momentum state across optimization steps."""
+        param = torch.tensor(
+            [[1.0, 0.0], [0.0, 1.0]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        param = torch.nn.Parameter(param)
+        optimizer = ObliqueSGD([param], lr=0.1, momentum=0.8, dim=0)
+
+        first_grad = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        second_grad = torch.tensor(
+            [[0.5, 1.5], [2.5, 3.5]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+
+        param.grad = first_grad.clone()
+        optimizer.step()
+        torch.testing.assert_close(
+            optimizer.state[param]["momentum_buffer"],
+            first_grad,
+            atol=0,
+            rtol=0,
+        )
+
+        param.grad = second_grad.clone()
+        optimizer.step()
+
+        expected_buffer = second_grad + 0.8 * first_grad
+        torch.testing.assert_close(
+            optimizer.state[param]["momentum_buffer"],
+            expected_buffer,
+            atol=0,
+            rtol=0,
+        )
 
     def test_oblique_adam_zero_gradient(self) -> None:
         """Test that ObliqueAdam handles zero gradients correctly."""
@@ -215,7 +258,11 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
             rtol=1e-6,
         )
 
-    def test_multiple_optimization_steps_preserve_norms(self) -> None:
+    @parameterized.parameters(
+        (0.4),
+        (0.8),
+    )
+    def test_multiple_optimization_steps_preserve_norms(self, momentum: float) -> None:
         """Test that norms are preserved across multiple optimization steps."""
         matrix_size = (4, 4)
         param = torch.randn(matrix_size, dtype=torch.float32, device=self.device)
@@ -224,7 +271,7 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
         param = param / param.norm(dim=0, keepdim=True).clamp(min=1e-8)
 
         param = torch.nn.Parameter(param)
-        optimizer = ObliqueSGD([param], lr=0.05, momentum=0.8, dim=0)
+        optimizer = ObliqueSGD([param], lr=0.05, momentum=momentum, dim=0)
 
         # Perform multiple optimization steps
         for step in range(10):

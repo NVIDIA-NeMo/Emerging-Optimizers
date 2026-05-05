@@ -25,7 +25,7 @@ __all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "get_coefficient_ite
 
 CoeffIterMode = Literal["cycle", "repeat_last"]
 
-NSCoeffT = Literal["simple", "quintic", "polar_express", "aol", "custom"]
+NSCoeffT = Literal["simple", "quintic", "polar_express", "cans", "aol", "custom"]
 
 _COEFFICIENT_SETS = {
     # Values are rounded to closest representable in single precision.
@@ -54,6 +54,16 @@ _COEFFICIENT_SETS = {
         (1.8726, -1.2307, 0.3585),
         (1.8564, -1.2132, 0.3568),
         (1.8750, -1.2500, 0.3750),
+    ],
+    "cans": [
+        # CANS from: http://arxiv.org/abs/2506.10935
+        # CANS iteration (Remez + adaptive interval) based coefficients.
+        # Source (for generating CANS coefficients): https://github.com/GrishKate/accelerating_orthogonalization/blob/main/polynomials.py
+        (8.4703, -25.1081, 18.6293),
+        (4.1828, -3.1087, 0.5806),
+        (3.9619, -2.9541, 0.5630),
+        (3.2866, -2.4647, 0.5074),
+        (2.2737, -1.6447, 0.4162),
     ],
     "aol": [
         # from https://github.com/thib-s/flash-newton-schulz/blob/main/newton_schulz_triton.py#L511
@@ -136,6 +146,8 @@ def newton_schulz(
       - "simple": Default coefficient set.
       - "quintic": Quintic iteration with optimized coefficients.
       - "polar_express": Polar Express iteration with optimized coefficients.
+      - "cans": CANS iteration with Remez + adaptive interval coefficients.
+      - "aol": AOL coefficient set.
       - "custom": Custom coefficient sets.
 
     Arguments:
@@ -179,7 +191,7 @@ def newton_schulz(
     else:
         raise ValueError(f"Invalid coefficient type: {coefficient_type}")
 
-    iter_mode: CoeffIterMode = "cycle" if coefficient_type != "polar_express" else "repeat_last"
+    iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in ("polar_express", "cans") else "cycle"
     coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
     ns_step_fn = newton_schulz_step
@@ -213,7 +225,7 @@ def newton_schulz_tp(
     coefficient_type: NSCoeffT,
     tp_group: torch.distributed.ProcessGroup,
     partition_dim: int | None = None,
-    mode: Literal["duplicated", "distributed"] = "duplicated",
+    tp_mode: Literal["duplicated", "distributed"] = "duplicated",
 ) -> torch.Tensor:
     """Tensor Parallel Newton-Schulz iteration.
 
@@ -230,7 +242,7 @@ def newton_schulz_tp(
         This function is designed to provide tensor parallel support for most common use of Newton-Schulz.
         Many arguments, e.g. custom coefficient sets and custom eps, are not supported.
 
-    ``mode`` can be one of the following:
+    ``tp_mode`` can be one of the following:
         - "duplicated": The input tensor is duplicated and orthogonalized on each rank.
         - "distributed": The input tensor is partitioned along the partition_dim and orthogonalized on each rank.
 
@@ -240,7 +252,7 @@ def newton_schulz_tp(
         coefficient_type: Type of coefficient set to use for the Newton-Schulz iteration.
         partition_dim: The dimension to partition the tensor.
         tp_group: The process group for communication if input is distributed.
-        mode: The mode to use for the Newton-Schulz iteration.
+        tp_mode: The mode to use for the Newton-Schulz iteration.
     """
     if partition_dim is None:
         # Fallback path for non TP params.
@@ -251,14 +263,14 @@ def newton_schulz_tp(
         "coefficient_type": coefficient_type,
     }
 
-    if mode == "duplicated":
+    if tp_mode == "duplicated":
         x_shards = [torch.empty_like(x) for _ in range(tp_group.size())]
         torch.distributed.all_gather(x_shards, x, tp_group)
         global_x = torch.cat(x_shards, dim=partition_dim)
 
         orthogonalized_x = newton_schulz(global_x, tp_group=None, **kwargs)
         output = orthogonalized_x.chunk(tp_group.size(), dim=partition_dim)[tp_group.rank()]
-    elif mode == "distributed":
+    elif tp_mode == "distributed":
         if partition_dim == 0:
             transpose = True
         elif partition_dim == 1:
@@ -267,7 +279,7 @@ def newton_schulz_tp(
             raise ValueError(f"Invalid partition_dim: {partition_dim}")
         output = newton_schulz(x, **kwargs, transpose=transpose, tp_group=tp_group)
     else:
-        raise ValueError(f"Invalid mode: {mode}")
+        raise ValueError(f"Invalid tp_mode: {tp_mode}")
 
     return output
 

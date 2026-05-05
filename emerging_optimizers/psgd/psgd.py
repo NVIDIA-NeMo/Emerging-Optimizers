@@ -13,7 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import Callable, overload, override
+from typing import TYPE_CHECKING, Callable, override
+
+
+if TYPE_CHECKING:
+    from typing import overload
 
 import torch
 from torch.optim.optimizer import ParamsT
@@ -87,11 +91,13 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
         }
         super().__init__(params, defaults)
 
-    @overload
-    def step(self, closure: None = ...) -> None: ...
+    if TYPE_CHECKING:
 
-    @overload
-    def step(self, closure: Callable[[], float]) -> float: ...
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override

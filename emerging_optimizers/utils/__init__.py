@@ -18,9 +18,10 @@ from typing import Generator, Literal
 import torch
 
 from .eig import *
+from .sinkhorn_mapper import *
 
 
-__all__ = ["fp32_matmul_precision", "get_pg_size", "get_pg_rank", "FP32MatmulPrecT"]
+__all__ = ["fp32_matmul_precision", "FP32MatmulPrecT", "SinkhornMapper"]
 
 FP32MatmulPrecT = Literal["highest", "high", "medium"]
 
@@ -38,17 +39,3 @@ def fp32_matmul_precision(precision: FP32MatmulPrecT = "highest") -> Generator[N
         yield
     finally:
         torch.set_float32_matmul_precision(prev_val)
-
-
-def get_pg_size(group: torch.distributed.ProcessGroup | None = None) -> int:
-    """Get world size for a distributed group with fallback"""
-    if not torch.distributed.is_initialized() or group is None:
-        return 1
-    return group.size()
-
-
-def get_pg_rank(group: torch.distributed.ProcessGroup | None = None) -> int:
-    """Get rank for a distributed group with fallback"""
-    if not torch.distributed.is_initialized() or group is None:
-        return 0
-    return group.rank()
