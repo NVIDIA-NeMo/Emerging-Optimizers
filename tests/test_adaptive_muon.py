@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import get_args
+
 import torch
 import torch.nn as nn
 from absl import flags, logging
@@ -19,6 +21,7 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers.orthogonalized_optimizers.adaptive_muon import (
     AdaptiveMuon,
+    Moment2MethodT,
 )
 
 
@@ -26,6 +29,7 @@ flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
 flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 
 FLAGS = flags.FLAGS
+MOMENT2_METHODS = get_args(Moment2MethodT)
 
 
 def setUpModule() -> None:
@@ -39,11 +43,11 @@ def setUpModule() -> None:
 class AdaptiveMuonTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(5, 7), (33, 65), (127, 257)],
-        second_moment_method=["adamuon", "normuon", "namo"],
+        moment2_method=MOMENT2_METHODS,
         nesterov=[True, False],
     )
     def test_smoke(self, shape, moment2_method, nesterov) -> None:
-        """Smoke test AdaptiveMuon with both second moment methods."""
+        """Smoke test AdaptiveMuon with all moment2 methods."""
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=FLAGS.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
@@ -62,8 +66,8 @@ class AdaptiveMuonTest(parameterized.TestCase):
         {"shape": (16, 8), "moment2_method": "normuon"},
         {"shape": (8, 16), "moment2_method": "namo"},
     )
-    def test_second_moment_matches_shapes(self, shape, moment2_method) -> None:
-        """Test that second moment buffers are properly initialized."""
+    def test_moment2_matches_shapes(self, shape, moment2_method) -> None:
+        """Test that moment2 buffers are properly initialized."""
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=FLAGS.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
 
@@ -78,12 +82,12 @@ class AdaptiveMuonTest(parameterized.TestCase):
         # Run one step to initialize buffers
         adaptive_opt.step()
 
-        # Check that second moment buffer was created
+        # Check that moment2 buffer was created
         state = adaptive_opt.state[test_param]
         self.assertIn("moment2_buffer", state)
         self.assertIn("momentum_buffer", state)
 
-        # Check second moment buffer shape
+        # Check moment2 buffer shape
         moment2 = state["moment2_buffer"]
         if moment2_method == "adamuon":
             # Full elementwise buffer
@@ -98,9 +102,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
             self.assertEqual(moment2.shape, torch.Size([]))
 
     @parameterized.parameters(
-        {"moment2_method": "adamuon"},
-        {"moment2_method": "normuon"},
-        {"moment2_method": "namo"},
+        *({"moment2_method": moment2_method} for moment2_method in MOMENT2_METHODS),
     )
     def test_non_2d_param_raises_value_error_in_step(self, moment2_method) -> None:
         """Test that AdaptiveMuon raises ValueError for non-2D parameters during step."""
