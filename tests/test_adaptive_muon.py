@@ -58,9 +58,9 @@ class AdaptiveMuonTest(parameterized.TestCase):
         adaptive_opt.step()
 
     @parameterized.parameters(
-        {"shape": (8, 16), "second_moment_method": "adamuon"},
-        {"shape": (16, 8), "second_moment_method": "normuon"},
-        {"shape": (8, 16), "second_moment_method": "namo"},
+        {"shape": (8, 16), "moment2_method": "adamuon"},
+        {"shape": (16, 8), "moment2_method": "normuon"},
+        {"shape": (8, 16), "moment2_method": "namo"},
     )
     def test_second_moment_matches_shapes(self, shape, moment2_method) -> None:
         """Test that second moment buffers are properly initialized."""
@@ -93,9 +93,33 @@ class AdaptiveMuonTest(parameterized.TestCase):
             avg_dim = -1 if shape[-2] >= shape[-1] else -2
             expected_shape = list(shape)
             expected_shape[avg_dim] = 1
-            self.assertEqual(list(second_moment.shape), expected_shape)
-        elif second_moment_method == "namo":
-            self.assertEqual(second_moment.shape, torch.Size([]))
+            self.assertEqual(list(moment2.shape), expected_shape)
+        elif moment2_method == "namo":
+            self.assertEqual(moment2.shape, torch.Size([]))
+
+    @parameterized.parameters(
+        {"moment2_method": "adamuon"},
+        {"moment2_method": "normuon"},
+        {"moment2_method": "namo"},
+    )
+    def test_non_2d_param_raises_value_error_in_step(self, moment2_method) -> None:
+        """Test that AdaptiveMuon raises ValueError for non-2D parameters during step."""
+        test_param = nn.Parameter(torch.randn(8, dtype=torch.float32, device=FLAGS.device))
+        test_param.grad = torch.randn_like(test_param)
+
+        adaptive_opt = AdaptiveMuon(
+            [test_param],
+            lr=0.01,
+            momentum=0.9,
+            weight_decay=0.0,
+            nesterov=False,
+            moment2_method=moment2_method,
+            weight_decay_method="decoupled",
+            fp32_matmul_prec="highest",
+        )
+
+        with self.assertRaisesRegex(ValueError, "only supports 2D"):
+            adaptive_opt.step()
 
     def test_unknown_moment2_method_raise_type_error(self) -> None:
         """Test that AdaptiveMuon raises TypeError for unknown moment2_method."""
