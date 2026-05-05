@@ -79,10 +79,10 @@ class Spel(OrthogonalizedOptimizer):
         self,
         params: ParamsT,
         lr: float = 3e-4,
-        momentum_beta: float = 0.95,
+        momentum: float = 0.95,
         weight_decay: float = 0.1,
         *,
-        use_nesterov: bool = False,
+        nesterov: bool = False,
         weight_decay_method: WeightDecayT = "decoupled",
         fp32_matmul_prec: FP32MatmulPrecT = "medium",
         coefficient_type: NSCoeffT = "quintic",
@@ -103,16 +103,16 @@ class Spel(OrthogonalizedOptimizer):
         super().__init__(
             params,
             lr,
-            momentum_beta,
+            momentum,
             weight_decay,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
             scaled_orthogonalize_fn=scaled_orthogonalize_fn,
         )
 
     @override
-    def post_weight_update_fn_inplace(self, p: torch.Tensor, update: torch.Tensor) -> None:
+    def post_weight_update_fn_inplace(self, p: torch.Tensor) -> None:
         """Re-orthogonalize the weight matrix after the update via Newton-Schulz.
 
         This projects the updated weight matrix back onto (or near) the orthogonal manifold,
@@ -120,7 +120,6 @@ class Spel(OrthogonalizedOptimizer):
 
         Args:
             p: The updated parameter tensor.
-            update: The orthogonalized gradient tensor that was applied.
         """
         with utils.fp32_matmul_precision(self.fp32_matmul_prec):
             orth_p = self.scaled_orthogonalize_fn(p)
