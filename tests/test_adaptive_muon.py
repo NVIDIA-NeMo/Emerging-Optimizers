@@ -128,6 +128,24 @@ class AdaptiveMuonTest(parameterized.TestCase):
         with self.assertRaises(TypeError):
             adaptive_opt.step()
 
+    def test_namo_rejects_l2_weight_decay(self) -> None:
+        """NAMO tracks raw gradient norms, so in-place L2 decay is unsupported."""
+        test_param = nn.Parameter(torch.randint(-5, 5, (8, 16), dtype=torch.float32, device=FLAGS.device))
+
+        with self.assertRaisesRegex(ValueError, 'moment2_method="namo" is incompatible'):
+            AdaptiveMuon(
+                [test_param],
+                lr=0.01,
+                momentum=0.9,
+                weight_decay=0.01,
+                nesterov=False,
+                moment2_method="namo",
+                beta2=0.999,
+                eps=1e-8,
+                weight_decay_method="l2",
+                fp32_matmul_prec="highest",
+            )
+
 
 if __name__ == "__main__":
     absltest.main()

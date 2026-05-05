@@ -83,6 +83,9 @@ class AdaptiveMuon(muon.Muon):
         beta2: float = 0.95,
         eps: float = 1e-8,
     ):
+        if moment2_method == "namo" and weight_decay_method == "l2":
+            raise ValueError('moment2_method="namo" is incompatible with weight_decay_method="l2"')
+
         super().__init__(
             params,
             lr=lr,
