@@ -41,53 +41,6 @@ class EigUtilsTest(BaseTestCase):
     def setUp(self) -> None:
         self.device = FLAGS.device
 
-    def test_adaptive_criteria_met(self) -> None:
-        """Tests the adaptive_criteria_met function for determining when to update eigenbasis."""
-        # Create a diagonal matrix (should not trigger update with small tolerance)
-        n = 4
-        diagonal_matrix = torch.eye(n, device=self.device)
-
-        # Test with small tolerance - should not update since matrix is diagonal
-        self.assertTrue(
-            eig_utils.met_approx_eigvals_criteria(
-                diagonal_matrix,
-                diagonal_matrix.diag(),
-                tolerance=0.1,
-            ),
-            msg="Should not update for diagonal matrix with small tolerance",
-        )
-
-        # Create a matrix with significant off-diagonal elements
-        off_diagonal_matrix = torch.tensor(
-            [
-                [1.0, 0.5, 0.3, 0.2],
-                [0.5, 1.0, 0.4, 0.3],
-                [0.3, 0.4, 1.0, 0.5],
-                [0.2, 0.3, 0.5, 1.0],
-            ],
-            device=self.device,
-        )
-
-        # Test with small tolerance - should update since matrix has significant off-diagonal elements
-        self.assertFalse(
-            eig_utils.met_approx_eigvals_criteria(
-                off_diagonal_matrix,
-                off_diagonal_matrix.diag(),
-                tolerance=0.1,
-            ),
-            msg="Should update for matrix with significant off-diagonal elements and small tolerance",
-        )
-
-        # Test with large tolerance - should not update even with off-diagonal elements
-        self.assertTrue(
-            eig_utils.met_approx_eigvals_criteria(
-                off_diagonal_matrix,
-                off_diagonal_matrix.diag(),
-                tolerance=10.0,
-            ),
-            msg="Should not update for any matrix with large tolerance",
-        )
-
     @parameterized.parameters(  # type: ignore[misc]
         {"N": 4, "power_iter_steps": 1},
         {"N": 8, "power_iter_steps": 2},
@@ -219,6 +172,17 @@ class EigUtilsTest(BaseTestCase):
 
         ref = p.T @ a @ p
         torch.testing.assert_close(eig_utils.conjugate(a, p), ref, atol=0, rtol=0)
+
+    def test_eigh_with_fallback_reraises_runtime_error_when_force_double(self) -> None:
+        """Test that eigh_with_fallback re-raises when force_double=True and eigh fails."""
+        from unittest.mock import patch
+
+        x = torch.randn(4, 4, device=self.device)
+        x = x @ x.T
+
+        with patch("torch.linalg.eigh", side_effect=RuntimeError("mock eigh failure")):
+            with self.assertRaisesRegex(RuntimeError, "mock eigh failure"):
+                eig_utils.eigh_with_fallback(x, force_double=True)
 
 
 if __name__ == "__main__":

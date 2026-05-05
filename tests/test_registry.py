@@ -87,6 +87,11 @@ class TestRegistry(parameterized.TestCase):
             with self.assertRaisesRegex(ValueError, "already registered"):
                 registry.register_optimizer(opt_name)(registry.get_optimizer_cls(opt_name))
 
+    def test_validate_optimizer_args_unknown_args_raises_type_error(self) -> None:
+        """Test that validate_optimizer_args raises TypeError for unknown arguments."""
+        with self.assertRaisesRegex(TypeError, "does not accept arguments.*nonexistent_arg"):
+            registry.validate_optimizer_args(muon.Muon, {"nonexistent_arg": 42})
+
 
 if __name__ == "__main__":
     absltest.main()

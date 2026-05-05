@@ -32,11 +32,6 @@ __all__ = ["Scion"]
 class Scion(OrthogonalizedOptimizer):
     """Scion: Stochastic CondItional descent with Operator Norms
 
-    Scion runs standard SGD-momentum and then performs an orthogonalization
-    post-processing step, in which each 2D parameter's update is replaced with the nearest orthogonal
-    matrix. To efficiently orthogonalize each update, Newton-Schulz iteration is used, which has the
-    advantage that it may be stably run on tensor cores on GPUs.
-
     This implementation incorporates `step_size` and `spectral_radius`, refer to Scion which views weight decay as constrained
     optimization via Frank-Wolfe.
 
