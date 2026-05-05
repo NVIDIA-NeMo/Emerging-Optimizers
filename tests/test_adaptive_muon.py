@@ -95,7 +95,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
             expected_shape[avg_dim] = 1
             self.assertEqual(list(second_moment.shape), expected_shape)
         elif second_moment_method == "namo":
-            self.assertEqual(second_moment.shape, torch.Size([]))
+            self.assertEqual(second_moment.shape, torch.Size([1]))
 
     def test_unknown_moment2_method_raise_type_error(self) -> None:
         """Test that AdaptiveMuon raises TypeError for unknown moment2_method."""
