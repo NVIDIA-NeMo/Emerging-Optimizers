@@ -25,9 +25,9 @@ __all__ = [
 def calculate_signum_update(
     grad: torch.Tensor,
     exp_avg: torch.Tensor,
-    momentum_beta: float,
+    momentum: float,
     correct_bias: bool,
-    use_nesterov: bool,
+    nesterov: bool,
     step: int,
     use_shape_scaling: bool = False,
 ) -> torch.Tensor:
@@ -49,9 +49,9 @@ def calculate_signum_update(
     Args:
         grad: The gradient tensor.
         exp_avg: The accumulated first moment of the gradient.
-        momentum_beta: The EMA beta coefficients for the momentum update.
+        momentum: The EMA beta coefficients for the momentum update.
         correct_bias: Whether to correct the bias of the momentum update.
-        use_nesterov: Whether to use nesterov momentum.
+        nesterov: Whether to use nesterov momentum.
         step: The current step of the optimizer, used to compute the bias correction terms.
         use_shape_scaling: Whether to scale the update by the shape of the tensor.
 
@@ -61,24 +61,24 @@ def calculate_signum_update(
 
     # Standard SignSGD: update momentum first, then compute signed update
     # Decay the momentum with exponential moving average
-    exp_avg.lerp_(grad, 1 - momentum_beta)
+    exp_avg.lerp_(grad, 1 - momentum)
 
     if correct_bias:
-        bias_correction1 = 1 - momentum_beta**step
+        bias_correction1 = 1 - momentum**step
     else:
         bias_correction1 = 1
 
-    if use_nesterov:
+    if nesterov:
         # Apply nesterov momentum correction, optionally with bias correction
-        bias_correction_nesterov = (1 - momentum_beta ** (step + 1)) if correct_bias else 1.0
-        momentum = momentum_beta * exp_avg / bias_correction_nesterov + (1 - momentum_beta) * grad / bias_correction1
+        bias_correction_nesterov = (1 - momentum ** (step + 1)) if correct_bias else 1.0
+        new_momentum = momentum * exp_avg / bias_correction_nesterov + (1 - momentum) * grad / bias_correction1
     else:
         # Use standard momentum, optionally with bias correction
-        momentum = exp_avg / bias_correction1
+        new_momentum = exp_avg / bias_correction1
 
     # scale update by shape of tensor to ensure consistent update size: https://arxiv.org/abs/2506.07254
     if use_shape_scaling:
         m, n = grad.shape
-        return torch.sign(momentum) * (2 / (m + n))
+        return torch.sign(new_momentum) * (2 / (m + n))
     else:
-        return torch.sign(momentum)
+        return torch.sign(new_momentum)

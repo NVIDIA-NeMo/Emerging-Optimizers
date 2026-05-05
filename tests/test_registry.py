@@ -15,9 +15,25 @@
 
 
 import torch
+from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers import psgd, registry, soap
+from emerging_optimizers import psgd, registry, scalar_optimizers, soap
+
+
+flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
+FLAGS = flags.FLAGS
+
+
+def setUpModule() -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
+        torch.manual_seed(FLAGS.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(FLAGS.seed)
+
+
 from emerging_optimizers.orthogonalized_optimizers import adaptive_muon, mop, muon, scion
 
 
@@ -28,7 +44,7 @@ class TestRegistry(parameterized.TestCase):
             def __init__(self, params, lr=0.01):
                 super().__init__(params, lr)
 
-        self.assertIs(registry.get_optimizer("test_optimizer"), TestOptimizer)
+        self.assertIs(registry.get_optimizer_cls("test_optimizer"), TestOptimizer)
 
         with self.assertRaisesRegex(ValueError, "already registered"):
 
@@ -44,19 +60,32 @@ class TestRegistry(parameterized.TestCase):
         ("psgd_pro", psgd.PSGDPro),
         ("scion", scion.Scion),
         ("soap", soap.SOAP),
+        ("lion", scalar_optimizers.Lion),
     )
     def test_get_optimizer(self, opt_name, expected_opt_cls):
-        opt_cls = registry.get_optimizer(opt_name)
+        opt_cls = registry.get_optimizer_cls(opt_name)
         self.assertIs(opt_cls, expected_opt_cls)
 
     def test_raise_error_for_unknown_optimizer(self):
         with self.assertRaisesRegex(ValueError, "not found in the registry"):
-            registry.get_optimizer("unknown_optimizer")
+            registry.get_optimizer_cls("unknown_optimizer")
 
     def test_get_configured_optimizer_smoke(self):
-        opt_cls = registry.get_configured_optimizer("muon", lr=0.01)
+        opt_cls = registry.get_configured_optimizer_cls("muon", lr=0.01)
         assert opt_cls is not muon.Muon
         _ = opt_cls([torch.randn(10, 10)], extra_scale_factor=0.2)
+
+    def test_get_optimizer_name_list_all_names_registered(self):
+        epot_name_list = registry.get_optimizer_name_list()
+        logging.debug(f"Available optimizers: {epot_name_list}")
+
+        self.assertNotEmpty(epot_name_list)
+
+        # Register is called on import, so we can't know what should be in registry easily.
+        # So we check all names are valid and already registered
+        for opt_name in epot_name_list:
+            with self.assertRaisesRegex(ValueError, "already registered"):
+                registry.register_optimizer(opt_name)(registry.get_optimizer_cls(opt_name))
 
 
 if __name__ == "__main__":

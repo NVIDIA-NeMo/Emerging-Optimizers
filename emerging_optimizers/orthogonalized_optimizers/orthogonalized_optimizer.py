@@ -12,7 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Callable, overload, override
+from typing import TYPE_CHECKING, Any, Callable, override
+
+
+if TYPE_CHECKING:
+    from typing import overload
 
 import torch
 import torch.optim as optim
@@ -26,10 +30,10 @@ from emerging_optimizers.utils import FP32MatmulPrecT
 
 _args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate used by the internal SGD.
-        momentum_beta: The momentum used by the internal SGD.
+        momentum: The momentum used by the internal SGD.
         weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
             See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
-        use_nesterov: Whether to use Nesterov-style momentum in the internal SGD.
+        nesterov: Whether to use Nesterov-style momentum in the internal SGD.
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
             for more details.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
@@ -92,10 +96,10 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self,
         params: ParamsT,
         lr: float,
-        momentum_beta: float,
+        momentum: float,
         weight_decay: float,
         *,
-        use_nesterov: bool,
+        nesterov: bool,
         weight_decay_method: opt_mixin.WeightDecayT,
         fp32_matmul_prec: FP32MatmulPrecT,
         scaled_orthogonalize_fn: Callable | None = None,
@@ -106,12 +110,12 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
             scaled_orthogonalize_fn = torch.nn.Identity()
 
         self.fp32_matmul_prec = fp32_matmul_prec
-        self.use_nesterov = use_nesterov
+        self.nesterov = nesterov
         self.weight_decay_method = weight_decay_method
 
         default_args_dict = dict(
             lr=lr,
-            momentum_beta=momentum_beta,
+            momentum=momentum,
             weight_decay=weight_decay,
             **kwargs,
         )
@@ -119,11 +123,34 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         super().__init__(params, default_args_dict)
         self.scaled_orthogonalize_fn = scaled_orthogonalize_fn
 
-    @overload
-    def step(self, closure: None = ...) -> None: ...
+    @torch.no_grad()  # type: ignore[misc]
+    def _init_group(
+        self,
+        group: dict,
+        skip_non_grad_params: bool = True,
+    ) -> None:
+        """Performs lazy state initialization for parameters.
 
-    @overload
-    def step(self, closure: Callable[[], float]) -> float: ...
+        Args:
+            group: Parameter group dictionary.
+            skip_non_grad_params: If True, skip parameters without gradients.
+        """
+        for p in group["params"]:
+            if skip_non_grad_params and p.grad is None:
+                continue
+            state = self.state[p]
+
+            # initialize momentum buffer
+            if len(state) == 0:
+                state["momentum_buffer"] = torch.zeros_like(p.data)
+
+    if TYPE_CHECKING:
+
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
 
     @torch.no_grad()  # type: ignore[misc]
     @override
@@ -139,18 +166,14 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
             loss = closure()
 
         for group in self.param_groups:
+            self._init_group(group)
+
             for p in group["params"]:
-                grad = p.grad
-                if grad is None:
+                if p.grad is None:
                     continue
+
+                grad = p.grad
                 state = self.state[p]
-
-                # initialize momentum buffer
-                if "momentum_buffer" not in state:
-                    state["momentum_buffer"] = torch.zeros_like(grad)
-
-                # Subsequent update to exp_avg are all inplace, so it is not assigned back to state.
-                exp_avg = state["momentum_buffer"]
 
                 self._apply_weight_decay_inplace(
                     p,
@@ -160,13 +183,13 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 )
 
                 # update momentum buffer with EMA of gradient
-                exp_avg.lerp_(grad, 1 - group["momentum_beta"])
+                state["momentum_buffer"].lerp_(grad, 1 - group["momentum"])
 
                 # include nesterov momentum
-                if self.use_nesterov:
-                    grad = grad.lerp(exp_avg, group["momentum_beta"])
+                if self.nesterov:
+                    grad = grad.lerp(state["momentum_buffer"], group["momentum"])
                 else:
-                    grad = exp_avg
+                    grad = state["momentum_buffer"]
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     group_kwargs = {k: v for k, v in group.items() if k != "params"}
@@ -175,7 +198,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # perform weight update with pre and post weight update functions for subclass customization
                 self.pre_weight_update_fn_inplace(p, orth_grad)
                 p.add_(orth_grad, alpha=-group["lr"])
-                self.post_weight_update_fn_inplace(p, orth_grad)
+                self.post_weight_update_fn_inplace(p)
 
         return loss
 
@@ -222,7 +245,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         """
         pass
 
-    def post_weight_update_fn_inplace(self, p: torch.Tensor, update: torch.Tensor) -> None:
+    def post_weight_update_fn_inplace(self, p: torch.Tensor) -> None:
         """Function called after the final weight update.
 
         Subclasses can override this to implement custom behavior after the weight update.
@@ -233,7 +256,6 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
         Args:
             p: The parameter tensor (already updated).
-            update: The orthogonalized gradient tensor that was applied.
         """
         pass
 

@@ -76,9 +76,9 @@ docs = [
 ]
 test = [
     "coverage>=7.8.1",
-    "flake8>=7.2.0",
-    "pylint>=3.3.7",
     "triton>=3.4.0",
+    "transformers>=5.5.0",
+    "datasets>=4.8.4",
 ]
 dev = [
     "pre-commit>=3.6.0",
@@ -184,5 +184,7 @@ exclude_also = [
     "if closure",
     "loss = closure",
     "raise .*Error",
+    "@abstractmethod",
+    "if TYPE_CHECKING:",
 ]
 

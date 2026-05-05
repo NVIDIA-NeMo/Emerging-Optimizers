@@ -13,34 +13,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
-from absl import flags
-from absl.testing import absltest, parameterized
+from absl import flags, logging, testing
+from absl.testing import parameterized
 
-from emerging_optimizers.scalar_optimizers import (
-    calculate_adam_update,
-    calculate_ademamix_update,
-    calculate_laprop_update,
-    calculate_sim_ademamix_update,
-)
+from emerging_optimizers.scalar_optimizers import update_functions
 
 
-# Define command line flags
-flags.DEFINE_string("device", "cpu", "Device to run tests on: 'cpu' or 'cuda'")
-flags.DEFINE_integer("seed", 42, "Random seed for reproducible tests")
+flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
+flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
 
 FLAGS = flags.FLAGS
 
 
-class ScalarOptimizerTest(parameterized.TestCase):
-    def setUp(self):
-        """Set random seed and device before each test."""
-        # Set seed for PyTorch (using seed from flags)
+def setUpModule() -> None:
+    if FLAGS.seed is not None:
+        logging.info("Setting random seed to %d", FLAGS.seed)
         torch.manual_seed(FLAGS.seed)
-        # Set seed for CUDA if available
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(FLAGS.seed)
 
-        # Set up device based on flags
+
+class UpdateFunctionTest(parameterized.TestCase):
+    def setUp(self):
         self.device = FLAGS.device
 
     @parameterized.parameters(
@@ -55,19 +49,19 @@ class ScalarOptimizerTest(parameterized.TestCase):
         betas = (0.9, 0.99)
         eps = 1e-8
         step = 10
-        use_nesterov = False
+        nesterov = False
         lr = 0.25
 
         exp_avg_for_manual_calc = exp_avg_initial.clone()
         exp_avg_sq_for_manual_calc = exp_avg_sq_initial.clone()
 
-        manual_update_value = calculate_adam_update(
+        manual_update_value = update_functions.calculate_adam_update(
             grad,
             exp_avg_for_manual_calc,
             exp_avg_sq_for_manual_calc,
             betas,
             correct_bias=True,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
             step=step,
             eps=eps,
         )
@@ -119,7 +113,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
         exp_avg_sq_for_laprop = exp_avg_sq_initial.clone()
 
         # Calculate LaProp update
-        laprop_update = calculate_laprop_update(
+        laprop_update = update_functions.calculate_laprop_update(
             grad,
             exp_avg_for_laprop,
             exp_avg_sq_for_laprop,
@@ -159,7 +153,13 @@ class ScalarOptimizerTest(parameterized.TestCase):
         expected_param_val_after_step = initial_param_val_tensor - lr * laprop_update
         torch.testing.assert_close(param.data, expected_param_val_after_step, atol=1e-6, rtol=1e-6)
 
-    def test_calculate_ademamix_update_with_alpha_zero_equals_adam(self) -> None:
+    @parameterized.parameters(
+        {"correct_bias": True, "num_beta_slow_warmup_steps": None},
+        {"correct_bias": False, "num_beta_slow_warmup_steps": 2},
+    )
+    def test_calculate_ademamix_update_with_alpha_zero_equals_adam(
+        self, correct_bias: bool, num_beta_slow_warmup_steps: int | None
+    ) -> None:
         # AdEMAMix with alpha=0 and no beta scheduling should be equivalent to Adam.
         exp_avg_fast_initial = torch.tensor([[1.0]], device=self.device)
         exp_avg_slow_initial = torch.tensor([[1.0]], device=self.device)
@@ -168,36 +168,35 @@ class ScalarOptimizerTest(parameterized.TestCase):
         betas = (0.9, 0.99, 0.999)
         eps = 1e-8
         step = 10
-        correct_bias_manual = True
 
         # Calculate AdEMAMix update
         exp_avg_fast_for_ademamix = exp_avg_fast_initial.clone()
         exp_avg_slow_for_ademamix = exp_avg_slow_initial.clone()
         exp_avg_sq_for_ademamix = exp_avg_sq_initial.clone()
-        ademamix_update = calculate_ademamix_update(
+        ademamix_update = update_functions.calculate_ademamix_update(
             grad,
             exp_avg_fast_for_ademamix,
             exp_avg_slow_for_ademamix,
             exp_avg_sq_for_ademamix,
-            num_beta_slow_warmup_steps=None,
+            num_beta_slow_warmup_steps=num_beta_slow_warmup_steps,
             num_alpha_warmup_steps=None,
             betas=betas,
             step=step,
             eps=eps,
-            correct_bias=correct_bias_manual,
+            correct_bias=correct_bias,
             alpha=0.0,
         )
 
         # Calculate Adam update
         exp_avg_for_adam = exp_avg_fast_initial.clone()
         exp_avg_sq_for_adam = exp_avg_sq_initial.clone()
-        adam_update = calculate_adam_update(
+        adam_update = update_functions.calculate_adam_update(
             grad,
             exp_avg_for_adam,
             exp_avg_sq_for_adam,
             (betas[0], betas[1]),
-            correct_bias=correct_bias_manual,
-            use_nesterov=False,
+            correct_bias=correct_bias,
+            nesterov=False,
             step=step,
             eps=eps,
         )
@@ -211,14 +210,14 @@ class ScalarOptimizerTest(parameterized.TestCase):
         grad = torch.tensor([[0.5]], device=self.device)
         betas = (0.0, 0.99)  # beta1=0 for momentum
         eps = 1e-8
-        step = 10
         correct_bias = False
+        step = 10
         lr = 0.25
         exp_avg_for_sim_ademamix = exp_avg_initial.clone()
         exp_avg_sq_for_sim_ademamix = exp_avg_sq_initial.clone()
 
         # Calculate LaProp update
-        sim_ademamix_update = calculate_sim_ademamix_update(
+        sim_ademamix_update = update_functions.calculate_sim_ademamix_update(
             grad,
             exp_avg_for_sim_ademamix,
             exp_avg_sq_for_sim_ademamix,
@@ -243,7 +242,7 @@ class ScalarOptimizerTest(parameterized.TestCase):
             eps=eps,
             weight_decay=0,
             momentum=0,
-            centered=False,
+            centered=correct_bias,
         )
 
         # Manually set RMSProp's internal state
@@ -260,6 +259,78 @@ class ScalarOptimizerTest(parameterized.TestCase):
         expected_param_val_after_step = initial_param_val_tensor - lr * sim_ademamix_update
         torch.testing.assert_close(param.data, expected_param_val_after_step, atol=1e-6, rtol=1e-6)
 
+    @parameterized.product(
+        shape=[(3, 3), (15, 31)],
+        momentum=[0.9, 0.99],
+        correct_bias=[True, False],
+        nesterov=[True, False],
+        step=[1, 5],
+    )
+    def test_calculate_signum_update_returns_sign(self, shape, momentum, correct_bias, nesterov, step) -> None:
+        """Signum output should be +1 or -1 everywhere (the sign of the momentum)."""
+        # generate random numbers that are not 0 centered
+        grad = torch.rand(shape, device=self.device) - 0.3
+        exp_avg = torch.lerp(torch.randn(shape, device=self.device), grad, 1 - momentum)
+
+        update = update_functions.calculate_signum_update(
+            grad, exp_avg, momentum=momentum, correct_bias=correct_bias, nesterov=nesterov, step=step
+        )
+
+        torch.testing.assert_close(update.abs(), torch.ones(shape, device=self.device), atol=0, rtol=0)
+
+    def test_calculate_signum_with_shape_scaling_returns_sign(self) -> None:
+        shape = (8, 12)
+        momentum = 0.5
+        grad = torch.rand(shape, device=self.device) - 0.3
+        exp_avg = torch.lerp(torch.randn(shape, device=self.device), grad, 1 - momentum)
+
+        update_abs = update_functions.calculate_signum_update(
+            grad,
+            exp_avg,
+            momentum=momentum,
+            correct_bias=False,
+            nesterov=False,
+            step=1,
+            use_shape_scaling=True,
+        ).abs()
+        expected_update = torch.sign(exp_avg).abs() * (2 / (shape[0] + shape[1]))
+        torch.testing.assert_close(update_abs, expected_update, atol=0, rtol=0)
+
+    def test_calculate_lion_update_returns_sign(self) -> None:
+        """Tests that Lion update returns sign of interpolated momentum."""
+        shape = (8, 12)
+        beta = 0.9
+        grad = torch.randn(shape, device=self.device)
+        exp_avg = torch.randn(shape, device=self.device)
+        exp_avg_clone = exp_avg.clone()
+
+        update = update_functions.calculate_lion_update(grad, exp_avg, betas=(beta, beta))
+
+        # Update should be sign(beta * m + (1 - beta) * g)
+        expected_update = torch.sign(beta * exp_avg_clone + (1 - beta) * grad)
+        torch.testing.assert_close(update, expected_update, atol=0, rtol=0)
+
+        # exp_avg should be updated in-place: lerp_(grad, 1 - beta)
+        expected_exp_avg = torch.lerp(exp_avg_clone, grad, 1 - beta)
+        torch.testing.assert_close(exp_avg, expected_exp_avg, atol=1e-6, rtol=1e-6)
+
+    def test_calculate_lion_update_with_separate_betas(self) -> None:
+        """Tests Lion with different beta1 and beta2."""
+        shape = (4, 6)
+        beta1, beta2 = 0.9, 0.99
+        grad = torch.randn(shape, device=self.device)
+        exp_avg = torch.randn(shape, device=self.device)
+        exp_avg_clone = exp_avg.clone()
+
+        update = update_functions.calculate_lion_update(grad, exp_avg, betas=(beta1, beta2))
+
+        expected_update = torch.sign(beta1 * exp_avg_clone + (1 - beta1) * grad)
+        torch.testing.assert_close(update, expected_update, atol=0, rtol=0)
+
+        # With separate beta2, momentum uses beta2
+        expected_exp_avg = torch.lerp(exp_avg_clone, grad, 1 - beta2)
+        torch.testing.assert_close(exp_avg, expected_exp_avg, atol=1e-6, rtol=1e-6)
+
 
 if __name__ == "__main__":
-    absltest.main()
+    testing.absltest.main()

@@ -14,16 +14,17 @@
 export CUDA_VISIBLE_DEVICES=0
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=0
 
+mkdir -p test-results/tests/convergence
 error=0
-python tests/test_muon_utils.py || error=1
-python tests/test_adaptive_muon.py || error=1
-python tests/test_orthogonalized_optimizer.py || error=1
-python tests/test_soap_utils.py || error=1
-python tests/test_soap.py || error=1
-python tests/test_scalar_optimizers.py --device=cuda || error=1
-python tests/test_spectral_clipping_utils.py || error=1
-python tests/test_triton_kernels.py || error=1
-python tests/test_normalized_optimizer.py
-python tests/normalized_optimizer_convergence_test.py || error=1
+
+fix_seed=77
+for test in `find tests/convergence -type f -name '*_test.py'`; do
+    echo "Running $test with fixed seed"
+    report_name="test-results/${test}_seed${fix_seed}.xml"
+    coverage run -p --source=emerging_optimizers $test --device=cuda --seed="$fix_seed" -v -2 --xml_output_file="$report_name" || error=1
+done
+
+python tests/convergence/moe_c4_convergence.py --optimizer=muon --loss_target=5.45 -v -2 --xml_output_file="test-results/tests/convergence/moe_c4_convergence_muon.xml" || error=1
+python tests/convergence/moe_c4_convergence.py --optimizer=soap --loss_target=5.45 -v -2 --xml_output_file="test-results/tests/convergence/moe_c4_convergence_soap.xml" || error=1
 
 exit "${error}"

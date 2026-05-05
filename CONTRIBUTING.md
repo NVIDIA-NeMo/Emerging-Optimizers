@@ -5,7 +5,7 @@
 Use [abseil-py](https://github.com/abseil/abseil-py/tree/main)'s **logging**, **testing** and **flags** instead of Python's own **logging**, **unittest** and **argparse**.
 
 We use [uv](https://docs.astral.sh/uv/) for managing dependencies. For reproducible builds, our project tracks the generated `uv.lock` file in the repository.
-On a weekly basis, the CI attemps an update of the lock file to test against upstream dependencies.
+On a weekly basis, the CI attempts an update of the lock file to test against upstream dependencies.
 
 New required dependencies can be added by `uv add $DEPENDENCY`.
 
@@ -47,7 +47,7 @@ We generally follow [Google's style guides](https://google.github.io/styleguide/
 
 Although common, **mixed case is not allowed** in any code.
 
-Run pre-commit at local before submitting merge request. You can also read [.pre-commit-config.yaml]( .pre-commit-config.yaml) to understand what are being forced. The **flake8** and **mypy** settings are inherited from PyTorch.
+Run pre-commit at local before submitting merge request. You can also read [.pre-commit-config.yaml]( .pre-commit-config.yaml) to understand what are being forced. The **mypy** settings are inherited from PyTorch.
 
 ## Test
 

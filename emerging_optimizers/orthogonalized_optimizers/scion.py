@@ -54,10 +54,10 @@ class Scion(OrthogonalizedOptimizer):
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate used by the internal SGD.
-        momentum_beta: The momentum used by the internal SGD.
+        momentum: The momentum used by the internal SGD.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
         coefficient_type: The type of coefficient set to use for the Newton-Schulz iteration. Can be one of
-            ["simple", "quintic", "polar_express"].
+            ["simple", "quintic", "polar_express", "cans"].
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
         spectral_radius: The spectral radius to use for the update, we are scaling the LMO by this spectral radius.
     """
@@ -66,7 +66,7 @@ class Scion(OrthogonalizedOptimizer):
         self,
         params: ParamsT,
         lr: float = 3e-4,
-        momentum_beta: float = 0.95,
+        momentum: float = 0.95,
         *,
         fp32_matmul_prec: FP32MatmulPrecT = "medium",
         coefficient_type: NSCoeffT = "quintic",
@@ -83,8 +83,8 @@ class Scion(OrthogonalizedOptimizer):
         weight_decay = 1
         weight_decay_method = "decoupled"
 
-        logging.info("Scion does not use Nesterov momentum. Setting use_nesterov to False.")
-        use_nesterov = False
+        logging.info("Scion does not use Nesterov momentum. Setting nesterov to False.")
+        nesterov = False
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
@@ -99,9 +99,9 @@ class Scion(OrthogonalizedOptimizer):
         super().__init__(
             params,
             lr,
-            momentum_beta,
+            momentum,
             weight_decay,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
             weight_decay_method=weight_decay_method,  # type: ignore[arg-type]
             fp32_matmul_prec=fp32_matmul_prec,
             scaled_orthogonalize_fn=scaled_orthogonalize_fn,
