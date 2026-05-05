@@ -139,8 +139,12 @@ docker run --rm --gpus all \
     # and torch in --no-install-package, `torchrun` resolves to /usr/local/bin/torchrun and spawns
     # /usr/bin/python3 (system), which lacks the editable emerging_optimizers install.
     for n in 8 4; do
-        python -m torch.distributed.run --nproc_per_node=$n tests/test_distributed_muon_utils_cpu.py -v -2
-        [[ ${PIPESTATUS[0]} -eq 0 ]] || failed+=("CPU dist n=$n: tests/test_distributed_muon_utils_cpu.py")
+        # Must use `cmd || failed+=(...)` form, not `cmd; [[ $? -eq 0 ]] || failed+=(...)`.
+        # Under `bash -euc`, a bare failing command aborts the whole script before the next line
+        # runs, so a distributed-test failure would be silently swallowed (no array entry, no
+        # summary, remaining stages skipped). The `||` form is exempt from `set -e`.
+        python -m torch.distributed.run --nproc_per_node=$n tests/test_distributed_muon_utils_cpu.py -v -2 \
+            || failed+=("CPU dist n=$n: tests/test_distributed_muon_utils_cpu.py")
     done
     for t in tests/test_scalar_optimizers.py tests/test_procrustes_step.py; do
         python "$t" --device=cpu -v -2 || failed+=("CPU: $t")
@@ -190,6 +194,7 @@ No JUnit XML, no `coverage run` wrapping — those are for CI's reporting pipeli
 - **Tests fail only with `--seed=42`** → likely a tolerance issue. The L0 GPU script runs the suite twice (random + fixed) for exactly this reason. See history of `tests/test_sinkhorn.py` for a recent example (commit `b64b9b2` relaxed a tolerance).
 - **Parameterized test selection failing** → absl synthesizes `_0/_1/...` suffixes for `parameterized.product` / `parameterized.parameters`; select by class name (`ClassName`), not bare method.
 - **Pre-commit modifies files** → ruff and end-of-file-fixer auto-fix; rerun until clean.
+- **`set -e` swallows test failures** → the inline container script runs under `bash -euc`. A bare failing command (e.g. `python tests/foo.py`) aborts the script before any post-hoc `[[ $? -eq 0 ]] || failed+=(...)` check can run. Always use the `cmd || failed+=(...)` form so the failure is part of an `||` list (which `set -e` ignores).
 
 ## Do not
 
