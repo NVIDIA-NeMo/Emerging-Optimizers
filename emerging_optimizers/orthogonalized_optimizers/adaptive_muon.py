@@ -24,17 +24,19 @@ from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
-__all__ = ["AdaptiveMuon"]
+__all__ = ["AdaptiveMuon", "Moment2MethodT"]
+
+Moment2MethodT = Literal["adamuon", "normuon", "namo"]
 
 
 @registry.register_optimizer("adaptive_muon")
 class AdaptiveMuon(muon.Muon):
-    """Adaptive Muon optimizer with adaptive second moment (AdaMuon/NorMuon variants).
+    """Adaptive Muon optimizer with adaptive second moment (AdaMuon/NorMuon/NAMO variants).
 
-    This class extends Muon by adding AdamW-style or NorMuon-style second moment
-    accumulation after orthogonalization. This idea was first explored in D.E. Carlson,
-    E. Collins, Ya-Ping Hsieh, L. Carin, and V. Cevher. *Preconditioned spectral
-    descent for deep learning.* In Advances in neural information processing systems 28 (2015).
+    This class extends Muon by adding adaptive second moment accumulation after
+    orthogonalization. This idea was first explored in D.E. Carlson, E. Collins,
+    Ya-Ping Hsieh, L. Carin, and V. Cevher. *Preconditioned spectral descent for
+    deep learning.* In Advances in neural information processing systems 28 (2015).
     The step() method is overridden to include second moment normalization logic.
 
     Args:
@@ -73,7 +75,7 @@ class AdaptiveMuon(muon.Muon):
         scale_mode: muon.MuonScaleT = "spectral",
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
-        moment2_method: Literal["adamuon", "normuon", "namo"] = "adamuon",
+        moment2_method: Moment2MethodT = "adamuon",
         beta2: float = 0.95,
         eps: float = 1e-8,
     ):
@@ -126,8 +128,7 @@ class AdaptiveMuon(muon.Muon):
                 moment2_shape[avg_dim] = 1
                 moment2 = torch.zeros(moment2_shape, dtype=grad.dtype, device=grad.device)
             elif self.moment2_method == "namo":
-                # Scalar second moment: EMA of ||G_t||_F^2
-                moment2 = torch.zeros((), dtype=grad.dtype, device=grad.device)
+                moment2 = torch.tensor(0.0, dtype=grad.dtype, device=grad.device)
             else:
                 raise TypeError(f"Invalid second moment method: {self.moment2_method}")
 
@@ -140,8 +141,8 @@ class AdaptiveMuon(muon.Muon):
         beta2: float,
         eps: float,
         *,
-        grad_fro_sq: torch.Tensor | None = None,
-        pre_orth_norm: torch.Tensor | None = None,
+        raw_grad: torch.Tensor | None = None,
+        pre_orth_grad: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Apply second moment accumulation and normalization.
 
@@ -166,10 +167,9 @@ class AdaptiveMuon(muon.Muon):
             moment2: The second moment buffer from state.
             beta2: The exponential decay rate for second moment.
             eps: Small constant for numerical stability.
-            grad_fro_sq: (NAMO only) Squared Frobenius norm of the raw gradient
-                (before momentum), ``||G_t||_F^2``.
-            pre_orth_norm: (NAMO only) Frobenius norm of the gradient that enters
-                orthogonalization (after momentum + Nesterov), ``||g_t^{pre-orth}||_F``.
+            raw_grad: (NAMO only) The raw gradient before momentum update.
+            pre_orth_grad: (NAMO only) The gradient after momentum/Nesterov,
+                before orthogonalization.
 
         Returns:
             The adaptively scaled weight update tensor.
@@ -198,14 +198,16 @@ class AdaptiveMuon(muon.Muon):
             return orth_grad * step_size
 
         elif self.moment2_method == "namo":
-            assert grad_fro_sq is not None and pre_orth_norm is not None, "NAMO requires grad_fro_sq and pre_orth_norm"
+            if raw_grad is None or pre_orth_grad is None:
+                raise RuntimeError("NAMO requires raw_grad and pre_orth_grad")
             # NAMO: Scalar adaptive scaling via Frobenius-norm ratio
             # v_t = β2 * v_{t-1} + (1 - β2) * ||G_t||_F^2
-            moment2.lerp_(grad_fro_sq, 1 - beta2)
+            grad_norm_square = torch.linalg.vector_norm(raw_grad).square()
+            moment2.lerp_(grad_norm_square, 1 - beta2)
 
             # α_t = ||pre_orth_grad||_F / (sqrt(v_t) + ε)
+            pre_orth_norm = torch.linalg.vector_norm(pre_orth_grad)
             alpha_t = pre_orth_norm / (moment2.sqrt() + eps)
-
             return orth_grad * alpha_t
 
         else:
@@ -252,10 +254,7 @@ class AdaptiveMuon(muon.Muon):
                     group["weight_decay"],
                 )
 
-                # NAMO: capture ||G_t||_F^2 before momentum update
-                grad_fro_sq: torch.Tensor | None = None
-                if self.moment2_method == "namo":
-                    grad_fro_sq = torch.linalg.vector_norm(grad).square()
+                raw_grad = grad if self.moment2_method == "namo" else None
 
                 # update momentum buffer with EMA of gradient
                 exp_avg.lerp_(grad, 1 - group["momentum_beta"])
@@ -269,26 +268,15 @@ class AdaptiveMuon(muon.Muon):
                     group_kwargs = {k: v for k, v in group.items() if k != "params"}
                     orth_grad = self.orthogonalize(p, grad, **group_kwargs)
 
-                if self.moment2_method == "namo":
-                    # Capture ||pre_orth_grad||_F (after momentum + Nesterov)
-                    update = self._apply_moment2_normalization(
-                        orth_grad=orth_grad,
-                        moment2=state["moment2_buffer"],
-                        beta2=group["beta2"],
-                        eps=group["eps"],
-                        grad_fro_sq=grad_fro_sq,
-                        pre_orth_norm=torch.linalg.vector_norm(grad),
-                    )
-                else:
-                    update = self._apply_moment2_normalization(
-                        orth_grad=orth_grad,
-                        moment2=state["moment2_buffer"],
-                        beta2=group["beta2"],
-                        eps=group["eps"],
-                    )
+                update = self._apply_moment2_normalization(
+                    orth_grad=orth_grad,
+                    moment2=state["moment2_buffer"],
+                    beta2=group["beta2"],
+                    eps=group["eps"],
+                    raw_grad=raw_grad,
+                    pre_orth_grad=grad if raw_grad is not None else None,
+                )
 
-                # perform weight update
-                # scale is applied to have update RMS roughly 1
                 p.add_(update, alpha=-group["lr"])
 
         return loss
