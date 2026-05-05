@@ -19,7 +19,7 @@ import torch
 from absl import logging
 from torch.optim.optimizer import ParamsT
 
-from emerging_optimizers import registry, triton_kernels, utils
+from emerging_optimizers import registry, utils
 from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
@@ -73,7 +73,6 @@ class Spel(OrthogonalizedOptimizer):
             ["simple", "quintic", "polar_express"].
         num_ns_steps: The number of Newton-Schulz iteration steps for both gradient orthogonalization
             and the post-update weight projection.
-        use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
     """
 
     def __init__(
@@ -88,24 +87,9 @@ class Spel(OrthogonalizedOptimizer):
         fp32_matmul_prec: FP32MatmulPrecT = "medium",
         coefficient_type: NSCoeffT = "quintic",
         num_ns_steps: int = 5,
-        use_syrk: bool = False,
     ) -> None:
         if num_ns_steps < 1:
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
-
-        if use_syrk:
-            if torch.cuda.is_available():
-                sm_version = torch.cuda.get_device_capability()
-            else:
-                sm_version = (0, 0)
-            if not triton_kernels.HAS_TRITON_340:  # type: ignore[attr-defined]
-                logging.error("Triton 3.4.0 or higher is required for use_syrk to be True.")
-                use_syrk = False
-            elif sm_version not in ((8, 0), (9, 0), (10, 0), (10, 3)):
-                logging.error(
-                    f"Correctness of Triton kernel on SM {sm_version} cannot be guaranteed. Setting use_syrk to False."
-                )
-                use_syrk = False
 
         def scaled_orthogonalize_fn(X: torch.Tensor) -> torch.Tensor:
             logging.debug(f"Orthogonalizing with {num_ns_steps} steps, {coefficient_type} coefficient")
@@ -113,7 +97,7 @@ class Spel(OrthogonalizedOptimizer):
                 X,
                 steps=num_ns_steps,
                 coefficient_type=coefficient_type,
-                use_syrk=use_syrk,
+                use_syrk=False,
             )
 
         super().__init__(
