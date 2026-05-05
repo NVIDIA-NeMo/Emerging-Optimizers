@@ -24,6 +24,7 @@ from emerging_optimizers.orthogonalized_optimizers.adaptive_muon import (
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
 flags.DEFINE_integer("seed", None, "Random seed for reproducible tests")
+
 FLAGS = flags.FLAGS
 
 

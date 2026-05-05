@@ -291,6 +291,9 @@ class AdaptiveMuon(muon.Muon):
                     pre_orth_grad=grad if raw_grad is not None else None,
                 )
 
+                # perform weight update with pre and post weight update functions for subclass customization
+                self.pre_weight_update_fn_inplace(p, update)
                 p.add_(update, alpha=-group["lr"])
+                self.post_weight_update_fn_inplace(p)
 
         return loss
