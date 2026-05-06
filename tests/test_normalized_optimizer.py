@@ -315,6 +315,31 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
             rtol=1e-6,
         )
 
+    @parameterized.named_parameters(
+        ("sgd_negative_lr", ObliqueSGD, {"lr": -1.0}, "Invalid learning rate"),
+        ("sgd_momentum_out_of_range", ObliqueSGD, {"momentum": 1.0}, "Invalid momentum"),
+        ("sgd_negative_weight_decay", ObliqueSGD, {"weight_decay": -0.1}, "Invalid weight_decay"),
+        ("adam_negative_lr", ObliqueAdam, {"lr": -1.0}, "Invalid learning rate"),
+        ("adam_beta1_out_of_range", ObliqueAdam, {"betas": (1.0, 0.99)}, "Invalid beta1"),
+        ("adam_beta2_out_of_range", ObliqueAdam, {"betas": (0.9, 1.0)}, "Invalid beta2"),
+        ("adam_negative_weight_decay", ObliqueAdam, {"weight_decay": -0.1}, "Invalid weight_decay"),
+    )
+    def test_invalid_param_raises_value_error(self, opt_cls, kwargs, error_msg) -> None:
+        param = torch.nn.Parameter(torch.randn(3, 4, device=self.device))
+        with self.assertRaisesRegex(ValueError, error_msg):
+            opt_cls([param], **kwargs)
+
+    @parameterized.named_parameters(
+        ("sgd", ObliqueSGD, {}),
+        ("adam", ObliqueAdam, {}),
+    )
+    def test_non_2d_param_raises_value_error(self, opt_cls, kwargs) -> None:
+        param = torch.nn.Parameter(torch.randn(8, device=self.device))
+        param.grad = torch.randn_like(param)
+        opt = opt_cls([param], **kwargs)
+        with self.assertRaisesRegex(ValueError, "only supports 2D"):
+            opt.step()
+
 
 if __name__ == "__main__":
     absltest.main()

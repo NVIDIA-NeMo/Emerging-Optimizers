@@ -25,7 +25,7 @@ __all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "get_coefficient_ite
 
 CoeffIterMode = Literal["cycle", "repeat_last"]
 
-NSCoeffT = Literal["simple", "quintic", "polar_express", "cans", "aol", "custom"]
+NSCoeffT = Literal["simple", "quintic", "polar_express", "cans", "aol", "deepseekv4", "custom"]
 
 _COEFFICIENT_SETS = {
     # Values are rounded to closest representable in single precision.
@@ -72,6 +72,9 @@ _COEFFICIENT_SETS = {
         (2.7573, -3.2939, 1.4254),
         (2.7215, -3.0494, 1.3169),
     ],
+    "deepseekv4":
+    # From DeepSeekV4: https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/resolve/main/DeepSeek_V4.pdf
+    [(3.4445, -4.7750, 2.0315)] * 8 + [(2.0, -1.5, 0.5)] * 2,
 }
 
 
@@ -148,10 +151,11 @@ def newton_schulz(
       - "polar_express": Polar Express iteration with optimized coefficients.
       - "cans": CANS iteration with Remez + adaptive interval coefficients.
       - "aol": AOL coefficient set.
+      - "deepseekv4": DeepSeekV4 coefficient set.
       - "custom": Custom coefficient sets.
 
     Arguments:
-        x: The tensor to be orthogonalized.
+        x: The tensor to be orthogonalized. Must be 2D ``(M, N)`` or 3D ``(B, M, N)`` (batched).
         steps: Number of Newton-Schulz iterations.
         coefficient_type: Type of coefficient set to use for the Newton-Schulz iteration.
         custom_coefficient_sets: Custom coefficient sets to use for the Newton-Schulz iteration.
@@ -164,11 +168,10 @@ def newton_schulz(
     Returns:
         The orthogonalization of x.
     """
-    # Muon is not for 1d parameters
-    if x.ndim < 2:
-        raise ValueError("Input tensor x must have at least 2 dimensions since Muon is not for 1d parameters.")
+    if x.ndim < 2 or x.ndim > 3:
+        raise TypeError(f"Input tensor x must be 2d or 3d (batched 2d), got {x.ndim}d")
     if x.dtype != torch.float32:
-        raise ValueError(f"Input tensor x must be in float32, got {x.dtype}")
+        raise TypeError(f"Input tensor x must be in float32, got {x.dtype}")
 
     # transpose tensor to perform whitening on the smaller dimension
     if transpose is None:
@@ -191,10 +194,11 @@ def newton_schulz(
     else:
         raise ValueError(f"Invalid coefficient type: {coefficient_type}")
 
-    iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in ("polar_express", "cans") else "cycle"
+    repeat_last_types = ("polar_express", "cans", "deepseekv4")
+    iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in repeat_last_types else "cycle"
     coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
-    ns_step_fn = newton_schulz_step
+    ns_step_fn = newton_schulz_step if X.ndim == 2 else batched_newton_schulz_step
     # Perform the NS iterations
     if torch.get_float32_matmul_precision() == "medium":
         # PyTorch doesn't really have FP32 I/O BF16 compute kernels for precision "medium"
@@ -202,10 +206,12 @@ def newton_schulz(
         # NOTE: There is a small difference to calling FP32 I/O BF16 compute kernels because the final result
         # is converted to BF16 before converting back to FP32. The rest should be the same as long as epilogue
         # is always in FP32.
+        if use_syrk:
+            if X.ndim > 2:
+                raise TypeError("use_syrk does not support N-d input.")
+            ns_step_fn = newton_schulz_step_tsyrk
         X = X.to(torch.bfloat16)
         logging.log_first_n(logging.INFO, "Using BF16 I/O kernels for Newton-Schulz iteration.", 1)
-        if use_syrk:
-            ns_step_fn = newton_schulz_step_tsyrk
 
     for a, b, c in coeff_iter:
         X = ns_step_fn(X, a, b, c, tp_group=tp_group)
@@ -311,6 +317,36 @@ def newton_schulz_step(
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
     B = torch.addmm(A, A, A, alpha=c, beta=b)
     X = torch.addmm(X, B, X, alpha=1.0, beta=a)
+    return X
+
+
+def batched_newton_schulz_step(
+    X: torch.Tensor, a: float, b: float, c: float, tp_group: torch.distributed.ProcessGroup | None = None
+) -> torch.Tensor:
+    """Perform a single Newton-Schulz iteration step on a batched (3d) input.
+
+    Equivalent to :func:`newton_schulz_step` but accepts ``X`` of shape ``(B, M, N)`` and applies the
+    iteration independently to each batch element via :func:`torch.baddbmm`.
+
+    Note:
+        This standalone function is created for 3d because :func:`torch.baddbmm` may not select the same kernel for
+        2d input as :func:`torch.addmm`, which may cause mismatches.
+
+    Arguments:
+        X: The batched tensor to be orthogonalized, shape ``(B, M, N)``.
+        a: The a coefficient.
+        b: The b coefficient.
+        c: The c coefficient.
+        tp_group: The process group to use for the all-reduce.
+
+    Returns:
+        The orthogonalization of X, same shape as input.
+    """
+    A = X @ X.mT
+    if tp_group is not None:
+        torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
+    B = torch.baddbmm(A, A, A, alpha=c, beta=b)
+    X = torch.baddbmm(X, B, X, alpha=1.0, beta=a)
     return X
 
 

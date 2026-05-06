@@ -47,6 +47,13 @@ emerging_optimizers.orthogonalized_optimizers
     :members:
 
 
+:hidden:`AdaptiveMuon`
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: AdaptiveMuon
+    :members:
+
+
 :hidden:`Newton-Schulz`
 ~~~~~~~~~~~~~~~~~~~~~~~~
 .. automodule:: emerging_optimizers.orthogonalized_optimizers.muon_utils

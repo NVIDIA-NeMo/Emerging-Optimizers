@@ -115,7 +115,7 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
         for group in self.param_groups:
             for p in group["params"]:
                 if p.grad is None:
-                    continue
+                    continue  # pragma: no cover
                 grad = p.grad
                 state = self.state[p]
 

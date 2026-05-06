@@ -43,7 +43,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         weight_decay_method=["decoupled", "independent", "l2"],
         shape=[(5, 7), (33, 65), (127, 257)],
         nesterov=[True, False],
-        fp32_matmul_prec=["highest", "medium", "low"],
+        fp32_matmul_prec=["highest", "high", "medium"],
     )
     def test_smoke(self, weight_decay_method, shape, nesterov, fp32_matmul_prec) -> None:
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=self.device))
@@ -214,6 +214,25 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             rtol=0,
         )
 
+    def test_non_2d_param_raises_value_error(self) -> None:
+        """Test that OrthogonalizedOptimizer raises ValueError for non-2D parameters."""
+        test_param = nn.Parameter(torch.randn(8, dtype=torch.float32, device=self.device))
+        test_param.grad = torch.randn_like(test_param)
+
+        # OrthogonalizedOptimizer has no defaults for lr/momentum/weight_decay/nesterov/weight_decay_method/fp32_matmul_prec
+        opt = OrthogonalizedOptimizer(
+            [test_param],
+            lr=1.0,
+            momentum=0.0,
+            weight_decay=0.0,
+            nesterov=False,
+            weight_decay_method="l2",
+            fp32_matmul_prec="highest",
+        )
+
+        with self.assertRaisesRegex(ValueError, "Only 2D"):
+            opt.step()
+
 
 class MuonTest(parameterized.TestCase):
     def setUp(self):
@@ -281,6 +300,17 @@ class MuonTest(parameterized.TestCase):
             rtol=0,
         )
 
+    def test_zero_num_ns_steps_raises_value_error(self) -> None:
+        """Test that Muon raises ValueError for num_ns_steps < 1."""
+        test_param = nn.Parameter(torch.randn(5, 7, dtype=torch.float32, device=self.device))
+        with self.assertRaisesRegex(ValueError, "num_ns_steps must be at least 1"):
+            muon.Muon([test_param], num_ns_steps=0)
+
+    def test_invalid_scale_mode_raises_value_error(self) -> None:
+        """Test that get_muon_scale_factor raises ValueError for invalid mode."""
+        with self.assertRaisesRegex(ValueError, "Invalid mode.*invalid_mode"):
+            muon.get_muon_scale_factor(10, 10, "invalid_mode")
+
 
 class ScionTest(parameterized.TestCase):
     def setUp(self):
@@ -297,6 +327,12 @@ class ScionTest(parameterized.TestCase):
 
         scion_opt = scion.Scion([test_param])
         scion_opt.step()
+
+    def test_zero_num_ns_steps_raises_value_error(self) -> None:
+        """Test that Scion raises ValueError for num_ns_steps < 1."""
+        test_param = nn.Parameter(torch.randn(5, 7, dtype=torch.float32, device=self.device))
+        with self.assertRaisesRegex(ValueError, "num_ns_steps must be at least 1"):
+            scion.Scion([test_param], num_ns_steps=0)
 
 
 class MopTest(parameterized.TestCase):
@@ -443,6 +479,12 @@ class PolarGradTest(parameterized.TestCase):
             atol=0,
             rtol=0,
         )
+
+    def test_negative_num_ns_steps_raises_value_error(self) -> None:
+        """Test that PolarGrad raises ValueError for negative num_ns_steps."""
+        test_param = nn.Parameter(torch.randn(5, 7, dtype=torch.float32, device=self.device))
+        with self.assertRaisesRegex(ValueError, "num_ns_steps must be positive"):
+            polargrad.PolarGrad([test_param], num_ns_steps=-1)
 
 
 if __name__ == "__main__":

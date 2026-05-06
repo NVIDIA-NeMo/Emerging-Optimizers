@@ -19,7 +19,6 @@ from torch import Tensor
 
 __all__ = [
     "eigh_with_fallback",
-    "met_approx_eigvals_criteria",
     "conjugate",
     "orthogonal_iteration",
 ]
@@ -67,34 +66,6 @@ def eigh_with_fallback(
     eigenvalues = torch.flip(eigenvalues, [-1])
     eigenvectors = torch.flip(eigenvectors, [-1])
     return (eigenvalues, eigenvectors)
-
-
-def met_approx_eigvals_criteria(
-    kronecker_factor: torch.Tensor,
-    approx_eigvals: torch.Tensor,
-    tolerance: float,
-) -> bool:
-    """Determines whether the eigenbasis for a factor matrix met the desired criteria
-
-    The approximated eigenvalues update criteria is then defined as
-    :math:`||diag(Q^T K Q)||_F >= (1 - tolerance) * (Q^T K Q)_F`, where :math:`Q` is the approximated eigenvectors and
-    :math:`K` is the kronecker factor (L or R).
-
-    We use the kronecker factor and approximated eigenvalues directly to save compute because Frobenius norm of
-    kronecker factor is the same as that of the approximated eigenvalues matrix.
-
-    Args:
-        kronecker_factor: Kronecker factor matrix.
-        approx_eigvals: Approximated eigenvalues
-        tolerance: Tolerance threshold for the normalized diagonal component of approximated eigenvalue matrix.
-
-    Returns:
-        Whether eigenbasis meet criteria and don't need to be updated
-    """
-    matrix_norm = torch.linalg.norm(kronecker_factor)
-    diagonal_norm = torch.linalg.norm(approx_eigvals)
-
-    return tolerance * matrix_norm >= (matrix_norm - diagonal_norm)
 
 
 def orthogonal_iteration(

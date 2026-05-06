@@ -32,9 +32,7 @@ __all__ = ["PolarGrad"]
 class PolarGrad(OrthogonalizedOptimizer):
     """PolarGrad: Polar Gradient Methods.
 
-    PolarGrad runs standard SGD-momentum with Nesterov momentum, and then performs an orthogonalization
-    post-processing step, in which each 2D parameter's update is replaced with the nearest orthogonal
-    matrix. Note that the update is also scaled by the nuclear norm of the momentum term. This is
+    Note that the update is scaled by the nuclear norm of the momentum term. This is
     equivalent to solving the steepest descent w.r.t. the spectral norm, as opposed to the LMO formulation
     of Scion and Muon. To efficiently orthogonalize each update, Newton-Schulz iteration is used, which has the
     advantage that it may be stably run on tensor cores on GPUs.
