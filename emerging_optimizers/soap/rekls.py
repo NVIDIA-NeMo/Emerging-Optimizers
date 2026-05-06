@@ -105,9 +105,11 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
         fp32_matmul_prec: Precision for the optimizer-state GEMM operations.
 
     Note:
-        Each parameter must carry a ``partition_dim`` attribute (an int in ``{0, 1}``) describing the
-        dimension along which it is sharded across ``tp_group``. This matches the megatron-lm
-        convention. Parameters without a ``partition_dim`` attribute will raise :class:`TypeError`.
+        A parameter is treated as tensor-parallel iff it carries a ``partition_dim`` attribute
+        (an int in ``{0, 1}``) describing the dimension along which it is sharded across
+        ``tp_group``. This matches the megatron-lm convention. Parameters without
+        ``partition_dim`` are treated as replicated and updated with the plain (non-TP) REKLS step
+        on each rank — no collectives, full-size ``L``/``R``.
     """
 
     def __init__(
@@ -140,25 +142,14 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
         super().__init__(params, defaults)
 
     @staticmethod
-    def _get_partition_dim(p: torch.Tensor) -> int:
+    def _get_partition_dim(p: torch.Tensor) -> int | None:
+        """Returns ``p.partition_dim`` if set, else ``None`` (param is treated as replicated)."""
         partition_dim = getattr(p, "partition_dim", None)
         if partition_dim is None:
-            raise TypeError(
-                f"TpRekls requires each parameter to carry a 'partition_dim' attribute "
-                f"(megatron-lm convention); got a parameter of shape {tuple(p.shape)} without one."
-            )
+            return None
         if partition_dim not in (0, 1):
             raise ValueError(f"partition_dim must be 0 or 1, got {partition_dim}")
         return partition_dim
-
-    def _full_shape(self, p: torch.Tensor) -> tuple[int, int]:
-        m, n = p.shape
-        partition_dim = self._get_partition_dim(p)
-        if partition_dim == 0:
-            m *= self.tp_size
-        else:
-            n *= self.tp_size
-        return m, n
 
     @torch.no_grad()  # type: ignore[misc]
     def _init_group(self, group: dict, skip_non_grad_params: bool = True) -> None:
@@ -169,13 +160,22 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 raise TypeError("TpRekls is only supported for 2D tensors")
             state = self.state[p]
             if len(state) == 0:
-                m, n = self._full_shape(p)
+                partition_dim = self._get_partition_dim(p)
+                m, n = p.shape
+                if partition_dim == 0:
+                    m *= self.tp_size
+                elif partition_dim == 1:
+                    n *= self.tp_size
+                # When partition_dim is None: param is replicated, m and n are already full.
+
                 state["step"] = 0
                 state["exp_avg"] = torch.zeros((m, n), dtype=torch.float32, device=p.device)
                 state["exp_avg_sq"] = torch.zeros((m, n), dtype=torch.float32, device=p.device)
                 # Match init_kronecker_factors in soap.py: default dtype (typically float32).
-                state["L"] = torch.zeros((m // self.tp_size, m), device=p.device)
-                state["R"] = torch.zeros((n // self.tp_size, n), device=p.device)
+                # L, R are sharded along dim 0 only when the param is tensor-parallel.
+                shard = self.tp_size if partition_dim is not None else 1
+                state["L"] = torch.zeros((m // shard, m), device=p.device)
+                state["R"] = torch.zeros((n // shard, n), device=p.device)
 
     if TYPE_CHECKING:
 
@@ -208,12 +208,17 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # Apply weight decay before the gather so l2 mode propagates into full_grad.
                 self._apply_weight_decay_inplace(p, local_grad, group["lr"], group["weight_decay"])
 
-                full_grad, full_factors = tp_utils.all_gather_grad_and_kronecker_factors_tp(
-                    kronecker_factor_list=[state["L"], state["R"]],
-                    grad=local_grad,
-                    partition_dim=partition_dim,
-                    tp_group=self.tp_group,
-                )
+                if partition_dim is None:
+                    # Replicated parameter: no all-gather, state is already full-size.
+                    full_grad = local_grad
+                    full_factors = [state["L"], state["R"]]
+                else:
+                    full_grad, full_factors = tp_utils.all_gather_grad_and_kronecker_factors_tp(
+                        kronecker_factor_list=[state["L"], state["R"]],
+                        grad=local_grad,
+                        partition_dim=partition_dim,
+                        tp_group=self.tp_group,
+                    )
 
                 # Apply shampoo beta bias correction.
                 shampoo_beta = group["shampoo_beta"]
@@ -231,9 +236,11 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         eps=group["eps"],
                     )
 
-                # Persist the updated local shard back into state.
-                state["L"].copy_(full_factors[0].chunk(self.tp_size, dim=0)[self.tp_rank])
-                state["R"].copy_(full_factors[1].chunk(self.tp_size, dim=0)[self.tp_rank])
+                # Persist the updated local shard back into state — only needed for the TP path,
+                # since the replicated path updated state["L"], state["R"] in place via the alias.
+                if partition_dim is not None:
+                    state["L"].copy_(full_factors[0].chunk(self.tp_size, dim=0)[self.tp_rank])
+                    state["R"].copy_(full_factors[1].chunk(self.tp_size, dim=0)[self.tp_rank])
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     # Rotate exp_avg from the pre-update eigenbasis to the post-update eigenbasis,
@@ -262,8 +269,11 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                     full_precond_update = soap.precondition(full_adam_update, eigenbasis_list, dims=[[0], [1]])
 
-                local_precond_update = full_precond_update.chunk(self.tp_size, dim=partition_dim)[self.tp_rank]
-                p.add_(local_precond_update, alpha=-group["lr"])
+                if partition_dim is None:
+                    p.add_(full_precond_update, alpha=-group["lr"])
+                else:
+                    local_precond_update = full_precond_update.chunk(self.tp_size, dim=partition_dim)[self.tp_rank]
+                    p.add_(local_precond_update, alpha=-group["lr"])
 
                 state["step"] += 1
 
