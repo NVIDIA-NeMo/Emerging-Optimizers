@@ -85,11 +85,15 @@ class TpReklsCpuTest(parameterized.TestCase):
                 local_data = d.clone()
             else:
                 local_data = d.chunk(self.world_size, dim=pd)[self.rank].contiguous()
-            local_param = torch.nn.Parameter(local_data)
-            if pd is not None:
-                local_param.partition_dim = pd
-            tp_params.append(local_param)
-        tp_optimizer = TpRekls(tp_params, lr=1e-3, tp_group=self.tp_group)
+            tp_params.append(torch.nn.Parameter(local_data))
+
+        # One param group per distinct partition_dim — TpRekls reads partition_dim from group.
+        tp_param_groups: list[dict] = []
+        for pd in (0, 1, None):
+            members = [tp_p for tp_p, cfg in zip(tp_params, params_config) if cfg["partition_dim"] == pd]
+            if members:
+                tp_param_groups.append({"params": members, "partition_dim": pd})
+        tp_optimizer = TpRekls(tp_param_groups, lr=1e-3, tp_group=self.tp_group)
 
         num_steps = 5
         for _ in range(num_steps):

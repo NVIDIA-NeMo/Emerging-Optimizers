@@ -90,9 +90,6 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
         rotated, matching SOAP's eigh path.
       - ``L``, ``R``: kronecker factor matrices, sharded along dimension 0 across ``tp_group``.
 
-    Each step issues exactly one collective: an all-gather of the local gradient and ``L``/``R`` shards
-    via :func:`~emerging_optimizers.soap.tp_utils.all_gather_grad_and_kronecker_factors_tp`.
-
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups.
         lr: Learning rate.
@@ -105,11 +102,18 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
         fp32_matmul_prec: Precision for the optimizer-state GEMM operations.
 
     Note:
-        A parameter is treated as tensor-parallel iff it carries a ``partition_dim`` attribute
-        (an int in ``{0, 1}``) describing the dimension along which it is sharded across
-        ``tp_group``. This matches the megatron-lm convention. Parameters without
-        ``partition_dim`` are treated as replicated and updated with the plain (non-TP) REKLS step
-        on each rank — no collectives, full-size ``L``/``R``.
+        Sharding is configured per-parameter-group via ``partition_dim`` (an int in ``{0, 1}``,
+        or ``None`` for replicated parameters). Mixed-layout models should use one group per
+        distinct ``partition_dim``::
+
+            optimizer = TpRekls([
+                {"params": column_parallel_params, "partition_dim": 0},
+                {"params": row_parallel_params, "partition_dim": 1},
+                {"params": replicated_params, "partition_dim": None},
+            ], lr=1e-3, tp_group=tp_group)
+
+        Groups without ``partition_dim`` use the default (``None`` → replicated, plain non-TP REKLS
+        step on each rank, no collectives, full-size ``L``/``R``).
     """
 
     def __init__(
@@ -138,21 +142,19 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
             "shampoo_beta": shampoo_beta,
             "eps": eps,
             "weight_decay": weight_decay,
+            "partition_dim": None,
         }
         super().__init__(params, defaults)
 
     @staticmethod
-    def _get_partition_dim(p: torch.Tensor) -> int | None:
-        """Returns ``p.partition_dim`` if set, else ``None`` (param is treated as replicated)."""
-        partition_dim = getattr(p, "partition_dim", None)
-        if partition_dim is None:
-            return None
-        if partition_dim not in (0, 1):
-            raise ValueError(f"partition_dim must be 0 or 1, got {partition_dim}")
+    def _validate_partition_dim(partition_dim: int | None) -> int | None:
+        if partition_dim is not None and partition_dim not in (0, 1):
+            raise ValueError(f"partition_dim must be 0, 1, or None, got {partition_dim}")
         return partition_dim
 
     @torch.no_grad()  # type: ignore[misc]
     def _init_group(self, group: dict, skip_non_grad_params: bool = True) -> None:
+        partition_dim = self._validate_partition_dim(group["partition_dim"])
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
                 continue
@@ -160,7 +162,6 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 raise TypeError("TpRekls is only supported for 2D tensors")
             state = self.state[p]
             if len(state) == 0:
-                partition_dim = self._get_partition_dim(p)
                 m, n = p.shape
                 if partition_dim == 0:
                     m *= self.tp_size
@@ -193,13 +194,13 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
             self._init_group(group)
 
         for group in self.param_groups:
+            partition_dim = self._validate_partition_dim(group["partition_dim"])
             for p in group["params"]:
                 if p.grad is None:
                     continue  # pragma: no cover
 
                 local_grad = p.grad.to(torch.float32)
                 state = self.state[p]
-                partition_dim = self._get_partition_dim(p)
                 curr_iter_1_based = state["step"] + 1
 
                 # Apply weight decay before the gather so l2 mode propagates into full_grad.
