@@ -30,6 +30,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_integer("m", 2048, "Number of matrix rows.")
 flags.DEFINE_integer("n", 2048, "Number of matrix columns.")
+flags.DEFINE_integer("batch", 1, "Batch size. >1 produces a (B, M, N) input; not supported with TP or --backend=te.")
 flags.DEFINE_integer("warmup_steps", 1, "Warmup iterations before timing.")
 flags.DEFINE_integer("benchmark_steps", 5, "Benchmark iterations to time.")
 flags.DEFINE_integer("ns_steps", 5, "Newton-Schulz iterations per pass.")
@@ -76,12 +77,20 @@ def main(_: Any) -> None:
     tp_size = world_size
     is_rank0 = tp_group is None or tp_group.rank() == 0
 
+    batch = FLAGS.batch
+    if batch < 1:
+        raise ValueError(f"--batch must be >= 1, got {batch}.")
+    if batch > 1 and FLAGS.backend == "te":
+        raise ValueError("--batch > 1 is not supported with --backend=te.")
+
     matrix_shape = (FLAGS.m, FLAGS.n)
-    local_shape = list(matrix_shape)
+    local_shape = [batch, *matrix_shape] if batch > 1 else list(matrix_shape)
     if tp_group is not None:
         if matrix_shape[partition_dim] % tp_size != 0:
             raise ValueError(f"Shape {matrix_shape} is not divisible by tp_size={tp_size} on dim {partition_dim}.")
-        local_shape[partition_dim] //= tp_size
+        # partition_dim is logical (0=M, 1=N). Use negative indexing so the right axis
+        # is sharded for both 2D (M, N) and 3D (B, M, N) local tensors.
+        local_shape[partition_dim - 2] //= tp_size
     x = torch.randn(local_shape, device=device, dtype=torch.float32)
     # Save the initial random state so every benchmark pass starts from the same input.
     # Required for the te backend (in-place orthogonalization); harmless for emerging.
@@ -125,6 +134,7 @@ def main(_: Any) -> None:
         print("Newton-Schulz Benchmark")
         print("=" * 70)
         print(f"  Matrix shape     : {matrix_shape}")
+        print(f"  Batch size       : {batch}")
         print(f"  Local shape      : {tuple(x.shape)}")
         print(f"  Device           : {device}")
         print(f"  ns_steps         : {FLAGS.ns_steps}")
@@ -141,6 +151,8 @@ def main(_: Any) -> None:
             run()
         sync()
 
+        if device.type == "cuda":
+            torch.cuda.profiler.start()
         for _ in range(FLAGS.benchmark_steps):
             x.copy_(x_init)
             sync()
@@ -148,6 +160,8 @@ def main(_: Any) -> None:
             run()
             sync()
             step_times.append((time.perf_counter() - t0) * 1000)
+        if device.type == "cuda":
+            torch.cuda.profiler.stop()
 
     if is_rank0:
         avg_ms = sum(step_times) / len(step_times)
