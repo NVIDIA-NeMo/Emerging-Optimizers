@@ -99,7 +99,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
             expected_shape[avg_dim] = 1
             self.assertEqual(list(moment2.shape), expected_shape)
         elif moment2_method == "namo":
-            self.assertEqual(moment2.shape, torch.Size([]))
+            self.assertEqual(moment2.shape, torch.Size([1]))
 
     @parameterized.parameters(
         *({"moment2_method": moment2_method} for moment2_method in MOMENT2_METHODS),
