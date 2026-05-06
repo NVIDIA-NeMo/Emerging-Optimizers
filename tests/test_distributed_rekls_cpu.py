@@ -47,13 +47,18 @@ class TpReklsCpuTest(parameterized.TestCase):
         """Multiple TpRekls steps over multiple params (mixed partition_dim) must produce
         bit-identical updates to non-distributed REKLS for every param at every step.
         """
+        # ``partition_dim=None`` exercises the replicated fallback path: param has no partition_dim
+        # attribute, no all-gather, full-size L/R, full update applied directly.
         params_config = [
             {"shape": (16, 32), "partition_dim": 0},
             {"shape": (32, 16), "partition_dim": 1},
             {"shape": (96, 200), "partition_dim": 0},
             {"shape": (96, 200), "partition_dim": 1},
+            {"shape": (24, 40), "partition_dim": None},
         ]
         for cfg in params_config:
+            if cfg["partition_dim"] is None:
+                continue
             m, n = cfg["shape"]
             assert m % self.world_size == 0 and n % self.world_size == 0, (
                 f"shape {cfg['shape']} must be divisible by world size {self.world_size}"
@@ -63,7 +68,7 @@ class TpReklsCpuTest(parameterized.TestCase):
         full_params_data = []
         for cfg in params_config:
             d = torch.randn(cfg["shape"])
-            torch.distributed.all_reduce(d)
+            torch.distributed.all_reduce(d, group=self.tp_group)
             full_params_data.append(d)
 
         ref_params = [torch.nn.Parameter(d.clone()) for d in full_params_data]
@@ -71,9 +76,14 @@ class TpReklsCpuTest(parameterized.TestCase):
 
         tp_params = []
         for cfg, d in zip(params_config, full_params_data):
-            local_data = d.chunk(self.world_size, dim=cfg["partition_dim"])[self.rank].contiguous()
+            pd = cfg["partition_dim"]
+            if pd is None:
+                local_data = d.clone()
+            else:
+                local_data = d.chunk(self.world_size, dim=pd)[self.rank].contiguous()
             local_param = torch.nn.Parameter(local_data)
-            local_param.partition_dim = cfg["partition_dim"]
+            if pd is not None:
+                local_param.partition_dim = pd
             tp_params.append(local_param)
         tp_optimizer = TpRekls(tp_params, lr=1e-3, tp_group=self.tp_group)
 
@@ -82,19 +92,27 @@ class TpReklsCpuTest(parameterized.TestCase):
             full_grads = []
             for cfg in params_config:
                 g = torch.randn(cfg["shape"])
-                torch.distributed.all_reduce(g)
+                torch.distributed.all_reduce(g, group=self.tp_group)
                 full_grads.append(g)
 
             for ref_p, full_g in zip(ref_params, full_grads):
                 ref_p.grad = full_g.clone()
             for tp_p, cfg, full_g in zip(tp_params, params_config, full_grads):
-                tp_p.grad = full_g.chunk(self.world_size, dim=cfg["partition_dim"])[self.rank].contiguous()
+                pd = cfg["partition_dim"]
+                if pd is None:
+                    tp_p.grad = full_g.clone()
+                else:
+                    tp_p.grad = full_g.chunk(self.world_size, dim=pd)[self.rank].contiguous()
 
             ref_optimizer.step()
             tp_optimizer.step()
 
             for ref_p, tp_p, cfg in zip(ref_params, tp_params, params_config):
-                ref_local = ref_p.detach().chunk(self.world_size, dim=cfg["partition_dim"])[self.rank]
+                pd = cfg["partition_dim"]
+                if pd is None:
+                    ref_local = ref_p.detach()
+                else:
+                    ref_local = ref_p.detach().chunk(self.world_size, dim=pd)[self.rank]
                 torch.testing.assert_close(
                     tp_p.detach(),
                     ref_local,
@@ -107,7 +125,7 @@ if __name__ == "__main__":
     torch.distributed.init_process_group(backend="gloo")
     torch.set_float32_matmul_precision("highest")
 
-    rank = torch.distributed.get_rank()
+    rank = get_pg_rank(torch.distributed.group.WORLD)
 
     for i, arg in enumerate(sys.argv):
         if arg.startswith("--xml_output_file="):

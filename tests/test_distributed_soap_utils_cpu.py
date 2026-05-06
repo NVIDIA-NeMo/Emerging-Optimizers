@@ -56,9 +56,9 @@ class AllGatherGradAndKroneckerFactorsTpCpuTest(parameterized.TestCase):
         full_l = torch.randint(-5, 5, (m, m))
         full_r = torch.randint(-5, 5, (n, n))
         # All-reduce ensures that every rank starts from the same tensors.
-        torch.distributed.all_reduce(full_grad)
-        torch.distributed.all_reduce(full_l)
-        torch.distributed.all_reduce(full_r)
+        torch.distributed.all_reduce(full_grad, group=self.tp_group)
+        torch.distributed.all_reduce(full_l, group=self.tp_group)
+        torch.distributed.all_reduce(full_r, group=self.tp_group)
 
         local_grad = full_grad.chunk(self.world_size, dim=partition_dim)[self.rank].contiguous()
         local_l = full_l.chunk(self.world_size, dim=0)[self.rank].contiguous()
@@ -87,9 +87,9 @@ class AllGatherGradAndKroneckerFactorsTpCpuTest(parameterized.TestCase):
         full_grad = torch.randint(-5, 5, shape, dtype=torch.float32)
         full_l = torch.randint(-5, 5, (m, m), dtype=torch.float32)
         full_r = torch.randint(-5, 5, (n, n), dtype=torch.float32)
-        torch.distributed.all_reduce(full_grad)
-        torch.distributed.all_reduce(full_l)
-        torch.distributed.all_reduce(full_r)
+        torch.distributed.all_reduce(full_grad, group=self.tp_group)
+        torch.distributed.all_reduce(full_l, group=self.tp_group)
+        torch.distributed.all_reduce(full_r, group=self.tp_group)
 
         shampoo_beta = 0.95
 
@@ -117,7 +117,7 @@ if __name__ == "__main__":
     torch.distributed.init_process_group(backend="gloo")
     torch.set_float32_matmul_precision("highest")
 
-    rank = torch.distributed.get_rank()
+    rank = get_pg_rank(torch.distributed.group.WORLD)
 
     for i, arg in enumerate(sys.argv):
         if arg.startswith("--xml_output_file="):
