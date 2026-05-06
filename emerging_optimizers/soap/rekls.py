@@ -187,7 +187,7 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
     @torch.no_grad()  # type: ignore[misc]
     @override
-    def step(self, closure: Callable[[], float] | None = None) -> float | None:
+    def step(self, closure: None = None) -> None:
         assert closure is None, "No support for closure"
         for group in self.param_groups:
             self._init_group(group)
