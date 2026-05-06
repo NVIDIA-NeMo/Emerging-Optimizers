@@ -72,19 +72,28 @@ class SpelTest(parameterized.TestCase):
             W = test_param.data
             m, n = W.shape
             if m <= n:
-                WWT = W @ W.mT
-                eye = torch.eye(m, device=FLAGS.device)
+                gram = W @ W.mT
             else:
-                WWT = W.mT @ W
-                eye = torch.eye(n, device=FLAGS.device)
+                gram = W.mT @ W
 
-            # Newton-Schulz normalizes the spectral norm to ~1, so WWT ≈ I
+            diag = torch.diagonal(gram)
+            off_diag = gram[~torch.eye(gram.shape[0], dtype=torch.bool, device=FLAGS.device)]
+
+            # Newton-Schulz produces an approximate orthogonal factor, so check
+            # the identity structure directly instead of using one tolerance for all entries.
             torch.testing.assert_close(
-                WWT,
-                eye,
-                atol=0.1,
-                rtol=0.1,
-                msg=f"Weight matrix of shape {shape} is not approximately orthogonal after step",
+                diag,
+                torch.ones_like(diag),
+                atol=0.05,
+                rtol=0.05,
+                msg=f"Weight matrix of shape {shape} has diagonal entries too far from 1 after step",
+            )
+            torch.testing.assert_close(
+                off_diag,
+                torch.zeros_like(off_diag),
+                atol=0.05,
+                rtol=0.0,
+                msg=f"Weight matrix of shape {shape} has off-diagonal entries too far from 0 after step",
             )
 
 
