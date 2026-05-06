@@ -30,7 +30,7 @@ def all_gather_grad_and_kronecker_factors_tp(
 
     This is a simple implementation to support tensor parallel. It assumes grad is sharded among tensor parallel domain
     with partition_dim indicating the dimension it was sharded. To save memory, kronecker factors are also sharded
-    but always long dimension 0 to make gather operation easy.
+    but always along dimension 0 to make gather operation easy.
 
     Gradient and kronecker factors are both all-gathered to all tensor parallel ranks and returned so the caller
     can pass them to ``update_kronecker_factors`` (and downstream eigenbasis computations) without further
