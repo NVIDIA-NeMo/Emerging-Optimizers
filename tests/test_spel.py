@@ -84,16 +84,12 @@ class SpelTest(parameterized.TestCase):
             torch.testing.assert_close(
                 diag,
                 torch.ones_like(diag),
-                atol=0.05,
                 rtol=0.05,
-                msg=f"Weight matrix of shape {shape} has diagonal entries too far from 1 after step",
             )
             torch.testing.assert_close(
                 off_diag,
                 torch.zeros_like(off_diag),
                 atol=0.05,
-                rtol=0.0,
-                msg=f"Weight matrix of shape {shape} has off-diagonal entries too far from 0 after step",
             )
 
 
