@@ -43,7 +43,7 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         weight_decay_method=["decoupled", "independent", "l2"],
         shape=[(5, 7), (33, 65), (127, 257)],
         nesterov=[True, False],
-        fp32_matmul_prec=["highest", "medium", "low"],
+        fp32_matmul_prec=["highest", "high", "medium"],
     )
     def test_smoke(self, weight_decay_method, shape, nesterov, fp32_matmul_prec) -> None:
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=self.device))
