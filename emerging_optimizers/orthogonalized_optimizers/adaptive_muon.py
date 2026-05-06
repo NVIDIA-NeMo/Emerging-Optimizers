@@ -147,7 +147,7 @@ class AdaptiveMuon(muon.Muon):
                     moment2_shape[avg_dim] = 1
                     state["moment2_buffer"] = torch.zeros(moment2_shape, dtype=p.data.dtype, device=p.data.device)
                 elif self.moment2_method == "namo":
-                    state["moment2_buffer"] = torch.tensor(0.0, dtype=p.data.dtype, device=p.data.device)
+                    state["moment2_buffer"] = torch.zeros(1, dtype=p.data.dtype, device=p.data.device)
                 else:
                     raise TypeError(f"Invalid second moment method: {self.moment2_method}")
 
