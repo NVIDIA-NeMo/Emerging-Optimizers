@@ -36,6 +36,10 @@ def setUpModule() -> None:
             torch.cuda.manual_seed_all(FLAGS.seed)
 
 
+def tearDownModule() -> None:
+    torch.distributed.destroy_process_group()
+
+
 class AllGatherGradAndKroneckerFactorsTpCpuTest(parameterized.TestCase):
     def setUp(self):
         super().setUp()
@@ -128,5 +132,3 @@ if __name__ == "__main__":
             break
 
     absltest.main()
-
-    torch.distributed.destroy_process_group()
