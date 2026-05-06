@@ -28,21 +28,20 @@ from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
-__all__ = ["AdaptiveMuon"]
+__all__ = ["AdaptiveMuon", "Moment2MethodT"]
+
+Moment2MethodT = Literal["adamuon", "normuon", "namo"]
 
 
 @registry.register_optimizer("adaptive_muon")
 class AdaptiveMuon(muon.Muon):
-    """Adaptive Muon optimizer with adaptive second moment (AdaMuon/NorMuon variants).
+    """Adaptive Muon optimizer with adaptive second moment (AdaMuon/NorMuon/NAMO variants).
 
-    This class extends Muon by adding AdamW-style or NorMuon-style second moment
-    accumulation after orthogonalization. This idea was first explored in D.E. Carlson,
-    E. Collins, Ya-Ping Hsieh, L. Carin, and V. Cevher. *Preconditioned spectral
-    descent for deep learning.* In Advances in neural information processing systems 28 (2015).
+    This class extends Muon by adding adaptive second moment accumulation after
+    orthogonalization. This idea was first explored in D.E. Carlson, E. Collins,
+    Ya-Ping Hsieh, L. Carin, and V. Cevher. *Preconditioned spectral descent for
+    deep learning.* In Advances in neural information processing systems 28 (2015).
     The step() method is overridden to include second moment normalization logic.
-
-    Warning:
-        This optimizer is experimental and may change in future versions.
 
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups.
@@ -57,7 +56,10 @@ class AdaptiveMuon(muon.Muon):
         scale_mode: The type of scale factor to use for the update.
         extra_scale_factor: The additional scale factor to use for the update.
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
-        moment2_method: Method for second moment accumulation ("adamuon" or "normuon").
+        moment2_method: Method for second moment accumulation ("adamuon", "normuon", or "namo").
+            - "adamuon": Full elementwise second moment (like AdamW).
+            - "normuon": Row or column-wise second moment.
+            - "namo": Scalar adaptive scaling via Frobenius-norm ratio.
         beta2: The exponential decay rate for second moment.
         eps: Small constant for numerical stability.
     """
@@ -77,10 +79,13 @@ class AdaptiveMuon(muon.Muon):
         scale_mode: muon.MuonScaleT = "spectral",
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
-        moment2_method: Literal["adamuon", "normuon"] = "adamuon",
+        moment2_method: Moment2MethodT = "adamuon",
         beta2: float = 0.95,
         eps: float = 1e-8,
     ):
+        if moment2_method == "namo" and weight_decay_method == "l2":
+            raise ValueError('moment2_method="namo" is incompatible with weight_decay_method="l2"')
+
         super().__init__(
             params,
             lr=lr,
@@ -114,6 +119,7 @@ class AdaptiveMuon(muon.Muon):
         The shape of the moment2 buffer depends on the moment2_method:
         - "adamuon": Full elementwise buffer with same shape as parameter
         - "normuon": Reduced shape buffer (averaged along -1 if shape[-2] >= shape[-1], else -2)
+        - "namo": Scalar buffer (EMA of squared Frobenius norm of gradient)
 
         Args:
             group: Parameter group dictionary.
@@ -132,16 +138,16 @@ class AdaptiveMuon(muon.Muon):
                     state["moment2_buffer"] = torch.zeros_like(p.data)
                 elif self.moment2_method == "normuon":
                     # Row/column-wise second moment - reduced along one dimension
-                    # Determine which dimension to reduce based on parameter shape
                     if p.data.ndim != 2:
                         raise ValueError(
                             f"{self.__class__.__name__} only supports 2D parameters, got shape {tuple(p.data.shape)}"
                         )
                     avg_dim = -1 if p.data.shape[-2] >= p.data.shape[-1] else -2
-                    # Specify the shape with reduced dimension
                     moment2_shape = list(p.data.shape)
                     moment2_shape[avg_dim] = 1
                     state["moment2_buffer"] = torch.zeros(moment2_shape, dtype=p.data.dtype, device=p.data.device)
+                elif self.moment2_method == "namo":
+                    state["moment2_buffer"] = torch.zeros(1, dtype=p.data.dtype, device=p.data.device)
                 else:
                     raise TypeError(f"Invalid second moment method: {self.moment2_method}")
 
@@ -151,15 +157,26 @@ class AdaptiveMuon(muon.Muon):
         moment2: torch.Tensor,
         beta2: float,
         eps: float,
+        *,
+        raw_grad: torch.Tensor | None = None,
+        pre_orth_grad: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Apply AdamW-style second moment accumulation and normalization.
+        """Apply second moment accumulation and normalization.
 
-        This method supports two variants:
+        This method supports three variants:
         - "adamuon": Full elementwise second moment (like AdamW, https://arxiv.org/abs/2507.11005)
         - "normuon": Row or column-wise second moment (https://arxiv.org/abs/2510.05491)
+        - "namo": Scalar adaptive scaling using Frobenius-norm ratio (https://arxiv.org/abs/2602.17080).
+          Scales the orthogonalized momentum by
 
-        For both methods:
-        1. Updates the second moment as an EMA of squared gradients
+          .. math::
+
+              \\alpha_t = \\frac{\\|g_t^{\\text{pre-orth}}\\|_F}{\\sqrt{v_t} + \\varepsilon}
+
+          where :math:`v_t` is the EMA of :math:`\\|G_t\\|_F^2`.
+
+        For all methods:
+        1. Updates the second moment as an EMA of (some function of) squared gradients
         2. Returns the adaptively scaled gradient
 
         Args:
@@ -167,6 +184,9 @@ class AdaptiveMuon(muon.Muon):
             moment2: The second moment buffer from state.
             beta2: The exponential decay rate for second moment.
             eps: Small constant for numerical stability.
+            raw_grad: (NAMO only) The raw gradient before momentum update.
+            pre_orth_grad: (NAMO only) The gradient after momentum/Nesterov,
+                before orthogonalization.
 
         Returns:
             The adaptively scaled weight update tensor.
@@ -193,6 +213,19 @@ class AdaptiveMuon(muon.Muon):
             # NorMuon uses reciprocal square root with clamping
             step_size = moment2.clamp_min(eps).rsqrt_()
             return orth_grad * step_size
+
+        elif self.moment2_method == "namo":
+            if raw_grad is None or pre_orth_grad is None:
+                raise RuntimeError("NAMO requires raw_grad and pre_orth_grad")
+            # NAMO: Scalar adaptive scaling via Frobenius-norm ratio
+            # v_t = β2 * v_{t-1} + (1 - β2) * ||G_t||_F^2
+            grad_norm_square = torch.linalg.vector_norm(raw_grad).square()
+            moment2.lerp_(grad_norm_square, 1 - beta2)
+
+            # α_t = ||pre_orth_grad||_F / (sqrt(v_t) + ε)
+            pre_orth_norm = torch.linalg.vector_norm(pre_orth_grad)
+            alpha_t = pre_orth_norm / (moment2.sqrt() + eps)
+            return orth_grad * alpha_t
 
         else:
             raise TypeError(f"Invalid second moment method: {self.moment2_method}")
@@ -238,6 +271,8 @@ class AdaptiveMuon(muon.Muon):
                     group["weight_decay"],
                 )
 
+                raw_grad = grad if self.moment2_method == "namo" else None
+
                 # update momentum buffer with EMA of gradient
                 exp_avg.lerp_(grad, 1 - group["momentum"])
 
@@ -255,10 +290,13 @@ class AdaptiveMuon(muon.Muon):
                     moment2=state["moment2_buffer"],
                     beta2=group["beta2"],
                     eps=group["eps"],
+                    raw_grad=raw_grad,
+                    pre_orth_grad=grad if raw_grad is not None else None,
                 )
 
-                # perform weight update
-                # scale is applied to have update RMS == 1
+                # perform weight update with pre and post weight update functions for subclass customization
+                self.pre_weight_update_fn_inplace(p, update)
                 p.add_(update, alpha=-group["lr"])
+                self.post_weight_update_fn_inplace(p)
 
         return loss
