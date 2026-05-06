@@ -13,14 +13,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import TYPE_CHECKING, Callable, override
+
+import torch
+from torch import distributed as dist
+from torch import optim
 from torch.optim.optimizer import ParamsT
 
+
+if TYPE_CHECKING:
+    from typing import overload
+
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import registry
+from emerging_optimizers import registry, utils
+from emerging_optimizers.scalar_optimizers import update_functions
+from emerging_optimizers.soap import soap, soap_utils, tp_utils
 from emerging_optimizers.soap.soap import SOAP
+from emerging_optimizers.utils import FP32MatmulPrecT, get_pg_rank, get_pg_size
 
 
-__all__ = ["REKLS"]
+__all__ = ["REKLS", "TpRekls"]
 
 
 @registry.register_optimizer("rekls")
@@ -56,3 +68,197 @@ class REKLS(SOAP):
             use_eigh=True,
             use_kl_shampoo=True,
         )
+
+
+@registry.register_optimizer("tp_rekls")
+class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
+    """Tensor-parallel variant of :class:`REKLS`.
+
+    Reimplemented from scratch (not inheriting from :class:`~emerging_optimizers.soap.soap.SOAP`) so the
+    tensor-parallel bookkeeping stays isolated. Eigenbases are not stored in optimizer state; they are
+    recomputed via :func:`~emerging_optimizers.soap.soap_utils.get_eigenbasis_eigh` from the kronecker
+    factors. Each step calls eigh twice — once on the pre-update L, R for the
+    :func:`~emerging_optimizers.soap.soap.update_kronecker_factors_kl_shampoo` correction, and once on
+    the post-update L, R for the gradient projection.
+
+    State per parameter (one entry per rank):
+      - ``step``
+      - ``exp_avg``, ``exp_avg_sq``: full-size tensors duplicated across ``tp_group`` ranks. The
+        eigenbasis-rotation step that SOAP performs in
+        :func:`~emerging_optimizers.soap.soap.update_eigenbasis_and_exp_avgs` is skipped because the
+        previous eigenbasis is not retained — these moments are interpreted as living in the most
+        recent eigenbasis. This is a deliberate simplification consistent with REKLS' premise that
+        the eigenbasis evolves slowly between steps.
+      - ``L``, ``R``: kronecker factor matrices, sharded along dimension 0 across ``tp_group``.
+
+    Each step issues exactly one collective: an all-gather of the local gradient and ``L``/``R`` shards
+    via :func:`~emerging_optimizers.soap.tp_utils.all_gather_grad_and_kronecker_factors_tp`.
+
+    Args:
+        params: Iterable of parameters to optimize or dicts defining parameter groups.
+        lr: Learning rate.
+        betas: Inner Adam betas ``(b1, b2)``.
+        shampoo_beta: Beta for the kronecker factor moving average.
+        eps: Inner Adam epsilon.
+        weight_decay: Weight decay coefficient.
+        weight_decay_method: See :class:`~emerging_optimizers.mixin.WeightDecayMixin`.
+        tp_group: Process group across which parameters and gradients are sharded.
+        fp32_matmul_prec: Precision for the optimizer-state GEMM operations.
+
+    Note:
+        Each parameter must carry a ``partition_dim`` attribute (an int in ``{0, 1}``) describing the
+        dimension along which it is sharded across ``tp_group``. This matches the megatron-lm
+        convention. Parameters without a ``partition_dim`` attribute will raise :class:`TypeError`.
+    """
+
+    def __init__(
+        self,
+        params: ParamsT,
+        lr: float,
+        betas: tuple[float, float] = (0.9, 0.95),
+        shampoo_beta: float = 0.95,
+        eps: float = 1e-8,
+        weight_decay: float = 0.01,
+        *,
+        weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
+        tp_group: dist.ProcessGroup,
+        fp32_matmul_prec: FP32MatmulPrecT = "high",
+    ) -> None:
+        self.tp_group = tp_group
+        self.tp_size = get_pg_size(tp_group)
+        self.tp_rank = get_pg_rank(tp_group)
+
+        self.weight_decay_method = weight_decay_method
+        self.fp32_matmul_prec = fp32_matmul_prec
+
+        defaults = {
+            "lr": lr,
+            "betas": betas,
+            "shampoo_beta": shampoo_beta,
+            "eps": eps,
+            "weight_decay": weight_decay,
+        }
+        super().__init__(params, defaults)
+
+    @staticmethod
+    def _get_partition_dim(p: torch.Tensor) -> int:
+        partition_dim = getattr(p, "partition_dim", None)
+        if partition_dim is None:
+            raise TypeError(
+                f"TpRekls requires each parameter to carry a 'partition_dim' attribute "
+                f"(megatron-lm convention); got a parameter of shape {tuple(p.shape)} without one."
+            )
+        if partition_dim not in (0, 1):
+            raise ValueError(f"partition_dim must be 0 or 1, got {partition_dim}")
+        return partition_dim
+
+    def _full_shape(self, p: torch.Tensor) -> tuple[int, int]:
+        m, n = p.shape
+        partition_dim = self._get_partition_dim(p)
+        if partition_dim == 0:
+            m *= self.tp_size
+        else:
+            n *= self.tp_size
+        return m, n
+
+    @torch.no_grad()  # type: ignore[misc]
+    def _init_group(self, group: dict, skip_non_grad_params: bool = True) -> None:
+        for p in group["params"]:
+            if skip_non_grad_params and p.grad is None:
+                continue
+            if p.dim() != 2:
+                raise TypeError("TpRekls is only supported for 2D tensors")
+            state = self.state[p]
+            if len(state) == 0:
+                m, n = self._full_shape(p)
+                state["step"] = 0
+                state["exp_avg"] = torch.zeros((m, n), dtype=torch.float32, device=p.device)
+                state["exp_avg_sq"] = torch.zeros((m, n), dtype=torch.float32, device=p.device)
+                # Match init_kronecker_factors in soap.py: default dtype (typically float32).
+                state["L"] = torch.zeros((m // self.tp_size, m), device=p.device)
+                state["R"] = torch.zeros((n // self.tp_size, n), device=p.device)
+
+    if TYPE_CHECKING:
+
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
+
+    @torch.no_grad()  # type: ignore[misc]
+    @override
+    def step(self, closure: Callable[[], float] | None = None) -> float | None:
+        if closure is None:
+            loss = None
+        else:
+            loss = closure()
+        for group in self.param_groups:
+            self._init_group(group)
+
+        for group in self.param_groups:
+            for p in group["params"]:
+                if p.grad is None:
+                    continue  # pragma: no cover
+
+                local_grad = p.grad.to(torch.float32)
+                state = self.state[p]
+                partition_dim = self._get_partition_dim(p)
+                curr_iter_1_based = state["step"] + 1
+
+                # Apply weight decay before the gather so l2 mode propagates into full_grad.
+                self._apply_weight_decay_inplace(p, local_grad, group["lr"], group["weight_decay"])
+
+                full_grad, full_factors = tp_utils.all_gather_grad_and_kronecker_factors_tp(
+                    kronecker_factor_list=[state["L"], state["R"]],
+                    grad=local_grad,
+                    partition_dim=partition_dim,
+                    tp_group=self.tp_group,
+                )
+
+                # Apply shampoo beta bias correction.
+                shampoo_beta = group["shampoo_beta"]
+                shampoo_beta = 1 - (1 - shampoo_beta) / (1 - shampoo_beta**curr_iter_1_based)
+
+                # KL-Shampoo correction needs the eigenbasis of the *pre-update* L, R; recompute it
+                # via eigh since we do not persist eigenbases across steps.
+                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                    pre_eigenbasis_list = soap_utils.get_eigenbasis_eigh(full_factors)
+                    soap.update_kronecker_factors_kl_shampoo(
+                        full_factors,
+                        full_grad,
+                        shampoo_beta=shampoo_beta,
+                        eigenbasis_list=pre_eigenbasis_list,
+                        eps=group["eps"],
+                    )
+
+                # Persist the updated local shard back into state.
+                state["L"].copy_(full_factors[0].chunk(self.tp_size, dim=0)[self.tp_rank])
+                state["R"].copy_(full_factors[1].chunk(self.tp_size, dim=0)[self.tp_rank])
+
+                # Eigenbasis from the updated L, R is what gets used for the gradient projection.
+                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                    eigenbasis_list = soap_utils.get_eigenbasis_eigh(full_factors)
+
+                    full_grad_projected = soap.precondition(full_grad, eigenbasis_list, dims=[[0], [0]])
+
+                    # No matmul inside adam update. Put it under fp32_matmul_precision for code simplicity.
+                    full_adam_update = update_functions.calculate_adam_update(
+                        full_grad_projected,
+                        state["exp_avg"],
+                        state["exp_avg_sq"],
+                        group["betas"],
+                        True,  # correct_bias
+                        False,  # nesterov
+                        curr_iter_1_based,
+                        group["eps"],
+                    )
+
+                    full_precond_update = soap.precondition(full_adam_update, eigenbasis_list, dims=[[0], [1]])
+
+                local_precond_update = full_precond_update.chunk(self.tp_size, dim=partition_dim)[self.tp_rank]
+                p.add_(local_precond_update, alpha=-group["lr"])
+
+                state["step"] += 1
+
+        return loss

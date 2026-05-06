@@ -19,7 +19,7 @@ import torch
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.soap import soap, tp_soap
+from emerging_optimizers.soap import soap, tp_utils
 from emerging_optimizers.utils import get_pg_rank, get_pg_size
 
 
@@ -64,7 +64,7 @@ class AllGatherGradAndKroneckerFactorsTpCpuTest(parameterized.TestCase):
         local_l = full_l.chunk(self.world_size, dim=0)[self.rank].contiguous()
         local_r = full_r.chunk(self.world_size, dim=0)[self.rank].contiguous()
 
-        gathered_grad, gathered_factors = tp_soap.all_gather_grad_and_kronecker_factors_tp(
+        gathered_grad, gathered_factors = tp_utils.all_gather_grad_and_kronecker_factors_tp(
             kronecker_factor_list=[local_l, local_r],
             grad=local_grad,
             partition_dim=partition_dim,
@@ -101,7 +101,7 @@ class AllGatherGradAndKroneckerFactorsTpCpuTest(parameterized.TestCase):
         local_l = full_l.chunk(self.world_size, dim=0)[self.rank].contiguous()
         local_r = full_r.chunk(self.world_size, dim=0)[self.rank].contiguous()
 
-        gathered_grad, gathered_factors = tp_soap.all_gather_grad_and_kronecker_factors_tp(
+        gathered_grad, gathered_factors = tp_utils.all_gather_grad_and_kronecker_factors_tp(
             kronecker_factor_list=[local_l, local_r],
             grad=local_grad,
             partition_dim=partition_dim,
