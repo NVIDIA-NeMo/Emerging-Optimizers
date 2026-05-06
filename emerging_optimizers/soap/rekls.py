@@ -169,6 +169,14 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     n *= self.tp_size
                 # When partition_dim is None: param is replicated, m and n are already full.
 
+                # Both dimensions must be divisible by tp_size for the L/R shards (each sharded
+                # along dim 0) to gather back to the full square shape via torch.cat.
+                if partition_dim is not None and (m % self.tp_size or n % self.tp_size):
+                    raise ValueError(
+                        f"TpRekls requires both dimensions to be divisible by tp_size={self.tp_size}; "
+                        f"got full shape ({m}, {n}) for a parameter with partition_dim={partition_dim}."
+                    )
+
                 state["step"] = 0
                 state["exp_avg"] = torch.zeros((m, n), dtype=torch.float32, device=p.device)
                 state["exp_avg_sq"] = torch.zeros((m, n), dtype=torch.float32, device=p.device)
