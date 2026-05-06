@@ -83,12 +83,11 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
     State per parameter (one entry per rank):
       - ``step``
-      - ``exp_avg``, ``exp_avg_sq``: full-size tensors duplicated across ``tp_group`` ranks. The
-        eigenbasis-rotation step that SOAP performs in
-        :func:`~emerging_optimizers.soap.soap.update_eigenbasis_and_exp_avgs` is skipped because the
-        previous eigenbasis is not retained — these moments are interpreted as living in the most
-        recent eigenbasis. This is a deliberate simplification consistent with REKLS' premise that
-        the eigenbasis evolves slowly between steps.
+      - ``exp_avg``, ``exp_avg_sq``: full-size tensors duplicated across ``tp_group`` ranks. ``exp_avg``
+        is rotated through the basis change between steps (project back via the pre-update eigenbasis,
+        then forward via the post-update eigenbasis), matching SOAP's
+        :func:`~emerging_optimizers.soap.soap.update_eigenbasis_and_exp_avgs`. ``exp_avg_sq`` is not
+        rotated, matching SOAP's eigh path.
       - ``L``, ``R``: kronecker factor matrices, sharded along dimension 0 across ``tp_group``.
 
     Each step issues exactly one collective: an all-gather of the local gradient and ``L``/``R`` shards
@@ -236,9 +235,16 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 state["L"].copy_(full_factors[0].chunk(self.tp_size, dim=0)[self.tp_rank])
                 state["R"].copy_(full_factors[1].chunk(self.tp_size, dim=0)[self.tp_rank])
 
-                # Eigenbasis from the updated L, R is what gets used for the gradient projection.
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    eigenbasis_list = soap_utils.get_eigenbasis_eigh(full_factors)
+                    # Rotate exp_avg from the pre-update eigenbasis to the post-update eigenbasis,
+                    # and recompute the post-update eigenbasis via eigh.
+                    eigenbasis_list, state["exp_avg"], state["exp_avg_sq"] = soap.update_eigenbasis_and_exp_avgs(
+                        kronecker_factor_list=full_factors,
+                        eigenbasis_list=pre_eigenbasis_list,
+                        exp_avg_sq=state["exp_avg_sq"],
+                        exp_avg=state["exp_avg"],
+                        use_eigh=True,
+                    )
 
                     full_grad_projected = soap.precondition(full_grad, eigenbasis_list, dims=[[0], [0]])
 
