@@ -30,9 +30,9 @@ class SpelTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(5, 7), (33, 65), (127, 257)],
         weight_decay_method=["decoupled", "independent", "l2"],
-        use_nesterov=[True, False],
+        nesterov=[True, False],
     )
-    def test_smoke(self, shape, weight_decay_method, use_nesterov) -> None:
+    def test_smoke(self, shape, weight_decay_method, nesterov) -> None:
         """Smoke test Spel optimizer with various shapes, weight decay methods, and Nesterov."""
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=FLAGS.device))
         test_param.grad = torch.randint_like(test_param, -5, 5)
@@ -40,7 +40,7 @@ class SpelTest(parameterized.TestCase):
         spel_opt = spel.Spel(
             [test_param],
             weight_decay_method=weight_decay_method,
-            use_nesterov=use_nesterov,
+            nesterov=nesterov,
         )
         spel_opt.step()
 
@@ -58,7 +58,7 @@ class SpelTest(parameterized.TestCase):
         spel_opt = spel.Spel(
             [test_param],
             lr=0.01,
-            momentum_beta=0.0,
+            momentum=0.0,
             weight_decay=0.0,
         )
 
