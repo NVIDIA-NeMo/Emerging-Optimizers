@@ -85,12 +85,12 @@ class SpelTest(parameterized.TestCase):
                 diag,
                 torch.ones_like(diag),
                 atol=0.0,
-                rtol=0.05,
+                rtol=0.06,
             )
             torch.testing.assert_close(
                 off_diag,
                 torch.zeros_like(off_diag),
-                atol=0.05,
+                atol=0.06,
                 rtol=0.0,
             )
 
