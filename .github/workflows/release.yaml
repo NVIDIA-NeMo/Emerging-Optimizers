@@ -97,7 +97,7 @@ jobs:
       skip-wheel-build: true
       app-id: ${{ vars.BOT_ID }}
       gh-release-use-changelog-builder: ${{ inputs.generate-changelog || false }}
-      publish-docs: ${{ inputs.publish-docs || false }}
+      publish-docs: true
       docs-target-path: nemo/emerging-optimizers
       docs-fail-on-warning: false
       gh-release-from-tag: ${{ inputs.gh-release-from-tag || '' }}
