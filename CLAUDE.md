@@ -68,6 +68,11 @@ Coverage is collected with `coverage run -p --source=emerging_optimizers ...` an
 
 Run a single test class/method using absl conventions, e.g. `python tests/test_orthogonalized_optimizer.py OrthogonalizedOptimizerTest.test_smoke --device=cpu -v -2`.
 
+### Authoring tests
+
+- **Every test file must define `--device` and `--seed` flags.** CI invokes every test under both `--device=cpu` and `--device=cuda`, and runs each GPU test twice (random seed, then `--seed=42` / `--seed=77`). Tests without these flags will be invoked with `--device=...` and fail at flag parsing. Match the existing pattern: `flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], ...)`, `flags.DEFINE_integer("seed", None, ...)`, and a `setUpModule` that seeds when `FLAGS.seed is not None`.
+- **Don't override `torch.testing.assert_close`'s `msg`; append to it.** The default message contains the diff/atol/rtol summary, which is invaluable when debugging CI failures. Pass `msg=` as a callable that takes the default and returns `f"{ctx}\n{default}"` (or similar) — never as a bare string that replaces the default.
+
 ## Architecture
 
 ### Package layout (`emerging_optimizers/`)
@@ -105,7 +110,7 @@ Don't override `step` — override `orthogonalize` (and the pre/post hooks if yo
 
 - Use **abseil-py** instead of stdlib equivalents: `from absl import logging` (not `logging`), `absl.testing` (not `unittest`), `absl.flags` (not `argparse`).
 - Line length 120 for Python (ruff configured to 119), 100 for C++.
-- Mixed case is disallowed; PyTorch idioms (`x`, `dX`, importing functions/classes directly) are allowed despite Google style.
+- Follow Google Python style. "Mixed case" (camelCase, e.g. `getFoo`, `myVariable`) is disallowed — Google style already covers the rest. PyTorch idioms (`x`, `dX`, importing functions/classes directly) are allowed despite Google style.
 - Markdown filenames must use hyphens (`my-doc.md`), not underscores — pre-commit hook will reject.
 - Commits must be DCO-signed: `git commit -s ...`.
 
