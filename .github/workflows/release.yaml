@@ -79,7 +79,7 @@ jobs:
         || !(needs.pre-flight.outputs.docs_only == 'true'
              || needs.pre-flight.outputs.is_deployment_workflow == 'true')
       )
-    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_release_library.yml@43d259e5b5f0a6cb4c14eefa04738a5bdf316fe1
+    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_release_library.yml@d2f3dd32aad11b7034f3f1821174556507d61670
     with:
       release-ref: ${{ inputs.release-ref || github.sha }}
       python-package: emerging_optimizers
@@ -95,11 +95,7 @@ jobs:
       publish-docs: false
       gh-release-from-tag: ${{ inputs.gh-release-from-tag || '' }}
       restrict-to-admins: true
-    secrets:
-      TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
-      TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
-      SLACK_WEBHOOK_ADMIN: ${{ secrets.SLACK_WEBHOOK_ADMIN }}
-      BOT_KEY: ${{ secrets.BOT_KEY }}
+    secrets: inherit
 
   release-summary:
     needs: [pre-flight, release]
