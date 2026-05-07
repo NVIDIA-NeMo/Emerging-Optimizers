@@ -45,7 +45,7 @@ We generally follow [Google's style guides](https://google.github.io/styleguide/
   * Some special variable name, `x`, `dX`, etc.
 * Allow common capitalized naming in Triton code.
 
-Although common, **mixed case is not allowed** in any code.
+Although common, **mixed case is not allowed** in any code. "Mixed case" here means camelCase (e.g. `getFoo`, `myVariable`); PascalCase for classes and snake_case for functions/variables follow Google style as usual.
 
 Run pre-commit at local before submitting merge request. You can also read [.pre-commit-config.yaml]( .pre-commit-config.yaml) to understand what are being forced. The **mypy** settings are inherited from PyTorch.
 
@@ -54,6 +54,18 @@ Run pre-commit at local before submitting merge request. You can also read [.pre
 All tests should be placed under [tests](tests). We aim for 100% test coverage for this tiny project.
 
 We use [abseil-py](https://github.com/abseil/abseil-py/tree/main) **testing** because it is easier to launch multi process than alternatives.
+
+Every test file must define `--device` and `--seed` flags — CI invokes every test under both `--device=cpu` and `--device=cuda`, and runs each GPU test twice (random seed, then a fixed seed). A test without these flags will fail at flag parsing in CI. Match the pattern used in existing test files: `flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], ...)`, `flags.DEFINE_integer("seed", None, ...)`, and a `setUpModule` that seeds when `FLAGS.seed is not None`.
+
+When using `torch.testing.assert_close`, do not override the `msg` argument with a bare string — that replaces the default diff/atol/rtol summary, which is what makes CI failures debuggable. Pass `msg=` as a callable that takes the default message and returns one with your context appended. Canonical pattern (from the [PyTorch 2.11 docs](https://docs.pytorch.org/docs/2.11/testing.html#module-torch.testing)):
+
+```python
+torch.testing.assert_close(
+    actual, expected, msg=lambda msg: f"Header\n\n{msg}\n\nFooter"
+)
+```
+
+`atol` and `rtol` must be set together or not at all — passing only one raises `ValueError`. Use both or neither (the default tolerances are dtype-aware).
 
 ## Signing Your Work
 
