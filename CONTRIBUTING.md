@@ -65,6 +65,8 @@ torch.testing.assert_close(
 )
 ```
 
+`atol` and `rtol` must be set together or not at all — passing only one raises `ValueError`. Use both or neither (the default tolerances are dtype-aware).
+
 ## Signing Your Work
 
 * We require that all contributors "sign-off" on their commits. This certifies that the contribution is your original work, or you have rights to submit it under the same license, or a compatible license.

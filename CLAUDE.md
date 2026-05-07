@@ -79,6 +79,8 @@ Run a single test class/method using absl conventions, e.g. `python tests/test_o
   )
   ```
 
+- **`atol` and `rtol` must be set together or not at all** in `torch.testing.assert_close`. Passing only one raises `ValueError`. Use both or neither (the default tolerances are dtype-aware).
+
 ## Architecture
 
 ### Package layout (`emerging_optimizers/`)
