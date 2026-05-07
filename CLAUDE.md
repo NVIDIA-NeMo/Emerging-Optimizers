@@ -71,7 +71,13 @@ Run a single test class/method using absl conventions, e.g. `python tests/test_o
 ### Authoring tests
 
 - **Every test file must define `--device` and `--seed` flags.** CI invokes every test under both `--device=cpu` and `--device=cuda`, and runs each GPU test twice (random seed, then `--seed=42` / `--seed=77`). Tests without these flags will be invoked with `--device=...` and fail at flag parsing. Match the existing pattern: `flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], ...)`, `flags.DEFINE_integer("seed", None, ...)`, and a `setUpModule` that seeds when `FLAGS.seed is not None`.
-- **Don't override `torch.testing.assert_close`'s `msg`; append to it.** The default message contains the diff/atol/rtol summary, which is invaluable when debugging CI failures. Pass `msg=` as a callable that takes the default and returns `f"{ctx}\n{default}"` (or similar) — never as a bare string that replaces the default.
+- **Don't override `torch.testing.assert_close`'s `msg`; append to it.** The default message contains the diff/atol/rtol summary, which is invaluable when debugging CI failures. Pass `msg=` as a callable that takes the default and returns a wrapped string — never a bare string that replaces the default. Canonical pattern (from the [PyTorch 2.11 docs](https://docs.pytorch.org/docs/2.11/testing.html#module-torch.testing)):
+
+  ```python
+  torch.testing.assert_close(
+      actual, expected, msg=lambda msg: f"Header\n\n{msg}\n\nFooter"
+  )
+  ```
 
 ## Architecture
 
