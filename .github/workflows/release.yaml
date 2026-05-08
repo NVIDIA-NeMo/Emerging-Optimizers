@@ -80,7 +80,7 @@ jobs:
       !cancelled() && !failure()
       && !(needs.pre-flight.outputs.docs_only == 'true'
            || needs.pre-flight.outputs.is_deployment_workflow == 'true')
-    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_release_library.yml@v1.0.0
+    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_release_library.yml@2ba61fb4dc42ce6e8eabac7a6064d73bc962c9ec
     with:
       release-ref: ${{ inputs.release-ref || github.sha }}
       python-package: emerging_optimizers
@@ -95,6 +95,7 @@ jobs:
       gh-release-use-changelog-builder: ${{ inputs.generate-changelog || false }}
       publish-docs: true
       docs-target-path: nemo/emerging-optimizers
+      docs-sync-all: true
       gh-release-from-tag: ${{ inputs.gh-release-from-tag || '' }}
       restrict-to-admins: true
     secrets: inherit  # pragma: allowlist secret
