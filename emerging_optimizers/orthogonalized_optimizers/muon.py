@@ -126,10 +126,7 @@ class Muon(OrthogonalizedOptimizer):
         )
 
     def _orthogonalize_grad(self, grad: torch.Tensor) -> torch.Tensor:
-        logging.debug(
-            f"Orthogonalizing grad with {self.num_ns_steps} steps, {self.coefficient_type} coefficient, "
-            f"{self.scale_mode} scale mode, extra_scale_factor={self.extra_scale_factor}"
-        )
+        logging.debug(f"Orthogonalizing grad with {self.num_ns_steps} steps, {self.coefficient_type} coefficient")
         return muon_utils.newton_schulz(
             grad,
             steps=self.num_ns_steps,
@@ -139,6 +136,7 @@ class Muon(OrthogonalizedOptimizer):
 
     def _apply_muon_scale(self, update: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
         scale_factor = get_muon_scale_factor(reference.size(-2), reference.size(-1), mode=self.scale_mode)
+        logging.debug(f"Applying Muon scale factor {scale_factor}, extra_scale_factor={self.extra_scale_factor}")
         return update * scale_factor * self.extra_scale_factor
 
 
