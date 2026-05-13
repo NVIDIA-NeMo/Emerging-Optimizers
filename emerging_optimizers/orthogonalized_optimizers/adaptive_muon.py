@@ -19,12 +19,14 @@ if TYPE_CHECKING:
     from typing import overload
 
 import torch
+from absl import logging
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import registry, utils
-from emerging_optimizers.orthogonalized_optimizers import muon
+from emerging_optimizers import registry, triton_kernels, utils
+from emerging_optimizers.orthogonalized_optimizers import muon, muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
+from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
@@ -34,7 +36,7 @@ Moment2MethodT = Literal["adamuon", "normuon", "namo"]
 
 
 @registry.register_optimizer("adaptive_muon")
-class AdaptiveMuon(muon.Muon):
+class AdaptiveMuon(OrthogonalizedOptimizer):
     """Adaptive Muon optimizer with adaptive second moment (AdaMuon/NorMuon/NAMO variants).
 
     This class extends Muon by adding adaptive second moment accumulation after
@@ -86,27 +88,55 @@ class AdaptiveMuon(muon.Muon):
     ):
         if moment2_method == "namo" and weight_decay_method == "l2":
             raise ValueError('moment2_method="namo" is incompatible with weight_decay_method="l2"')
+        if num_ns_steps < 1:
+            raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
+
+        if use_syrk:
+            if torch.cuda.is_available():
+                sm_version = torch.cuda.get_device_capability()
+            else:
+                sm_version = (0, 0)
+            if not triton_kernels.HAS_TRITON_340:  # type: ignore[attr-defined]
+                logging.error("Triton 3.4.0 or higher is required for use_syrk to be True.")
+                use_syrk = False
+            elif sm_version not in ((8, 0), (9, 0), (10, 0), (10, 3)):
+                logging.error(
+                    f"Correctness of Triton kernel on SM {sm_version} cannot be guaranteed. Setting use_syrk to False."
+                )
+                use_syrk = False
+
+        self.scale_mode = scale_mode
+        self.extra_scale_factor = extra_scale_factor
+
+        def raw_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
+            logging.debug(f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient")
+            return muon_utils.newton_schulz(
+                grad,
+                steps=num_ns_steps,
+                coefficient_type=coefficient_type,
+                use_syrk=use_syrk,
+            )
 
         super().__init__(
             params,
-            lr=lr,
-            momentum=momentum,
-            weight_decay=weight_decay,
+            lr,
+            momentum,
+            weight_decay,
             nesterov=nesterov,
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
-            coefficient_type=coefficient_type,
-            num_ns_steps=num_ns_steps,
-            scale_mode=scale_mode,
-            extra_scale_factor=extra_scale_factor,
-            use_syrk=use_syrk,
+            scaled_orthogonalize_fn=raw_orthogonalize_fn,
         )
         self.moment2_method = moment2_method
-        self.scaled_orthogonalize_fn = self._orthogonalize_grad
 
         for group in self.param_groups:
             group.setdefault("beta2", beta2)
             group.setdefault("eps", eps)
+
+    def _apply_muon_scale(self, update: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
+        scale_factor = muon.get_muon_scale_factor(reference.size(-2), reference.size(-1), mode=self.scale_mode)
+        logging.debug(f"Applying Muon scale factor {scale_factor}, extra_scale_factor={self.extra_scale_factor}")
+        return update * scale_factor * self.extra_scale_factor
 
     @torch.no_grad()  # type: ignore[misc]
     @override
