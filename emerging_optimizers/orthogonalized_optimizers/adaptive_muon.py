@@ -102,6 +102,7 @@ class AdaptiveMuon(muon.Muon):
             use_syrk=use_syrk,
         )
         self.moment2_method = moment2_method
+        self.scaled_orthogonalize_fn = self._orthogonalize_grad
 
         for group in self.param_groups:
             group.setdefault("beta2", beta2)
@@ -283,7 +284,8 @@ class AdaptiveMuon(muon.Muon):
                     grad = exp_avg
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    orth_grad = self._orthogonalize_grad(grad)
+                    group_kwargs = {k: v for k, v in group.items() if k != "params"}
+                    orth_grad = self.orthogonalize(p, grad, **group_kwargs)
 
                 update = self._apply_moment2_normalization(
                     orth_grad=orth_grad,

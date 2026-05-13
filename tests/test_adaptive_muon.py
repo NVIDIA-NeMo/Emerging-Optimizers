@@ -101,7 +101,10 @@ class AdaptiveMuonTest(parameterized.TestCase):
         elif moment2_method == "namo":
             self.assertEqual(moment2.shape, torch.Size([1]))
 
-    def test_moment2_accumulates_before_muon_update_scaling(self) -> None:
+    @parameterized.parameters(
+        *({"moment2_method": moment2_method} for moment2_method in MOMENT2_METHODS),
+    )
+    def test_moment2_accumulates_before_muon_update_scaling(self, moment2_method) -> None:
         """Test that Muon update scaling is applied after second-moment normalization."""
         shape = (4, 16)
         param_data = torch.randn(shape, dtype=torch.float32, device=FLAGS.device)
@@ -114,7 +117,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
             lr=0.01,
             momentum=0.0,
             weight_decay=0.0,
-            moment2_method="adamuon",
+            moment2_method=moment2_method,
             beta2=0.0,
             scale_mode="spectral",
             fp32_matmul_prec="highest",
@@ -127,7 +130,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
             lr=0.01,
             momentum=0.0,
             weight_decay=0.0,
-            moment2_method="adamuon",
+            moment2_method=moment2_method,
             beta2=0.0,
             scale_mode="shape_scaling",
             fp32_matmul_prec="highest",
