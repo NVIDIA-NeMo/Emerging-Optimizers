@@ -23,6 +23,7 @@ from emerging_optimizers.orthogonalized_optimizers.adaptive_muon import (
     AdaptiveMuon,
     Moment2MethodT,
 )
+from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -107,10 +108,10 @@ class AdaptiveMuonTest(parameterized.TestCase):
     def test_moment2_accumulates_before_muon_update_scaling(self, moment2_method) -> None:
         """Test that Muon update scaling is applied after second-moment normalization."""
         shape = (4, 16)
-        param_data = torch.randn(shape, dtype=torch.float32, device=FLAGS.device)
-        grad = torch.randn_like(param_data)
+        initial_param = torch.randn(shape, dtype=torch.float32, device=FLAGS.device)
+        grad = torch.randn_like(initial_param)
 
-        spectral_param = nn.Parameter(param_data.clone())
+        spectral_param = nn.Parameter(initial_param.clone())
         spectral_param.grad = grad.clone()
         spectral_opt = AdaptiveMuon(
             [spectral_param],
@@ -123,7 +124,7 @@ class AdaptiveMuonTest(parameterized.TestCase):
             fp32_matmul_prec="highest",
         )
 
-        shape_scaled_param = nn.Parameter(param_data.clone())
+        shape_scaled_param = nn.Parameter(initial_param.clone())
         shape_scaled_param.grad = grad.clone()
         shape_scaled_opt = AdaptiveMuon(
             [shape_scaled_param],
@@ -145,9 +146,12 @@ class AdaptiveMuonTest(parameterized.TestCase):
             atol=0.0,
             rtol=0.0,
         )
+        expected_scale_ratio = get_muon_scale_factor(*shape, mode="spectral") / get_muon_scale_factor(
+            *shape, mode="shape_scaling"
+        )
         torch.testing.assert_close(
-            param_data - spectral_param.data,
-            (param_data - shape_scaled_param.data) * 4.0,
+            initial_param - spectral_param.data,
+            (initial_param - shape_scaled_param.data) * expected_scale_ratio,
             atol=1e-6,
             rtol=1e-6,
         )
