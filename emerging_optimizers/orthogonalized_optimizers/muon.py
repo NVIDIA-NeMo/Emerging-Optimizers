@@ -104,15 +104,19 @@ class Muon(OrthogonalizedOptimizer):
                 )
                 use_syrk = False
 
-        self.coefficient_type = coefficient_type
-        self.num_ns_steps = num_ns_steps
-        self.scale_mode = scale_mode
-        self.extra_scale_factor = extra_scale_factor
-        self.use_syrk = use_syrk
-
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
-            orth_grad = self._orthogonalize_grad(grad)
-            return self._apply_muon_scale(orth_grad, grad)
+            logging.debug(
+                f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, "
+                f"{scale_mode} scale mode, extra_scale_factor={extra_scale_factor}"
+            )
+            orth_grad = muon_utils.newton_schulz(
+                grad,
+                steps=num_ns_steps,
+                coefficient_type=coefficient_type,
+                use_syrk=use_syrk,
+            )
+            scale_factor = get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
+            return orth_grad * scale_factor * extra_scale_factor
 
         super().__init__(
             params,
@@ -124,20 +128,6 @@ class Muon(OrthogonalizedOptimizer):
             fp32_matmul_prec=fp32_matmul_prec,
             scaled_orthogonalize_fn=scaled_orthogonalize_fn,
         )
-
-    def _orthogonalize_grad(self, grad: torch.Tensor) -> torch.Tensor:
-        logging.debug(f"Orthogonalizing grad with {self.num_ns_steps} steps, {self.coefficient_type} coefficient")
-        return muon_utils.newton_schulz(
-            grad,
-            steps=self.num_ns_steps,
-            coefficient_type=self.coefficient_type,
-            use_syrk=self.use_syrk,
-        )
-
-    def _apply_muon_scale(self, update: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
-        scale_factor = get_muon_scale_factor(reference.size(-2), reference.size(-1), mode=self.scale_mode)
-        logging.debug(f"Applying Muon scale factor {scale_factor}, extra_scale_factor={self.extra_scale_factor}")
-        return update * scale_factor * self.extra_scale_factor
 
 
 Muon.__doc__ = Muon.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
