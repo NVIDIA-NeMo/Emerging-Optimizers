@@ -101,6 +101,54 @@ class AdaptiveMuonTest(parameterized.TestCase):
         elif moment2_method == "namo":
             self.assertEqual(moment2.shape, torch.Size([1]))
 
+    def test_moment2_accumulates_before_muon_update_scaling(self) -> None:
+        """Test that Muon update scaling is applied after second-moment normalization."""
+        shape = (4, 16)
+        param_data = torch.randn(shape, dtype=torch.float32, device=FLAGS.device)
+        grad = torch.randn_like(param_data)
+
+        spectral_param = nn.Parameter(param_data.clone())
+        spectral_param.grad = grad.clone()
+        spectral_opt = AdaptiveMuon(
+            [spectral_param],
+            lr=0.01,
+            momentum=0.0,
+            weight_decay=0.0,
+            moment2_method="adamuon",
+            beta2=0.0,
+            scale_mode="spectral",
+            fp32_matmul_prec="highest",
+        )
+
+        shape_scaled_param = nn.Parameter(param_data.clone())
+        shape_scaled_param.grad = grad.clone()
+        shape_scaled_opt = AdaptiveMuon(
+            [shape_scaled_param],
+            lr=0.01,
+            momentum=0.0,
+            weight_decay=0.0,
+            moment2_method="adamuon",
+            beta2=0.0,
+            scale_mode="shape_scaling",
+            fp32_matmul_prec="highest",
+        )
+
+        spectral_opt.step()
+        shape_scaled_opt.step()
+
+        torch.testing.assert_close(
+            spectral_opt.state[spectral_param]["moment2_buffer"],
+            shape_scaled_opt.state[shape_scaled_param]["moment2_buffer"],
+            atol=0.0,
+            rtol=0.0,
+        )
+        torch.testing.assert_close(
+            param_data - spectral_param.data,
+            (param_data - shape_scaled_param.data) * 4.0,
+            atol=1e-6,
+            rtol=1e-6,
+        )
+
     @parameterized.parameters(
         *({"moment2_method": moment2_method} for moment2_method in MOMENT2_METHODS),
     )

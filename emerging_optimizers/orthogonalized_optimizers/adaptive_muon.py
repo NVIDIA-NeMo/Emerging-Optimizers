@@ -38,9 +38,10 @@ class AdaptiveMuon(muon.Muon):
     """Adaptive Muon optimizer with adaptive second moment (AdaMuon/NorMuon/NAMO variants).
 
     This class extends Muon by adding adaptive second moment accumulation after
-    orthogonalization. This idea was first explored in D.E. Carlson, E. Collins,
-    Ya-Ping Hsieh, L. Carin, and V. Cevher. *Preconditioned spectral descent for
-    deep learning.* In Advances in neural information processing systems 28 (2015).
+    raw orthogonalization and before Muon's update scaling. This idea was first
+    explored in D.E. Carlson, E. Collins, Ya-Ping Hsieh, L. Carin, and V. Cevher.
+    *Preconditioned spectral descent for deep learning.* In Advances in neural
+    information processing systems 28 (2015).
     The step() method is overridden to include second moment normalization logic.
 
     Args:
@@ -180,7 +181,7 @@ class AdaptiveMuon(muon.Muon):
         2. Returns the adaptively scaled gradient
 
         Args:
-            orth_grad: The orthogonalized gradient tensor.
+            orth_grad: The raw orthogonalized gradient tensor before Muon update scaling.
             moment2: The second moment buffer from state.
             beta2: The exponential decay rate for second moment.
             eps: Small constant for numerical stability.
@@ -282,8 +283,7 @@ class AdaptiveMuon(muon.Muon):
                     grad = exp_avg
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    group_kwargs = {k: v for k, v in group.items() if k != "params"}
-                    orth_grad = self.orthogonalize(p, grad, **group_kwargs)
+                    orth_grad = self._orthogonalize_grad(grad)
 
                 update = self._apply_moment2_normalization(
                     orth_grad=orth_grad,
@@ -293,6 +293,7 @@ class AdaptiveMuon(muon.Muon):
                     raw_grad=raw_grad,
                     pre_orth_grad=grad if raw_grad is not None else None,
                 )
+                update = self._apply_muon_scale(update, grad)
 
                 # perform weight update with pre and post weight update functions for subclass customization
                 self.pre_weight_update_fn_inplace(p, update)
