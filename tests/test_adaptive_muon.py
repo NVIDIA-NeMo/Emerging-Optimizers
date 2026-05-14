@@ -23,6 +23,7 @@ from emerging_optimizers.orthogonalized_optimizers.adaptive_muon import (
     AdaptiveMuon,
     Moment2MethodT,
 )
+from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -100,6 +101,60 @@ class AdaptiveMuonTest(parameterized.TestCase):
             self.assertEqual(list(moment2.shape), expected_shape)
         elif moment2_method == "namo":
             self.assertEqual(moment2.shape, torch.Size([1]))
+
+    @parameterized.parameters(
+        *({"moment2_method": moment2_method} for moment2_method in MOMENT2_METHODS),
+    )
+    def test_moment2_accumulates_before_muon_update_scaling(self, moment2_method) -> None:
+        """Test that Muon update scaling is applied after second-moment normalization."""
+        shape = (4, 16)
+        initial_param = torch.randn(shape, dtype=torch.float32, device=FLAGS.device)
+        grad = torch.randn_like(initial_param)
+
+        spectral_param = nn.Parameter(initial_param.clone())
+        spectral_param.grad = grad.clone()
+        spectral_opt = AdaptiveMuon(
+            [spectral_param],
+            lr=0.01,
+            momentum=0.0,
+            weight_decay=0.0,
+            moment2_method=moment2_method,
+            beta2=0.0,
+            scale_mode="spectral",
+            fp32_matmul_prec="highest",
+        )
+
+        shape_scaled_param = nn.Parameter(initial_param.clone())
+        shape_scaled_param.grad = grad.clone()
+        shape_scaled_opt = AdaptiveMuon(
+            [shape_scaled_param],
+            lr=0.01,
+            momentum=0.0,
+            weight_decay=0.0,
+            moment2_method=moment2_method,
+            beta2=0.0,
+            scale_mode="shape_scaling",
+            fp32_matmul_prec="highest",
+        )
+
+        spectral_opt.step()
+        shape_scaled_opt.step()
+
+        torch.testing.assert_close(
+            spectral_opt.state[spectral_param]["moment2_buffer"],
+            shape_scaled_opt.state[shape_scaled_param]["moment2_buffer"],
+            atol=0.0,
+            rtol=0.0,
+        )
+        expected_scale_ratio = get_muon_scale_factor(*shape, mode="spectral") / get_muon_scale_factor(
+            *shape, mode="shape_scaling"
+        )
+        torch.testing.assert_close(
+            initial_param - spectral_param.detach(),
+            (initial_param - shape_scaled_param.detach()) * expected_scale_ratio,
+            atol=1e-6,
+            rtol=1e-6,
+        )
 
     @parameterized.parameters(
         *({"moment2_method": moment2_method} for moment2_method in MOMENT2_METHODS),

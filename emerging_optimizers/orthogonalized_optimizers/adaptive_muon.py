@@ -19,12 +19,14 @@ if TYPE_CHECKING:
     from typing import overload
 
 import torch
+from absl import logging
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry, utils
-from emerging_optimizers.orthogonalized_optimizers import muon
+from emerging_optimizers.orthogonalized_optimizers import muon, muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
+from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
@@ -34,13 +36,14 @@ Moment2MethodT = Literal["adamuon", "normuon", "namo"]
 
 
 @registry.register_optimizer("adaptive_muon")
-class AdaptiveMuon(muon.Muon):
+class AdaptiveMuon(OrthogonalizedOptimizer):
     """Adaptive Muon optimizer with adaptive second moment (AdaMuon/NorMuon/NAMO variants).
 
     This class extends Muon by adding adaptive second moment accumulation after
-    orthogonalization. This idea was first explored in D.E. Carlson, E. Collins,
-    Ya-Ping Hsieh, L. Carin, and V. Cevher. *Preconditioned spectral descent for
-    deep learning.* In Advances in neural information processing systems 28 (2015).
+    raw orthogonalization and before Muon's update scaling. This idea was first
+    explored in D.E. Carlson, E. Collins, Ya-Ping Hsieh, L. Carin, and V. Cevher.
+    *Preconditioned spectral descent for deep learning.* In Advances in neural
+    information processing systems 28 (2015).
     The step() method is overridden to include second moment normalization logic.
 
     Args:
@@ -55,7 +58,6 @@ class AdaptiveMuon(muon.Muon):
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
         scale_mode: The type of scale factor to use for the update.
         extra_scale_factor: The additional scale factor to use for the update.
-        use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
         moment2_method: Method for second moment accumulation ("adamuon", "normuon", or "namo").
             - "adamuon": Full elementwise second moment (like AdamW).
             - "normuon": Row or column-wise second moment.
@@ -78,33 +80,48 @@ class AdaptiveMuon(muon.Muon):
         num_ns_steps: int = 5,
         scale_mode: muon.MuonScaleT = "spectral",
         extra_scale_factor: float = 1.0,
-        use_syrk: bool = False,
         moment2_method: Moment2MethodT = "adamuon",
         beta2: float = 0.95,
         eps: float = 1e-8,
     ):
         if moment2_method == "namo" and weight_decay_method == "l2":
             raise ValueError('moment2_method="namo" is incompatible with weight_decay_method="l2"')
+        if num_ns_steps < 1:
+            raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
+
+        self.scale_mode = scale_mode
+        self.extra_scale_factor = extra_scale_factor
+
+        def raw_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
+            # Adaptive variants normalize the raw Newton-Schulz output first; Muon scale is applied after moment2.
+            logging.debug(f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient")
+            return muon_utils.newton_schulz(
+                grad,
+                steps=num_ns_steps,
+                coefficient_type=coefficient_type,
+                use_syrk=False,
+            )
 
         super().__init__(
             params,
-            lr=lr,
-            momentum=momentum,
-            weight_decay=weight_decay,
+            lr,
+            momentum,
+            weight_decay,
             nesterov=nesterov,
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
-            coefficient_type=coefficient_type,
-            num_ns_steps=num_ns_steps,
-            scale_mode=scale_mode,
-            extra_scale_factor=extra_scale_factor,
-            use_syrk=use_syrk,
+            scaled_orthogonalize_fn=raw_orthogonalize_fn,
         )
         self.moment2_method = moment2_method
 
         for group in self.param_groups:
             group.setdefault("beta2", beta2)
             group.setdefault("eps", eps)
+
+    def _apply_muon_scale(self, update: torch.Tensor, size_out: int, size_in: int) -> torch.Tensor:
+        scale_factor = muon.get_muon_scale_factor(size_out, size_in, mode=self.scale_mode)
+        logging.debug(f"Applying Muon scale factor {scale_factor}, extra_scale_factor={self.extra_scale_factor}")
+        return update * scale_factor * self.extra_scale_factor
 
     @torch.no_grad()  # type: ignore[misc]
     @override
@@ -180,7 +197,7 @@ class AdaptiveMuon(muon.Muon):
         2. Returns the adaptively scaled gradient
 
         Args:
-            orth_grad: The orthogonalized gradient tensor.
+            orth_grad: The raw orthogonalized gradient tensor before Muon update scaling.
             moment2: The second moment buffer from state.
             beta2: The exponential decay rate for second moment.
             eps: Small constant for numerical stability.
@@ -293,6 +310,7 @@ class AdaptiveMuon(muon.Muon):
                     raw_grad=raw_grad,
                     pre_orth_grad=grad if raw_grad is not None else None,
                 )
+                update = self._apply_muon_scale(update, update.size(-2), update.size(-1))
 
                 # perform weight update with pre and post weight update functions for subclass customization
                 self.pre_weight_update_fn_inplace(p, update)
