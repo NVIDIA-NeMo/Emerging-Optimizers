@@ -217,9 +217,9 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 if partition_dim is None:
                     # Replicated parameter: no all-gather, state is already full-size.
                     full_grad = local_grad
-                    full_factors = [state["L"], state["R"]]
+                    kronecker_factor_list = [state["L"], state["R"]]
                 else:
-                    full_grad, full_factors = tp_utils.all_gather_grad_and_kronecker_factors_tp(
+                    full_grad, kronecker_factor_list = tp_utils.all_gather_grad_and_kronecker_factors_tp(
                         kronecker_factor_list=[state["L"], state["R"]],
                         grad=local_grad,
                         partition_dim=partition_dim,
@@ -233,9 +233,9 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # KL-Shampoo correction needs the eigenbasis of the *pre-update* L, R; recompute it
                 # via eigh since we do not persist eigenbases across steps.
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    pre_eigenbasis_list = soap_utils.get_eigenbasis_eigh(full_factors)
+                    pre_eigenbasis_list = soap_utils.get_eigenbasis_eigh(kronecker_factor_list)
                     soap.update_kronecker_factors_kl_shampoo(
-                        full_factors,
+                        kronecker_factor_list,
                         full_grad,
                         shampoo_beta=shampoo_beta,
                         eigenbasis_list=pre_eigenbasis_list,
@@ -245,14 +245,14 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # Persist the updated local shard back into state — only needed for the TP path,
                 # since the replicated path updated state["L"], state["R"] in place via the alias.
                 if partition_dim is not None:
-                    state["L"].copy_(full_factors[0].chunk(self.tp_size, dim=0)[self.tp_rank])
-                    state["R"].copy_(full_factors[1].chunk(self.tp_size, dim=0)[self.tp_rank])
+                    state["L"].copy_(kronecker_factor_list[0].chunk(self.tp_size, dim=0)[self.tp_rank])
+                    state["R"].copy_(kronecker_factor_list[1].chunk(self.tp_size, dim=0)[self.tp_rank])
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     # Rotate exp_avg from the pre-update eigenbasis to the post-update eigenbasis,
                     # and recompute the post-update eigenbasis via eigh.
                     eigenbasis_list, state["exp_avg"], state["exp_avg_sq"] = soap.update_eigenbasis_and_exp_avgs(
-                        kronecker_factor_list=full_factors,
+                        kronecker_factor_list=kronecker_factor_list,
                         eigenbasis_list=pre_eigenbasis_list,
                         exp_avg_sq=state["exp_avg_sq"],
                         exp_avg=state["exp_avg"],
