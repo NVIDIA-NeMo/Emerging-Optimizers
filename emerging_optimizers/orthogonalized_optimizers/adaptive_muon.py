@@ -118,8 +118,8 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
             group.setdefault("beta2", beta2)
             group.setdefault("eps", eps)
 
-    def _apply_muon_scale(self, update: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
-        scale_factor = muon.get_muon_scale_factor(reference.size(-2), reference.size(-1), mode=self.scale_mode)
+    def _apply_muon_scale(self, update: torch.Tensor, size_out: int, size_in: int) -> torch.Tensor:
+        scale_factor = muon.get_muon_scale_factor(size_out, size_in, mode=self.scale_mode)
         logging.debug(f"Applying Muon scale factor {scale_factor}, extra_scale_factor={self.extra_scale_factor}")
         return update * scale_factor * self.extra_scale_factor
 
@@ -310,7 +310,7 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
                     raw_grad=raw_grad,
                     pre_orth_grad=grad if raw_grad is not None else None,
                 )
-                update = self._apply_muon_scale(update, grad)
+                update = self._apply_muon_scale(update, update.size(-2), update.size(-1))
 
                 # perform weight update with pre and post weight update functions for subclass customization
                 self.pre_weight_update_fn_inplace(p, update)

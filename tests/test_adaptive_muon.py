@@ -150,8 +150,8 @@ class AdaptiveMuonTest(parameterized.TestCase):
             *shape, mode="shape_scaling"
         )
         torch.testing.assert_close(
-            initial_param - spectral_param.data,
-            (initial_param - shape_scaled_param.data) * expected_scale_ratio,
+            initial_param - spectral_param.detach(),
+            (initial_param - shape_scaled_param.detach()) * expected_scale_ratio,
             atol=1e-6,
             rtol=1e-6,
         )
