@@ -23,7 +23,7 @@ from absl import logging
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import registry, triton_kernels, utils
+from emerging_optimizers import registry, utils
 from emerging_optimizers.orthogonalized_optimizers import muon, muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
@@ -58,7 +58,6 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
         scale_mode: The type of scale factor to use for the update.
         extra_scale_factor: The additional scale factor to use for the update.
-        use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
         moment2_method: Method for second moment accumulation ("adamuon", "normuon", or "namo").
             - "adamuon": Full elementwise second moment (like AdamW).
             - "normuon": Row or column-wise second moment.
@@ -81,7 +80,6 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
         num_ns_steps: int = 5,
         scale_mode: muon.MuonScaleT = "spectral",
         extra_scale_factor: float = 1.0,
-        use_syrk: bool = False,
         moment2_method: Moment2MethodT = "adamuon",
         beta2: float = 0.95,
         eps: float = 1e-8,
@@ -91,30 +89,17 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
         if num_ns_steps < 1:
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
 
-        if use_syrk:
-            if torch.cuda.is_available():
-                sm_version = torch.cuda.get_device_capability()
-            else:
-                sm_version = (0, 0)
-            if not triton_kernels.HAS_TRITON_340:  # type: ignore[attr-defined]
-                logging.error("Triton 3.4.0 or higher is required for use_syrk to be True.")
-                use_syrk = False
-            elif sm_version not in ((8, 0), (9, 0), (10, 0), (10, 3)):
-                logging.error(
-                    f"Correctness of Triton kernel on SM {sm_version} cannot be guaranteed. Setting use_syrk to False."
-                )
-                use_syrk = False
-
         self.scale_mode = scale_mode
         self.extra_scale_factor = extra_scale_factor
 
         def raw_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
+            # Adaptive variants normalize the raw Newton-Schulz output first; Muon scale is applied after moment2.
             logging.debug(f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient")
             return muon_utils.newton_schulz(
                 grad,
                 steps=num_ns_steps,
                 coefficient_type=coefficient_type,
-                use_syrk=use_syrk,
+                use_syrk=False,
             )
 
         super().__init__(
