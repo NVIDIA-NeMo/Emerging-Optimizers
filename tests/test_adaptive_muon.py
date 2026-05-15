@@ -156,6 +156,35 @@ class AdaptiveMuonTest(parameterized.TestCase):
             rtol=1e-6,
         )
 
+    def test_normuon_preserves_pre_scale_frobenius_norm(self) -> None:
+        """Test that NorMuon adaptation preserves the raw orthogonalized update scale."""
+        shape = (16, 4)
+        orth_grad = torch.arange(1, shape[0] * shape[1] + 1, dtype=torch.float32, device=FLAGS.device).reshape(shape)
+        moment2 = torch.zeros(shape[0], 1, dtype=orth_grad.dtype, device=orth_grad.device)
+        test_param = nn.Parameter(torch.empty(shape, dtype=torch.float32, device=FLAGS.device))
+        adaptive_opt = AdaptiveMuon(
+            [test_param],
+            lr=0.01,
+            momentum=0.0,
+            weight_decay=0.0,
+            moment2_method="normuon",
+            fp32_matmul_prec="highest",
+        )
+
+        update = adaptive_opt._apply_moment2_normalization(
+            orth_grad=orth_grad,
+            moment2=moment2,
+            beta2=0.0,
+            eps=1e-8,
+        )
+
+        torch.testing.assert_close(
+            torch.linalg.vector_norm(update),
+            torch.linalg.vector_norm(orth_grad),
+            atol=1e-6,
+            rtol=1e-6,
+        )
+
     @parameterized.parameters(
         *({"moment2_method": moment2_method} for moment2_method in MOMENT2_METHODS),
     )

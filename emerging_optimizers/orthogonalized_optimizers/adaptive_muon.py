@@ -123,6 +123,13 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
         logging.debug(f"Applying Muon scale factor {scale_factor}, extra_scale_factor={self.extra_scale_factor}")
         return update * scale_factor * self.extra_scale_factor
 
+    @staticmethod
+    def _match_frobenius_norm(update: torch.Tensor, reference: torch.Tensor, eps: float) -> torch.Tensor:
+        """Scale update to match the Frobenius norm of reference."""
+        update_norm = torch.linalg.vector_norm(update)
+        reference_norm = torch.linalg.vector_norm(reference)
+        return update * (reference_norm / update_norm.clamp_min(eps))
+
     @torch.no_grad()  # type: ignore[misc]
     @override
     def _init_group(
@@ -229,7 +236,9 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
 
             # NorMuon uses reciprocal square root with clamping
             step_size = moment2.clamp_min(eps).rsqrt_()
-            return orth_grad * step_size
+            update = orth_grad * step_size
+            # Preserve the raw orthogonalized update norm before applying Muon's scale factor.
+            return self._match_frobenius_norm(update, orth_grad, eps)
 
         elif self.moment2_method == "namo":
             if raw_grad is None or pre_orth_grad is None:
