@@ -19,6 +19,7 @@ import torch.nn as nn
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
+from emerging_optimizers import utils
 from emerging_optimizers.orthogonalized_optimizers.adaptive_muon import (
     AdaptiveMuon,
     Moment2MethodT,
@@ -156,34 +157,48 @@ class AdaptiveMuonTest(parameterized.TestCase):
             rtol=1e-6,
         )
 
-    def test_normuon_preserves_pre_scale_frobenius_norm(self) -> None:
-        """Test that NorMuon adaptation preserves the raw orthogonalized update scale."""
-        shape = (16, 4)
-        orth_grad = torch.arange(1, shape[0] * shape[1] + 1, dtype=torch.float32, device=FLAGS.device).reshape(shape)
-        moment2 = torch.zeros(shape[0], 1, dtype=orth_grad.dtype, device=orth_grad.device)
-        test_param = nn.Parameter(torch.empty(shape, dtype=torch.float32, device=FLAGS.device))
+    @parameterized.parameters({"shape": (16, 4)}, {"shape": (4, 16)})
+    def test_normuon_step_preserves_pre_scale_frobenius_norm(self, shape) -> None:
+        """Test that NorMuon preserves the raw orthogonalized update scale through step()."""
+        numel = shape[0] * shape[1]
+        initial_param = torch.linspace(-0.5, 0.5, numel, dtype=torch.float32, device=FLAGS.device).reshape(shape)
+        grads = (
+            torch.arange(1, numel + 1, dtype=torch.float32, device=FLAGS.device).reshape(shape),
+            torch.arange(numel, 0, -1, dtype=torch.float32, device=FLAGS.device).reshape(shape),
+        )
+        lr = 0.01
+        test_param = nn.Parameter(initial_param.clone())
         adaptive_opt = AdaptiveMuon(
             [test_param],
-            lr=0.01,
+            lr=lr,
             momentum=0.0,
             weight_decay=0.0,
             moment2_method="normuon",
+            beta2=0.5,
+            scale_mode="spectral",
             fp32_matmul_prec="highest",
         )
+        scale_factor = get_muon_scale_factor(*shape, mode="spectral")
 
-        update = adaptive_opt._apply_moment2_normalization(
-            orth_grad=orth_grad,
-            moment2=moment2,
-            beta2=0.0,
-            eps=1e-8,
-        )
+        for grad in grads:
+            param_before_step = test_param.detach().clone()
+            test_param.grad = grad.clone()
+            with utils.fp32_matmul_precision("highest"):
+                orth_grad = adaptive_opt.orthogonalize(test_param, grad)
 
-        torch.testing.assert_close(
-            torch.linalg.vector_norm(update),
-            torch.linalg.vector_norm(orth_grad),
-            atol=1e-6,
-            rtol=1e-6,
-        )
+            adaptive_opt.step()
+
+            state = adaptive_opt.state[test_param]
+            self.assertIn("moment2_buffer", state)
+            self.assertGreater(torch.linalg.vector_norm(state["moment2_buffer"]).item(), 0.0)
+            applied_update = (param_before_step - test_param.detach()) / lr
+            pre_scale_update = applied_update / scale_factor
+            torch.testing.assert_close(
+                torch.linalg.vector_norm(pre_scale_update),
+                torch.linalg.vector_norm(orth_grad),
+                atol=1e-5,
+                rtol=1e-5,
+            )
 
     @parameterized.parameters(
         *({"moment2_method": moment2_method} for moment2_method in MOMENT2_METHODS),

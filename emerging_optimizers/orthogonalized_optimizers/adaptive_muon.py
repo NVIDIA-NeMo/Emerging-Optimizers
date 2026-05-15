@@ -123,8 +123,12 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
         logging.debug(f"Applying Muon scale factor {scale_factor}, extra_scale_factor={self.extra_scale_factor}")
         return update * scale_factor * self.extra_scale_factor
 
-    @staticmethod
-    def _match_frobenius_norm(update: torch.Tensor, reference: torch.Tensor, eps: float) -> torch.Tensor:
+    def _match_frobenius_norm(
+        self,
+        update: torch.Tensor,
+        reference: torch.Tensor,
+        eps: float,
+    ) -> torch.Tensor:
         """Scale update to match the Frobenius norm of reference."""
         update_norm = torch.linalg.vector_norm(update)
         reference_norm = torch.linalg.vector_norm(reference)
