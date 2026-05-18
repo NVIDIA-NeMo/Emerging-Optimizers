@@ -25,7 +25,44 @@ TensorList: TypeAlias = list[torch.Tensor]
 __all__ = [
     "get_eigenbasis_eigh",
     "get_eigenbasis_qr",
+    "sort_eigenbasis_by_approx_eigvals",
 ]
+
+
+def sort_eigenbasis_by_approx_eigvals(
+    kronecker_factor_list: TensorList,
+    eigenbasis_list: TensorList,
+    exp_avg_sq: torch.Tensor,
+) -> tuple[TensorList, torch.Tensor]:
+    """Permute each eigenbasis and matching ``exp_avg_sq`` axis by descending approximate eigenvalues.
+
+    For each ``(kronecker_factor, eigenbasis)`` pair, compute the approximate eigenvalues as
+    ``diag(eigenbasis.T @ kronecker_factor @ eigenbasis)`` and derive ``sort_idx`` that orders them
+    descending. Use that same permutation to reorder the columns of ``eigenbasis`` and the
+    corresponding axis (``ind``) of ``exp_avg_sq`` so that slot ``k`` of ``exp_avg_sq`` stays aligned
+    with column ``k`` of the eigenbasis.
+
+    Both the eigh and QR eigenbasis-update paths consume the sorted output: the eigh path discards
+    the permuted eigenbasis but uses the permuted ``exp_avg_sq`` (the sort_idx best approximates the
+    permutation component of the eigh-vs-old basis change under small drift); the QR path power-
+    iterates from the pre-sorted basis.
+
+    Args:
+        kronecker_factor_list: Kronecker factor matrices, one per parameter axis.
+        eigenbasis_list: Current eigenbases, same length and per-axis correspondence.
+        exp_avg_sq: Inner Adam's second moment, stored in the eigenbasis frame. Axis ``ind``
+            corresponds to ``kronecker_factor_list[ind]`` / ``eigenbasis_list[ind]``.
+
+    Returns:
+        ``(sorted_eigenbasis_list, sorted_exp_avg_sq)``.
+    """
+    sorted_eigenbasis_list: TensorList = []
+    for ind, (kronecker_factor, eigenbasis) in enumerate(zip(kronecker_factor_list, eigenbasis_list, strict=True)):
+        approx_eigvals = eig_utils.conjugate(kronecker_factor, eigenbasis, diag=True)
+        sort_idx = torch.argsort(approx_eigvals, descending=True)
+        sorted_eigenbasis_list.append(eigenbasis[:, sort_idx])
+        exp_avg_sq = exp_avg_sq.index_select(ind, sort_idx)
+    return sorted_eigenbasis_list, exp_avg_sq
 
 
 def get_eigenbasis_eigh(
@@ -64,23 +101,23 @@ def get_eigenbasis_eigh(
 def get_eigenbasis_qr(
     kronecker_factor_list: TensorList,
     eigenbasis_list: TensorList,
-    exp_avg_sq: torch.Tensor,
     power_iter_steps: int = 1,
-) -> tuple[TensorList, torch.Tensor]:
+) -> TensorList:
     """Updates the eigenbases of the preconditioner using power iteration and QR.
 
     Computes using multiple rounds of power iteration followed by QR decomposition (orthogonal iteration).
+    ``eigenbasis_list`` is expected to be already sorted by descending approximate eigenvalues (see
+    :func:`sort_eigenbasis_by_approx_eigvals`). The corresponding reordering of ``exp_avg_sq`` is the
+    caller's responsibility and is also handled by ``sort_eigenbasis_by_approx_eigvals``.
 
     Args:
         kronecker_factor_list: List containing preconditioner (:math:`GG^T` and :math:`G^TG`)
-        eigenbasis_list: List containing eigenbases (:math:`Q_L` and :math:`Q_R`)
-        exp_avg_sq: inner adam second moment (exp_avg_sq).
+        eigenbasis_list: List containing pre-sorted eigenbases (:math:`Q_L` and :math:`Q_R`)
         power_iter_steps: Number of power iteration steps to perform before QR decomposition.
             More steps can lead to better convergence but increased computation time.
 
     Returns:
-        Tuple of updated list of orthonormal kronecker factor eigenbases matrices and updated (sorted) inner
-            Adam's second moment.
+        Updated list of orthonormal kronecker factor eigenbases matrices.
 
     Example:
         .. code-block:: python
@@ -102,27 +139,19 @@ def get_eigenbasis_qr(
             perturbed_kronecker_factor_list[0] = k_factor1 + perturbation@perturbation.T
             perturbed_kronecker_factor_list[1] = k_factor2 + perturbation.T@perturbation
 
-            # Initialize exp_avg_sq tensor
-            exp_avg_sq = torch.randn(n, m).abs()
-
-            # Refine the orthogonal matrices using QR
-            updated_ortho_matrices, updated_exp_avg_sq = get_eigenbasis_qr(
+            # Refine the orthogonal matrices using QR (eigenbasis_list already sorted)
+            updated_ortho_matrices = get_eigenbasis_qr(
                 perturbed_kronecker_factor_list,
                 eigenbasis_list,
-                exp_avg_sq
             )
     """
     updated_eigenbasis_list: TensorList = []
-    for ind, (kronecker_factor, eigenbasis) in enumerate(zip(kronecker_factor_list, eigenbasis_list, strict=True)):
-        approx_eigvals = eig_utils.conjugate(kronecker_factor, eigenbasis, diag=True)
-        Q, exp_avg_sq = eig_utils.orthogonal_iteration(
-            approx_eigvals=approx_eigvals,
+    for kronecker_factor, eigenbasis in zip(kronecker_factor_list, eigenbasis_list, strict=True):
+        Q = eig_utils.orthogonal_iteration(
             kronecker_factor=kronecker_factor,
             eigenbasis=eigenbasis,
-            ind=ind,
-            exp_avg_sq=exp_avg_sq,
             power_iter_steps=power_iter_steps,
         )
         updated_eigenbasis_list.append(Q)
 
-    return updated_eigenbasis_list, exp_avg_sq
+    return updated_eigenbasis_list
