@@ -7,7 +7,10 @@ Epsilon ($\epsilon$) is a small positive constant added to a denominator to keep
 A common trick in numerical computing to prevent dividing by zero (or a very small value that may lead to overflow) is to apply an small epsilon $\epsilon$. Two forms are commonly used:
 
 ```math
-y = \frac {x_1} {x_2 + \epsilon} \\
+y = \frac {x_1} {x_2 + \epsilon}
+```
+
+```math
 y = \frac {x_1} {max(x_2, \epsilon)}
 ```
 
