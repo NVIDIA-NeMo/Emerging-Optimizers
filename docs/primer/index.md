@@ -5,4 +5,5 @@
 :hidden:
 
 layerwise-distributed-optimizer.md
+epsilon.md
 ```
