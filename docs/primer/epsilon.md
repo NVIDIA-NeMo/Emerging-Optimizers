@@ -4,7 +4,7 @@ Epsilon ($\epsilon$) is a small positive constant added to a denominator to keep
 
 ## Zero division prevention
 
-A common trick in numerical computing to prevent dividing by zero (or a very small value that may lead to overflow) is to apply an small epsilon $\epsilon$. Two forms are commonly used:
+A common trick in numerical computing to prevent dividing by zero (or a very small value that may lead to overflow) is to apply a small epsilon $\epsilon$. Two forms are commonly used:
 
 ```math
 y = \frac {x_1} {x_2 + \epsilon}
@@ -101,9 +101,9 @@ Note that because scale is calculated with the $\epsilon$, although the quantize
 
 ### PyTorch
 
-Both type of applying $\epsilon$ for zero division prevention are used in PyTorch. For example:
+Both types of applying $\epsilon$ for zero division prevention are used in PyTorch. For example:
 
-* Adding a  $\epsilon$ is used for 2nd momentum of [Adam](https://docs.pytorch.org/docs/2.12/generated/torch.optim.adam.Adam_class.html#adam) optimizer.
+* Adding an $\epsilon$ is used for 2nd momentum of [Adam](https://docs.pytorch.org/docs/2.12/generated/torch.optim.adam.Adam_class.html#adam) optimizer.
 * Limiting smallest denominator is used in [torch.nn.functional.normalize](https://docs.pytorch.org/docs/2.12/generated/torch.nn.functional.normalize.html#torch.nn.functional.normalize).
 
 The exact reason of why different prevention techniques are used in different places are not documented. The following pattern seems to be consistent:
