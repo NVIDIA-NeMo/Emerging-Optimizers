@@ -6,13 +6,13 @@ Epsilon ($\epsilon$) is a small positive constant added to a denominator to keep
 
 A common trick in numerical computing to prevent dividing by zero (or a very small value that may lead to overflow) is to apply a small epsilon $\epsilon$. Two forms are commonly used:
 
-```math
+$$
 y = \frac {x_1} {x_2 + \epsilon}
-```
+$$
 
-```math
-y = \frac {x_1} {max(x_2, \epsilon)}
-```
+$$
+y = \frac {x_1} {\max(x_2, \epsilon)}
+$$
 
 When $x_2$ is 0, both will return the same value $\frac{x_1} {\epsilon}$. When $0<x_2<\epsilon$, the 2nd form will still return  $\frac{x_1} {\epsilon}$, while the first form will return a value between $(\frac{x_1} {2\epsilon}, \frac{x_1} {\epsilon})$ depending on $x_2$. Below is a simple example from quantization:
 
@@ -117,7 +117,7 @@ The exact reason of why different prevention techniques are used in different pl
 
 AdamW optimizer is widely used in LLM training. It has the following form with $\epsilon$ defaults to $10^{-8}$ in PyTorch.
 
-```math
+$$
 \begin{aligned}
      &\rule{110mm}{0.4pt} \\
      &\textbf{input}      : \gamma \text{(lr)}, \: \beta_1, \beta_2
@@ -139,7 +139,7 @@ AdamW optimizer is widely used in LLM training. It has the following form with $
      &\bf{return} \:  \theta_t                                                     \\[-1.ex]
      &\rule{110mm}{0.4pt}                                                          \\[-1.ex]
 \end{aligned}
-```
+$$
 
 Magnitude of gradient usually gets smaller when network becomes deeper. In modern LLM, $10^{-8}$ is not negligible compared to the square root of the second moment $\sqrt{\widehat{v_t}}$, so it has profound impact on how weights are updated early in training.
 
