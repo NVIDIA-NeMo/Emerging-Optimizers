@@ -76,15 +76,6 @@ def calculate_madam_update(
         / ``nan`` for those entries — i.e. it is the caller's job to pick a
         ``scale_log2`` large enough for the model's gradient regime.
 
-    Note:
-        The function reads and writes ``exp_avg_sq_scaled`` assuming its stored
-        values are in the ``s = 2 ** scale_log2`` storage convention. It is the
-        caller's responsibility to keep that convention intact between steps:
-        do **not** mutate ``exp_avg_sq_scaled`` outside this function, and do
-        **not** change ``scale_log2`` across calls without rescaling the stored
-        tensor by ``2 ** (new_scale_log2 - old_scale_log2)``. Failing either of
-        these invalidates the EMA history.
-
     Args:
         grad: The gradient tensor.
         exp_avg: The accumulated first moment of the gradient (modified in place).
@@ -97,9 +88,7 @@ def calculate_madam_update(
         scale_log2: ``log2`` of the magnitude scaling factor ``s = 2 **
             scale_log2`` used for the second-moment storage. Must be an even
             integer so ``sqrt(s) = 2 ** (scale_log2 // 2)`` is exactly
-            representable in floating point. Example: ``scale_log2 = 26`` gives
-            ``s ≈ 6.7e7``, which keeps ``|g|`` down to ~``1e-23`` representable
-            when squared in fp32.
+            representable in floating point.
 
     Returns:
         The MAdam update tensor.
@@ -107,7 +96,7 @@ def calculate_madam_update(
 
     beta1, beta2 = betas
     assert scale_log2 // 2 == scale_log2 / 2, "scale_log2 must be an even integer"
-    grad_scale = 2 ** (scale_log2 // 2)
+    grad_scale = 2.0 ** (scale_log2 // 2)
 
     # First moment as usual; second moment stored scaled. Multiply before squaring
     # so small gradients are lifted above the fp32 underflow boundary first.

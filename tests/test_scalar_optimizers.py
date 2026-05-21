@@ -332,5 +332,126 @@ class UpdateFunctionTest(parameterized.TestCase):
         torch.testing.assert_close(exp_avg, expected_exp_avg, atol=1e-6, rtol=1e-6)
 
 
+class MAdamUpdateTest(parameterized.TestCase):
+    def setUp(self):
+        self.device = FLAGS.device
+
+    def test_calculate_madam_update_smoke(self) -> None:
+        """Single MAdam step runs, mutates state in place, and returns a finite update."""
+        shape = (4, 8)
+        grad = torch.randn(shape, device=self.device)
+        exp_avg = torch.zeros(shape, device=self.device)
+        exp_avg_sq_scaled = torch.zeros(shape, device=self.device)
+
+        update = update_functions.calculate_madam_update(
+            grad,
+            exp_avg,
+            exp_avg_sq_scaled,
+            betas=(0.9, 0.99),
+            correct_bias=True,
+            step=1,
+            scale_log2=8,
+        )
+
+        self.assertEqual(update.shape, grad.shape)
+        self.assertEqual(update.dtype, grad.dtype)
+        self.assertTrue(torch.isfinite(update).all())
+        # State should have been mutated in place.
+        self.assertFalse(torch.all(exp_avg == 0))
+        self.assertFalse(torch.all(exp_avg_sq_scaled == 0))
+
+    @parameterized.product(
+        scale_log2=[0, 8, 14],
+        correct_bias=[True, False],
+    )
+    def test_calculate_madam_update_matches_adam_eps_zero(self, scale_log2: int, correct_bias: bool) -> None:
+        shape = (5, 7)
+        # Normal-magnitude gradient — no underflow path is exercised.
+        grad = torch.randn(shape, device=self.device)
+        betas = (0.9, 0.99)
+        step = 3
+
+        exp_avg_madam = torch.zeros(shape, device=self.device)
+        exp_avg_sq_scaled = torch.zeros(shape, device=self.device)
+        madam_update = update_functions.calculate_madam_update(
+            grad,
+            exp_avg_madam,
+            exp_avg_sq_scaled,
+            betas=betas,
+            correct_bias=correct_bias,
+            step=step,
+            scale_log2=scale_log2,
+        )
+
+        exp_avg_adam = torch.zeros(shape, device=self.device)
+        exp_avg_sq_adam = torch.zeros(shape, device=self.device)
+        adam_update = update_functions.calculate_adam_update(
+            grad,
+            exp_avg_adam,
+            exp_avg_sq_adam,
+            betas=betas,
+            correct_bias=correct_bias,
+            nesterov=False,
+            step=step,
+            eps=0.0,
+        )
+
+        case = f"scale_log2={scale_log2}, correct_bias={correct_bias}"
+        torch.testing.assert_close(
+            madam_update,
+            adam_update,
+            atol=0,
+            rtol=0,
+            msg=lambda msg: f"MAdam vs Adam(eps=0) mismatch at {case}:\n\n{msg}",
+        )
+        # First-moment EMA is unaffected by scaling.
+        torch.testing.assert_close(exp_avg_madam, exp_avg_adam, atol=0, rtol=0)
+        # Second-moment storage differs by exactly the (power-of-two) scale.
+        torch.testing.assert_close(
+            exp_avg_sq_scaled,
+            exp_avg_sq_adam * (2**scale_log2),
+            atol=0,
+            rtol=0,
+            msg=lambda msg: f"exp_avg_sq_scaled != s * exp_avg_sq at {case}:\n\n{msg}",
+        )
+
+    def test_calculate_madam_update_5steps_zero_masked_is_finite(self) -> None:
+        """Entries whose gradient has been exactly zero get a zero update, not NaN."""
+        shape = (4, 8)
+        grad = torch.randn(shape, device=self.device)
+        # Force one column to have been zero from t=1 onward — for those entries
+        # exp_avg and exp_avg_sq_scaled both stay 0, so the unmasked division
+        # would be 0/0 = NaN.
+        zero_col = 3
+        grad[:, zero_col] = 0.0
+
+        exp_avg = torch.zeros(shape, device=self.device)
+        exp_avg_sq_scaled = torch.zeros(shape, device=self.device)
+
+        for step in range(5):
+            update = update_functions.calculate_madam_update(
+                grad,
+                exp_avg,
+                exp_avg_sq_scaled,
+                betas=(0.9, 0.99),
+                correct_bias=True,
+                step=step + 1,
+                scale_log2=8,
+            )
+
+        # Masked column: exactly zero (not NaN/Inf).
+        torch.testing.assert_close(
+            update[:, zero_col],
+            torch.zeros(shape[0], device=self.device, dtype=update.dtype),
+            atol=0,
+            rtol=0,
+        )
+        # Non-masked columns: finite and non-zero.
+        nonzero_col_idx = [c for c in range(shape[1]) if c != zero_col]
+        nonzero_cols = update[:, nonzero_col_idx]
+        self.assertTrue(torch.isfinite(nonzero_cols).all())
+        self.assertTrue((nonzero_cols.abs() > 0).all())
+
+
 if __name__ == "__main__":
     testing.absltest.main()
