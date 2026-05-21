@@ -116,5 +116,5 @@ def calculate_madam_update(
     out = momentum / second_moment_scaled.sqrt() * grad_scale
 
     zero_mask = exp_avg == 0
-    out[zero_mask] = 0
+    out.masked_fill_(zero_mask, 0.0)
     return out
