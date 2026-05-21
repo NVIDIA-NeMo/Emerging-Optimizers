@@ -69,10 +69,10 @@ def eigh_with_fallback(
 
 
 def orthogonal_iteration(
-    kronecker_factor: torch.Tensor,
-    eigenbasis: torch.Tensor,
+    kronecker_factor: Tensor,
+    eigenbasis: Tensor,
     power_iter_steps: int,
-) -> torch.Tensor:
+) -> Tensor:
     """Refines an eigenbasis via power iteration with QR re-orthogonalization.
 
     Performs ``power_iter_steps`` rounds of ``Q = QR(kronecker_factor @ Q)`` starting from
@@ -97,7 +97,7 @@ def orthogonal_iteration(
     return Q
 
 
-def conjugate(a: torch.Tensor, p: torch.Tensor, diag: bool = False) -> torch.Tensor:
+def conjugate(a: Tensor, p: Tensor, diag: bool = False) -> Tensor:
     """Calculate similarity transformation
 
     This function calculates :math:`B = P^T A P`. It assumes P is orthogonal so that :math:`P^{-1} = P^T` and

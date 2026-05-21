@@ -100,14 +100,14 @@ class SoapUtilsTest(BaseTestCase):
     )
     def test_sort_eigenbasis_by_approx_eigvals(self, N: int, M: int) -> None:
         """Sort function permutes eigenbasis columns and exp_avg_sq slots consistently."""
-        torch.manual_seed(0)
-        g = torch.randn(M, N, device=self.device)
-        kronecker_factor_list = [g @ g.t(), g.t() @ g]
-        eigenbasis_list = [
-            torch.linalg.qr(torch.randn(M, M, device=self.device)).Q,
-            torch.linalg.qr(torch.randn(N, N, device=self.device)).Q,
-        ]
-        exp_avg_sq = torch.abs(torch.randn(M, N, device=self.device))
+        g = torch.randint(-5, 6, (M, N), device=self.device) / 16.0
+        # Add a small ridge so K is full-rank (g @ g.t() is rank-deficient when M > N, etc.),
+        # which keeps the approximate eigenvalues away from numerical zero where ordering becomes
+        # ambiguous under float rounding.
+        eps_eye = lambda n: 1e-3 * torch.eye(n, device=self.device)
+        kronecker_factor_list = [g @ g.t() + eps_eye(M), g.t() @ g + eps_eye(N)]
+        eigenbasis_list = [torch.linalg.qr(Q).Q for Q in kronecker_factor_list]
+        exp_avg_sq = torch.abs(torch.randint(-5, 6, (M, N), device=self.device) / 16.0)
 
         sorted_eigenbasis_list, sorted_exp_avg_sq = soap_utils.sort_eigenbasis_by_approx_eigvals(
             kronecker_factor_list,
@@ -116,33 +116,36 @@ class SoapUtilsTest(BaseTestCase):
         )
 
         # Compute the expected per-axis permutations from the originals.
-        sort_idx_per_axis = [
-            torch.argsort(torch.diag(Q.t() @ K @ Q), descending=True)
-            for K, Q in zip(kronecker_factor_list, eigenbasis_list, strict=True)
-        ]
+        sort_idx_list = []
+        for K, Q in zip(kronecker_factor_list, eigenbasis_list, strict=True):
+            sort_idx_list.append(torch.argsort(torch.diag(Q.t() @ K @ Q), descending=True))
 
         # Each eigenbasis is column-permuted by its own sort_idx.
-        for ind, (Q_old, Q_sorted) in enumerate(zip(eigenbasis_list, sorted_eigenbasis_list, strict=True)):
+        for i, (Q_old, Q_sorted) in enumerate(zip(eigenbasis_list, sorted_eigenbasis_list, strict=True)):
             torch.testing.assert_close(
                 Q_sorted,
-                Q_old[:, sort_idx_per_axis[ind]],
-                msg=lambda m, ind=ind: f"eigenbasis ind={ind} not permuted by sort_idx\n\n{m}",
+                Q_old[:, sort_idx_list[i]],
+                msg=lambda m, i=i: f"eigenbasis i={i} not permuted by sort_idx\n\n{m}",
+                atol=0,
+                rtol=0,
             )
 
         # exp_avg_sq is permuted along every axis cumulatively.
         expected_sq = exp_avg_sq
-        for ind, sort_idx in enumerate(sort_idx_per_axis):
-            expected_sq = expected_sq.index_select(ind, sort_idx)
+        for i, sort_idx in enumerate(sort_idx_list):
+            expected_sq = expected_sq.index_select(i, sort_idx)
         torch.testing.assert_close(
             sorted_exp_avg_sq,
             expected_sq,
             msg=lambda m: f"exp_avg_sq not permuted to match sorted eigenbases\n\n{m}",
+            atol=0,
+            rtol=0,
         )
 
         # Sorted eigenbases yield descending approximate eigenvalues.
         for K, Q in zip(kronecker_factor_list, sorted_eigenbasis_list, strict=True):
             sorted_eigvals = torch.diag(Q.t() @ K @ Q)
-            self.assertTrue(torch.all(sorted_eigvals[:-1] >= sorted_eigvals[1:] - 1e-5))
+            self.assertTrue(torch.all(sorted_eigvals[:-1] >= sorted_eigvals[1:]))
 
     @parameterized.parameters(  # type: ignore[misc]
         {"dims": [128, 512]},
