@@ -44,6 +44,8 @@ def sort_eigenbasis_by_approx_eigvals(
     Args:
         kronecker_factor_list: List of preconditioner matrices (L and R).
         eigenbasis_list: List of current eigenbases (QL and QR).
+        exp_avg_sq: Inner Adam second moment tensor permuted along each Kronecker-factor
+            axis to match the new descending-eigenvalue column ordering.
 
     Returns:
         ``(sorted_eigenbasis_list, sorted_exp_avg_sq)``.
