@@ -86,16 +86,16 @@ def calculate_madam_update(
         correct_bias: Whether to apply Adam's bias correction.
         step: Current optimizer step (1-indexed), used for bias correction.
         scale_log2: ``log2`` of the magnitude scaling factor ``s = 2 **
-            scale_log2`` used for the second-moment storage. Must be an even
-            integer so ``sqrt(s) = 2 ** (scale_log2 // 2)`` is exactly
-            representable in floating point.
+            scale_log2`` used for the second-moment storage. When it is an even
+            integer, ``sqrt(s) = 2 ** (scale_log2 // 2)`` is exactly representable
+            in floating point.
 
     Returns:
         The MAdam update tensor.
     """
 
     beta1, beta2 = betas
-    assert scale_log2 // 2 == scale_log2 / 2, "scale_log2 must be an even integer"
+    assert scale_log2 // 2 == scale_log2 / 2, "scale_log2 should be an even integer"
     grad_scale = 2.0 ** (scale_log2 // 2)
 
     # First moment as usual; second moment stored scaled. Multiply before squaring
