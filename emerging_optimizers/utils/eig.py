@@ -69,51 +69,35 @@ def eigh_with_fallback(
 
 
 def orthogonal_iteration(
-    approx_eigvals: torch.Tensor,
-    kronecker_factor: torch.Tensor,
-    eigenbasis: torch.Tensor,
-    ind: int,
-    exp_avg_sq: torch.Tensor,
+    kronecker_factor: Tensor,
+    eigenbasis: Tensor,
     power_iter_steps: int,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Computes the eigenbases of the preconditioner using power iteration and QR decomposition.
+) -> Tensor:
+    """Refines an eigenbasis via power iteration with QR re-orthogonalization.
 
-    This function performs multiple rounds of power iteration followed by QR decomposition
-    to recompute the eigenbases of the preconditioner kronecker factor. Generalizes Vyas et al.'s (SOAP) algorithm of 1 step of power iteration for updating the eigenbasis.
+    Performs ``power_iter_steps`` rounds of ``Q = QR(kronecker_factor @ Q)`` starting from
+    ``eigenbasis``. The columns of ``eigenbasis`` are expected to already be aligned with the
+    intended descending-eigenvalue ordering of ``kronecker_factor`` (see
+    :func:`emerging_optimizers.soap.soap_utils.sort_eigenbasis_by_approx_eigvals`).
 
     Args:
-        approx_eigvals : Projection of kronecker factor onto the eigenbasis, should be close to diagonal
-        kronecker_factor : Kronecker factor matrix.
-        eigenbasis : Kronecker factor eigenbasis matrix.
-        ind : Index for selecting dimension in the exp_avg_sq matrix to apply the sorting order over.
-        exp_avg_sq : inner Adam second moment (exp_avg_sq).
-        power_iter_steps: Number of power iteration steps to perform before QR decomposition.
-            More steps can lead to better convergence but increased computation time.
+        kronecker_factor: Kronecker factor matrix (symmetric, used as the projector).
+        eigenbasis: Starting eigenbasis whose columns will be refined.
+        power_iter_steps: Number of power-iteration / QR rounds to perform.
 
     Returns:
-        tuple[torch.Tensor, torch.Tensor]: A tuple containing:
-            - Q: The updated eigenbasis
-            - exp_avg_sq: The updated (sorted) inner Adam second moment
+        The refined eigenbasis.
     """
-    # Sort the approximated eigenvalues according to their magnitudes
-    sort_idx = torch.argsort(approx_eigvals, descending=True)
-    # re-order the inner adam second moment
-    exp_avg_sq = exp_avg_sq.index_select(ind, sort_idx)
-
-    # Initialize power iteration after sorting the columns of the eigenbasis matrix according to the descending eigenvalues
-    Q = eigenbasis[:, sort_idx]
-
-    # Perform multiple steps of power iteration
+    Q = eigenbasis
     for _ in range(power_iter_steps):
         # Project current eigenbases on kronecker factor
         Q = kronecker_factor @ Q
         # Perform QR to maintain orthogonality between iterations
         Q = torch.linalg.qr(Q).Q
+    return Q
 
-    return Q, exp_avg_sq
 
-
-def conjugate(a: torch.Tensor, p: torch.Tensor, diag: bool = False) -> torch.Tensor:
+def conjugate(a: Tensor, p: Tensor, diag: bool = False) -> Tensor:
     """Calculate similarity transformation
 
     This function calculates :math:`B = P^T A P`. It assumes P is orthogonal so that :math:`P^{-1} = P^T` and

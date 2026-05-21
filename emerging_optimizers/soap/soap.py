@@ -468,17 +468,28 @@ def update_eigenbasis_and_exp_avgs(
         dims=[[0], [1]],
     )
 
-    # Step 2: Update eigenbases
+    # Step 2a: Sort current eigenbases by descending approximate eigenvalues of the updated kronecker
+    # factors, and permute exp_avg_sq.
+    # Shared by both eigh and QR paths so the new eigh-path approximation matches the QR-path slot semantics
+    # under small per-step drift.
+    # Sorting eigenbases is not necessary for eigh path technically, but decided to keep API simple.
+    eigenbasis_list, exp_avg_sq = soap_utils.sort_eigenbasis_by_approx_eigvals(
+        kronecker_factor_list,
+        eigenbasis_list,
+        exp_avg_sq,
+    )
+
+    # Step 2b: Update eigenbases
     if use_eigh:
         updated_eigenbasis_list = soap_utils.get_eigenbasis_eigh(
             kronecker_factor_list,
         )
     else:
-        # Use QR decomposition and power iteration (orthogonal iteration)
-        updated_eigenbasis_list, exp_avg_sq = soap_utils.get_eigenbasis_qr(
+        # Use QR decomposition and power iteration (orthogonal iteration) starting from the
+        # pre-sorted eigenbases.
+        updated_eigenbasis_list = soap_utils.get_eigenbasis_qr(
             kronecker_factor_list,
             eigenbasis_list,
-            exp_avg_sq,
             power_iter_steps,
         )
 
