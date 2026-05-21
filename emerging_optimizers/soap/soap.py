@@ -380,7 +380,24 @@ def update_kronecker_factors_kl_shampoo(
 ) -> None:
     """Updates the kronecker factor matrices in place using KL-Shampoo correction.
 
-    Implement Kullback–Leibler Minimization from https://arxiv.org/pdf/2509.03378
+    Implements the Kullback–Leibler minimization update from https://arxiv.org/pdf/2509.03378.
+
+    For a gradient :math:`G \\in \\mathbb{R}^{m \\times n}`, current kronecker factors
+    :math:`L_t \\in \\mathbb{R}^{m \\times m}`, :math:`R_t \\in \\mathbb{R}^{n \\times n}`, and their
+    orthonormal eigenbases :math:`Q_L, Q_R`, the approximate eigenvalues in the current eigenbasis are
+
+    .. math::
+        \\Lambda_L = \\mathrm{diag}(Q_L^{\\top} L_t Q_L), \\quad
+        \\Lambda_R = \\mathrm{diag}(Q_R^{\\top} R_t Q_R)
+
+    and the EMA update with momentum :math:`\\beta` (= ``shampoo_beta``) and exponent :math:`p`
+    (= ``eigval_exp``, default ``-1``) is
+
+    .. math::
+        L_{t+1} = \\beta\\, L_t + \\frac{1-\\beta}{n}\\, G\\, Q_R\\, \\mathrm{diag}(\\Lambda_R^{p})\\, Q_R^{\\top} G^{\\top} \\\\
+        R_{t+1} = \\beta\\, R_t + \\frac{1-\\beta}{m}\\, G^{\\top}\\, Q_L\\, \\mathrm{diag}(\\Lambda_L^{p})\\, Q_L^{\\top} G
+
+    Eigenvalues are clamped to ``eps`` from below before exponentiation for numerical stability.
 
     Args:
         kronecker_factor_list: List of preconditioner matrices (L and R) to update.
@@ -388,7 +405,7 @@ def update_kronecker_factors_kl_shampoo(
         shampoo_beta: Momentum coefficient for updating preconditioners.
         eigenbasis_list: List of orthonormal eigenbases of the kronecker factor matrices
         eps: Small offset for numerical stability.
-        eigenval_exp: Exponent of the eigenvalues.
+        eigval_exp: Exponent applied to the (clamped) eigenvalues. Defaults to ``-1.0``.
     """
     if grad.dim() != 2:
         raise TypeError("KL-Shampoo mathematical correction is only supported for 2D tensors")
