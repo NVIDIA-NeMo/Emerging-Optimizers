@@ -62,27 +62,14 @@ class EigUtilsTest(BaseTestCase):
         eigenbasis = torch.randn(N, N, device=self.device)
         eigenbasis = torch.linalg.qr(eigenbasis).Q
 
-        # Create inner adam second moment (should be positive)
-        exp_avg_sq = torch.abs(torch.randn(N, N, device=self.device))
-
-        # Create estimated eigenvalue matrix by projecting kronecker_factor onto eigenbasis's basis
-        approx_eigenvalue_matrix = eigenbasis.T.mm(kronecker_factor).mm(eigenbasis)
-        # Extract eigenvalues from the diagonal of the estimated eigenvalue matrix
-        approx_eigvals = torch.diag(approx_eigenvalue_matrix)
-
-        # Call the QR function to update the eigenbases and re-order the inner adam second moment
-        Q_new, exp_avg_sq_new = eig_utils.orthogonal_iteration(
-            approx_eigvals=approx_eigvals,
+        Q_new = eig_utils.orthogonal_iteration(
             kronecker_factor=kronecker_factor,
             eigenbasis=eigenbasis,
-            ind=0,  # Test with first dimension
-            exp_avg_sq=exp_avg_sq,
             power_iter_steps=power_iter_steps,
         )
 
-        # Test 1: Check output shapes
+        # Test 1: Check output shape
         self.assertEqual(Q_new.shape, (N, N))
-        self.assertEqual(exp_avg_sq_new.shape, exp_avg_sq.shape)
 
         # Test 2: Check orthogonality (Q^T Q ≈ I)
         expected_identity = torch.eye(N, dtype=Q_new.dtype, device=self.device)
@@ -94,20 +81,7 @@ class EigUtilsTest(BaseTestCase):
             msg="Orthogonalization failed: Q^T Q is not close enough to the identity matrix.",
         )
 
-        # Test 3: Check that exp_avg_sq is properly sorted based on eigenvalues
-        # The sorting should be based on the diagonal elements of estimated_eigenvalue_matrix
-        sort_idx = torch.argsort(approx_eigvals, descending=True)
-        expected_exp_avg_sq = exp_avg_sq.index_select(0, sort_idx)
-        torch.testing.assert_close(
-            exp_avg_sq_new,
-            expected_exp_avg_sq,
-            atol=1e-5,
-            rtol=1e-5,
-            msg="exp_avg_sq was not properly sorted based on eigenvalues.",
-        )
-
-        # Test 4: Check that Q_new is different from input (transformation occurred)
-        # This is a basic check - in practice they should be different due to power iteration
+        # Test 3: Check that Q_new is different from input (power iteration ran)
         self.assertFalse(torch.allclose(Q_new, eigenbasis))
 
     def test_eigh_with_fallback_descending_order(self) -> None:
