@@ -64,6 +64,8 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
         eps: Term added to the denominator for numerical stability.
         weight_decay: Weight decay coefficient.
         correct_bias: Whether to apply bias correction to the first and second moment EMAs.
+        normalize: Whether to normalize each updated parameter back to its pre-update Frobenius norm.
+        normalize_eps: Term used to avoid division by zero during parameter normalization.
         weight_decay_method: Method to apply weight decay, see
             :class:`~emerging_optimizers.mixin.WeightDecayMixin` for more details.
     """
@@ -76,6 +78,8 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
         eps: float = 1e-8,
         weight_decay: float = 0.0,
         correct_bias: bool = True,
+        normalize: bool = False,
+        normalize_eps: float = 1e-8,
         weight_decay_method: WeightDecayT = "decoupled",
     ) -> None:
         if not 0.0 <= lr:
@@ -86,10 +90,14 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
             raise ValueError(f"Invalid beta at index 1: {betas[1]}")
         if not 0.0 <= eps:
             raise ValueError(f"Invalid epsilon value: {eps}")
+        if not 0.0 < normalize_eps:
+            raise ValueError(f"Invalid normalize_eps value: {normalize_eps}")
         if not 0.0 <= weight_decay:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, correct_bias=correct_bias)
         self.weight_decay_method = weight_decay_method
+        self.normalize = normalize
+        self.normalize_eps = normalize_eps
         super().__init__(params, defaults)
 
     @torch.no_grad()
@@ -171,6 +179,9 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
                     state["step"],
                     eps,
                 )
+                pre_norm = p.data.norm() if self.normalize else None
                 p.data.add_(update, alpha=-lr)
+                if pre_norm is not None:
+                    p.data.mul_(pre_norm / p.data.norm().clamp_min(self.normalize_eps))
 
         return loss

@@ -113,6 +113,22 @@ class LaPropOptimizerTest(parameterized.TestCase):
         optimizer.step()
         torch.testing.assert_close(param, original, atol=0, rtol=0)
 
+    @parameterized.parameters(
+        {"shape": (3, 3)},
+        {"shape": (15, 31)},
+        {"shape": (127, 255)},
+    )
+    def test_normalize_preserves_parameter_norm(self, shape) -> None:
+        """LaProp can normalize updated parameters back to their pre-update norm."""
+        param = torch.nn.Parameter(torch.randint(1, 5, shape, device=self.device, dtype=torch.float32))
+        optimizer = LaProp([param], lr=0.25, weight_decay=0.0, normalize=True)
+        param.grad = torch.randint(1, 5, shape, device=self.device, dtype=torch.float32)
+        original_norm = param.norm()
+
+        optimizer.step()
+
+        torch.testing.assert_close(param.norm(), original_norm)
+
     @parameterized.parameters(True, False)
     def test_init_group_skip_non_grad_params(self, skip_non_grad_params) -> None:
         """Test _init_group with skip_non_grad_params flag."""
@@ -151,6 +167,12 @@ class LaPropOptimizerTest(parameterized.TestCase):
         param = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
         with self.assertRaisesRegex(ValueError, "Invalid epsilon"):
             LaProp([param], eps=-1e-8)
+
+    def test_non_positive_normalize_eps_raises_value_error(self) -> None:
+        """Test that LaProp raises ValueError for non-positive normalize_eps."""
+        param = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
+        with self.assertRaisesRegex(ValueError, "Invalid normalize_eps"):
+            LaProp([param], normalize_eps=0.0)
 
     def test_negative_weight_decay_raises_value_error(self) -> None:
         """Test that LaProp raises ValueError for negative weight_decay."""
