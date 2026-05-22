@@ -12,4 +12,5 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from emerging_optimizers.scalar_optimizers.laprop import LaProp
 from emerging_optimizers.scalar_optimizers.lion import Lion

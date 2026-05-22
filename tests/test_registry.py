@@ -61,6 +61,7 @@ class TestRegistry(parameterized.TestCase):
         ("scion", scion.Scion),
         ("soap", soap.SOAP),
         ("lion", scalar_optimizers.Lion),
+        ("laprop", scalar_optimizers.LaProp),
     )
     def test_get_optimizer(self, opt_name, expected_opt_cls):
         opt_cls = registry.get_optimizer_cls(opt_name)
