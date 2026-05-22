@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from typing import overload
 
 import torch
+from absl import logging
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import registry
@@ -94,6 +95,8 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
             raise ValueError(f"Invalid normalize_eps value: {normalize_eps}")
         if not 0.0 <= weight_decay:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
+        if normalize and weight_decay != 0.0:
+            logging.warning("LaProp with normalize=True is intended to be used with weight_decay=0.0.")
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, correct_bias=correct_bias)
         self.weight_decay_method = weight_decay_method
         self.normalize = normalize
