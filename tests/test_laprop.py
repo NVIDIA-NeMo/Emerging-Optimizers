@@ -59,7 +59,7 @@ class LaPropOptimizerTest(parameterized.TestCase):
         """LaProp initializes first moment, second moment, and step state."""
         beta1, beta2 = 0.5, 0.75
         param = torch.nn.Parameter(torch.randint(1, 5, shape, device=self.device, dtype=torch.float32))
-        optimizer = LaProp([param], lr=0.25, betas=(beta1, beta2), weight_decay=0.0)
+        optimizer = LaProp([param], lr=0.25, betas=(beta1, beta2), weight_decay=0.0, correct_bias=True)
         grad = torch.randint_like(param, 1, 5)
         param.grad = grad.clone()
         optimizer.step()
@@ -85,7 +85,7 @@ class LaPropOptimizerTest(parameterized.TestCase):
         betas = (0.5, 0.75)
         eps = 1e-8
         param = torch.nn.Parameter(torch.randint(-5, 5, shape, device=self.device, dtype=torch.float32))
-        grad = torch.randint(1, 5, shape, device=self.device, dtype=torch.float32)
+        grad = torch.randint(-5, 5, shape, device=self.device, dtype=torch.float32)
         optimizer = LaProp([param], lr=lr, betas=betas, eps=eps, weight_decay=0.0)
 
         old_param = param.detach().clone()
