@@ -167,6 +167,7 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
                 grad = p.grad
                 state = self.state[p]
                 state["step"] += 1
+                pre_norm = p.data.norm() if self.normalize else None
 
                 self._apply_weight_decay_inplace(p.data, grad, lr, weight_decay)
 
@@ -179,7 +180,6 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
                     state["step"],
                     eps,
                 )
-                pre_norm = p.data.norm() if self.normalize else None
                 p.data.add_(update, alpha=-lr)
                 if pre_norm is not None:
                     p.data.mul_(pre_norm / p.data.norm().clamp_min(self.normalize_eps))
