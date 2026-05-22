@@ -163,11 +163,11 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
             state = self.state[p]
             if len(state) == 0:
                 m, n = p.shape
+                # Get full size of m, n if the parameter is tensor-parallel.
                 if partition_dim == 0:
                     m *= self.tp_size
                 elif partition_dim == 1:
                     n *= self.tp_size
-                # When partition_dim is None: param is replicated, m and n are already full.
 
                 # Both dimensions must be divisible by tp_size for the L/R shards (each sharded
                 # along dim 0) to gather back to the full square shape via torch.cat.
@@ -262,13 +262,12 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     full_grad_projected = soap.precondition(full_grad, eigenbasis_list, dims=[[0], [0]])
 
                     # No matmul inside adam update. Put it under fp32_matmul_precision for code simplicity.
-                    full_adam_update = update_functions.calculate_adam_update(
+                    full_adam_update = update_functions.calculate_laprop_update(
                         full_grad_projected,
                         state["exp_avg"],
                         state["exp_avg_sq"],
-                        group["betas"],
                         True,  # correct_bias
-                        False,  # nesterov
+                        group["betas"],
                         curr_iter_1_based,
                         group["eps"],
                     )
