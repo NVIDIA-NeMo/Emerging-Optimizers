@@ -71,8 +71,8 @@ class LaPropOptimizerTest(parameterized.TestCase):
         expected_exp_avg_sq = (1 - beta2) * grad.square()
         normalized_grad = grad / (grad.abs() + optimizer.param_groups[0]["eps"])
         expected_exp_avg = (1 - beta1) * normalized_grad
-        torch.testing.assert_close(optimizer.state[param]["exp_avg_sq"], expected_exp_avg_sq)
-        torch.testing.assert_close(optimizer.state[param]["exp_avg"], expected_exp_avg)
+        torch.testing.assert_close(optimizer.state[param]["exp_avg_sq"], expected_exp_avg_sq, atol=0, rtol=0)
+        torch.testing.assert_close(optimizer.state[param]["exp_avg"], expected_exp_avg, atol=0, rtol=0)
 
     @parameterized.parameters(
         {"shape": (3, 3)},
@@ -96,9 +96,9 @@ class LaPropOptimizerTest(parameterized.TestCase):
         param.grad = grad.clone()
         optimizer.step()
 
-        torch.testing.assert_close(param, old_param - lr * expected_update)
-        torch.testing.assert_close(optimizer.state[param]["exp_avg"], exp_avg)
-        torch.testing.assert_close(optimizer.state[param]["exp_avg_sq"], exp_avg_sq)
+        torch.testing.assert_close(param, old_param - lr * expected_update, atol=0, rtol=0)
+        torch.testing.assert_close(optimizer.state[param]["exp_avg"], exp_avg, atol=0, rtol=0)
+        torch.testing.assert_close(optimizer.state[param]["exp_avg_sq"], exp_avg_sq, atol=0, rtol=0)
 
     @parameterized.parameters(
         {"shape": (3, 3)},
@@ -118,10 +118,10 @@ class LaPropOptimizerTest(parameterized.TestCase):
         {"shape": (15, 31)},
         {"shape": (127, 255)},
     )
-    def test_normalize_preserves_parameter_norm(self, shape) -> None:
+    def test_frob_normalize_preserves_parameter_norm(self, shape) -> None:
         """LaProp can normalize updated parameters back to their pre-update norm."""
         param = torch.nn.Parameter(torch.randint(1, 5, shape, device=self.device, dtype=torch.float32))
-        optimizer = LaProp([param], lr=0.25, weight_decay=0.0, normalize=True)
+        optimizer = LaProp([param], lr=0.25, weight_decay=0.0, frob_normalize=True)
         param.grad = torch.randint(1, 5, shape, device=self.device, dtype=torch.float32)
         original_norm = param.norm()
 
@@ -167,12 +167,6 @@ class LaPropOptimizerTest(parameterized.TestCase):
         param = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
         with self.assertRaisesRegex(ValueError, "Invalid epsilon"):
             LaProp([param], eps=-1e-8)
-
-    def test_non_positive_normalize_eps_raises_value_error(self) -> None:
-        """Test that LaProp raises ValueError for non-positive normalize_eps."""
-        param = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
-        with self.assertRaisesRegex(ValueError, "Invalid normalize_eps"):
-            LaProp([param], normalize_eps=0.0)
 
     def test_negative_weight_decay_raises_value_error(self) -> None:
         """Test that LaProp raises ValueError for negative weight_decay."""
