@@ -13,3 +13,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from emerging_optimizers.scalar_optimizers.lion import Lion
+from emerging_optimizers.scalar_optimizers.laprop import LaProp
