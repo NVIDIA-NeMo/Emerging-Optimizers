@@ -144,10 +144,10 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
         Returns:
             The loss from the closure, if provided.
         """
-        loss = None
-        if closure is not None:
-            with torch.enable_grad():
-                loss = closure()
+        if closure is None:
+            loss = None
+        else:
+            loss = closure()
 
         for group in self.param_groups:
             self._init_group(group)
