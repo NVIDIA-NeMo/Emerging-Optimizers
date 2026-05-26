@@ -58,13 +58,14 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
         lr: float = 1e-3,
         momentum: float = 0.9,
         weight_decay: float = 0.0,
+        *,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         dim: int = 0,
         eps: float = 1e-8,
     ) -> None:
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
-        if momentum < 0.0 or momentum >= 1.0:
+        if not 0.0 <= momentum < 1.0:
             raise ValueError(f"Invalid momentum value: {momentum}")
         if weight_decay < 0.0:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
@@ -147,6 +148,7 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
         lr: float = 1e-3,
         betas: tuple[float, float] = (0.9, 0.99),
         weight_decay: float = 0.0,
+        *,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         dim: int = 0,
         eps: float = 1e-8,
@@ -165,9 +167,9 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
         """
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
-        if betas[0] < 0.0 or betas[0] >= 1.0:
+        if not 0.0 <= betas[0] < 1.0:
             raise ValueError(f"Invalid beta1 value: {betas[0]}")
-        if betas[1] < 0.0 or betas[1] >= 1.0:
+        if not 0.0 <= betas[1] < 1.0:
             raise ValueError(f"Invalid beta2 value: {betas[1]}")
         if weight_decay < 0.0:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
