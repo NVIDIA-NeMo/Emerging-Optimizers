@@ -276,7 +276,8 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
         Args:
             closure: Unsupported; must be ``None``.
         """
-        assert closure is None, "closure is not supported"
+        if closure is not None:
+            raise ValueError("closure is not supported")
 
         for group in self.param_groups:
             self._init_group(group)
