@@ -24,13 +24,16 @@ import sys
 # Add the project root directory to the Python path
 sys.path.insert(0, os.path.abspath(".."))
 
+from emerging_optimizers.package_info import __version__  # noqa: E402
+
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "Emerging-Optimizers"
 copyright = "2025, NVIDIA Corporation"
 author = "NVIDIA Corporation"
-release = "0.2.0"
+release = __version__
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
