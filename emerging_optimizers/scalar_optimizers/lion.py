@@ -124,15 +124,9 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
             If you need the original gradient after this call, clone it beforehand.
 
         Args:
-            closure: A closure that reevaluates the model and returns the loss (optional).
-
-        Returns:
-            The loss from the closure, if provided.
+            closure: Unsupported; must be ``None``.
         """
-        loss = None
-        if closure is not None:
-            with torch.enable_grad():
-                loss = closure()
+        assert closure is None, "closure is not supported"
 
         for group in self.param_groups:
             self._init_group(group)
@@ -157,4 +151,4 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
                 update = calculate_lion_update(grad, exp_avg, betas)
                 p.data.add_(update, alpha=-lr)
 
-        return loss
+        return None

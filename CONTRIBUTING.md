@@ -49,6 +49,10 @@ Although common, **mixed case is not allowed** in any code. "Mixed case" here me
 
 Run pre-commit at local before submitting merge request. You can also read [.pre-commit-config.yaml]( .pre-commit-config.yaml) to understand what are being forced. The **mypy** settings are inherited from PyTorch.
 
+## Optimizer API
+
+`closure` is **not supported** on any optimizer's `step` in this repo. The parameter is kept on the signature for compatibility with `torch.optim.Optimizer`, but every `step` implementation asserts `closure is None` and returns `None`. New optimizers must do the same — do not add code paths that call `closure()` or return its result.
+
 ## Test
 
 All tests should be placed under [tests](tests). We aim for 100% test coverage for this tiny project.

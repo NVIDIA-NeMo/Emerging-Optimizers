@@ -139,15 +139,9 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
             If you need the original gradient after this call, clone it beforehand.
 
         Args:
-            closure: A closure that reevaluates the model and returns the loss (optional).
-
-        Returns:
-            The loss from the closure, if provided.
+            closure: Unsupported; must be ``None``.
         """
-        if closure is None:
-            loss = None
-        else:
-            loss = closure()
+        assert closure is None, "closure is not supported"
 
         for group in self.param_groups:
             self._init_group(group)
@@ -183,4 +177,4 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
                     assert pre_norm is not None
                     p.data.mul_(pre_norm / p.data.norm().clamp_min(eps))
 
-        return loss
+        return None

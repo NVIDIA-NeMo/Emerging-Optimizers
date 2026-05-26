@@ -93,9 +93,9 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
         """Performs a single optimization step.
 
         Args:
-            closure: A closure that reevaluates the model and returns the loss.
+            closure: Unsupported; must be ``None``.
         """
-        loss = closure() if closure is not None else None
+        assert closure is None, "closure is not supported"
 
         for group in self.param_groups:
             lr = group["lr"]
@@ -129,7 +129,7 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
                 # Retraction back to the manifold, the hyper-sphere
                 torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=eps, out=param)
 
-        return loss
+        return None
 
 
 @registry.register_optimizer("oblique_adam")
@@ -197,9 +197,9 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
         """Performs a single optimization step.
 
         Args:
-            closure: A closure that reevaluates the model and returns the loss.
+            closure: Unsupported; must be ``None``.
         """
-        loss = closure() if closure is not None else None
+        assert closure is None, "closure is not supported"
 
         for group in self.param_groups:
             lr = group["lr"]
@@ -256,7 +256,7 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
                 # Retraction back to the manifold, i.e. the hyper-sphere
                 torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=eps, out=param)
 
-        return loss
+        return None
 
 
 def _compute_riemannian_grad(param: torch.Tensor, grad_like: torch.Tensor, dim: int) -> torch.Tensor:

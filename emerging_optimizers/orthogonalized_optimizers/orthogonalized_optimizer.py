@@ -158,12 +158,9 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         """Performs a single optimization step.
 
         Args:
-            closure: A closure that reevaluates the model and returns the loss.
+            closure: Unsupported; must be ``None``.
         """
-        if closure is None:
-            loss = None
-        else:
-            loss = closure()
+        assert closure is None, "closure is not supported"
 
         for group in self.param_groups:
             self._init_group(group)
@@ -200,7 +197,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 p.add_(orth_grad, alpha=-group["lr"])
                 self.post_weight_update_fn_inplace(p)
 
-        return loss
+        return None
 
     def orthogonalize(self, p: torch.Tensor, grad: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         """Orthogonalize the momentum.

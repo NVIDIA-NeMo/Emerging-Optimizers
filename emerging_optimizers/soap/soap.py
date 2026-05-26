@@ -171,12 +171,10 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         """Performs a single optimization step.
 
         Args:
-            closure: A closure that reevaluates the model and returns the loss.
+            closure: Unsupported; must be ``None``.
         """
-        if closure is None:
-            loss = None
-        else:
-            loss = closure()
+        assert closure is None, "closure is not supported"
+
         for group in self.param_groups:
             self._init_group(group)
 
@@ -295,7 +293,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             for stream in self.stream_list:
                 current_stream.wait_stream(stream)
 
-        return loss
+        return None
 
 
 @torch.no_grad()  # type: ignore[misc]
