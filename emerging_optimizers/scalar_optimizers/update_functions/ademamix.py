@@ -30,12 +30,13 @@ def calculate_ademamix_update(
     exp_avg_fast: torch.Tensor,
     exp_avg_slow: torch.Tensor,
     exp_avg_sq: torch.Tensor,
-    num_beta_slow_warmup_steps: int | None,
-    num_alpha_warmup_steps: int | None,
+    *,
     betas: tuple[float, float, float],
-    step: int,
     eps: float,
     correct_bias: bool,
+    step: int,
+    num_beta_slow_warmup_steps: int | None,
+    num_alpha_warmup_steps: int | None,
     alpha: float = 2,
 ) -> torch.Tensor:
     """Performs AdEMAMix update.
@@ -56,16 +57,16 @@ def calculate_ademamix_update(
 
     Args:
         grad: The gradient tensor.
-        exp_avg_fast: The accumulated first moment of the gradient with fast time constant.
-        exp_avg_slow: The accumulated first moment of the gradient with slow time constant.
-        exp_avg_sq: The accumulated second moment of the gradient.
-        num_beta_slow_warmup_steps: Number of warmup steps used to increase beta_slow
-        num_alpha_warmup_steps: Number of warmup steps used to increase alpha
-        betas: The EMA beta coefficients for the Adam update.
-        step: The current step of the optimizer, used to compute the bias correction terms.
-        eps: The epsilon for the Adam second moment update.
-        correct_bias: Whether to correct the bias of the AdEMAMix update.
-        alpha: Coefficient for mixing the current gradient and EMA, the final value to use in case of scheduling.
+        exp_avg_fast: The accumulated first moment with the fast time constant (modified in place).
+        exp_avg_slow: The accumulated first moment with the slow time constant (modified in place).
+        exp_avg_sq: The accumulated second moment of the gradient (modified in place).
+        betas: The EMA beta coefficients ``(beta_fast, beta2, beta_slow_final)``.
+        eps: Epsilon for the second-moment denominator.
+        correct_bias: Whether to apply Adam-style bias correction.
+        step: Current optimizer step (1-based), used for bias correction and the schedulers below.
+        num_beta_slow_warmup_steps: Number of warmup steps used to ramp ``beta_slow`` toward ``beta_slow_final``. ``None`` disables the schedule.
+        num_alpha_warmup_steps: Number of warmup steps used to ramp ``alpha`` toward its final value. ``None`` disables the schedule.
+        alpha: Coefficient for mixing the slow first moment into the update. When scheduled, this is the final value.
 
     Returns:
         The AdEMAMix update.
@@ -113,12 +114,13 @@ def calculate_sim_ademamix_update(
     grad: torch.Tensor,
     exp_avg: torch.Tensor,
     exp_avg_sq: torch.Tensor,
-    num_beta_fast_warmup_steps: int | None,
-    min_beta_fast: float,
+    *,
     betas: tuple[float, float],
-    step: int,
     eps: float,
     correct_bias: bool,
+    step: int,
+    num_beta_fast_warmup_steps: int | None,
+    min_beta_fast: float,
     alpha: float = 2,
 ) -> torch.Tensor:
     """Performs simplified AdEMAMix update.
@@ -138,15 +140,15 @@ def calculate_sim_ademamix_update(
 
     Args:
         grad: The gradient tensor.
-        exp_avg: The accumulated first moment of the gradient.
-        exp_avg_sq: The accumulated second moment of the gradient.
-        num_beta_fast_warmup_steps: Number of warmup steps used to increase beta_fast
-        min_beta_fast: The minimum beta_fast value used at initialization
-        betas: The EMA beta coefficients for the Adam update.
-        step: The current step of the optimizer, used to compute the bias correction terms.
-        eps: The epsilon for the Adam second moment update.
-        correct_bias: Whether to correct the bias of the AdEMAMix update.
-        alpha: Coefficient for mixing the current gradient and EMA.
+        exp_avg: The accumulated first moment of the gradient (modified in place).
+        exp_avg_sq: The accumulated second moment of the gradient (modified in place).
+        betas: The EMA beta coefficients ``(beta_fast_final, beta2)``.
+        eps: Epsilon for the second-moment denominator.
+        correct_bias: Whether to apply Adam-style bias correction.
+        step: Current optimizer step (1-based), used for bias correction and the ``beta_fast`` schedule.
+        num_beta_fast_warmup_steps: Number of warmup steps used to ramp ``beta_fast`` from ``min_beta_fast`` toward ``beta_fast_final``. ``None`` disables the schedule.
+        min_beta_fast: Initial ``beta_fast`` value used at the start of the warmup schedule.
+        alpha: Coefficient for mixing the current gradient into the update.
 
     Returns:
         The simplified-AdEMAMix update.

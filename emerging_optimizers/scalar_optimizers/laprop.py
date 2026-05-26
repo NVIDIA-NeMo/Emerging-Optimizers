@@ -167,10 +167,10 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
                     grad,
                     state["exp_avg"],
                     state["exp_avg_sq"],
-                    correct_bias,
-                    betas,
-                    state["step"],
-                    eps,
+                    betas=betas,
+                    eps=eps,
+                    correct_bias=correct_bias,
+                    step=state["step"],
                 )
                 p.data.add_(update, alpha=-lr)
                 if self.frob_normalize:

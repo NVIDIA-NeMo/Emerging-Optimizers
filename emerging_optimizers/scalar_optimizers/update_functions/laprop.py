@@ -26,10 +26,11 @@ def calculate_laprop_update(
     grad: torch.Tensor,
     exp_avg: torch.Tensor,
     exp_avg_sq: torch.Tensor,
-    correct_bias: bool,
+    *,
     betas: tuple[float, float],
-    step: int,
     eps: float,
+    correct_bias: bool,
+    step: int,
 ) -> torch.Tensor:
     """Performs the LAProp/Normalized SGD with momentum update.
 
@@ -49,15 +50,15 @@ def calculate_laprop_update(
 
     Args:
         grad: The gradient tensor.
-        exp_avg: The exponential moving average of the gradient.
-        exp_avg_sq: The exponential moving average of the gradient squared.
-        correct_bias: Whether to correct the bias of the Adam update.
-        betas: The betas for the exponential moving average.
-        step: The current step.
-        eps: The epsilon for the second moment update.
+        exp_avg: The accumulated first moment of the gradient (modified in place).
+        exp_avg_sq: The accumulated second moment of the gradient (modified in place).
+        betas: The EMA beta coefficients ``(beta1, beta2)``.
+        eps: Epsilon for the second-moment denominator.
+        correct_bias: Whether to apply Adam-style bias correction.
+        step: Current optimizer step (1-based), used for bias correction.
 
     Returns:
-        The LAProp update.
+        The LaProp update.
     """
     beta1, beta2 = betas
 

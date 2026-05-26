@@ -148,7 +148,7 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
                 # Lion update: sign(beta1 * m + (1-beta1) * g)
                 # Note: different betas per param-group will each trigger a one-time
                 # torch.compile recompilation of calculate_lion_update.
-                update = calculate_lion_update(grad, exp_avg, betas)
+                update = calculate_lion_update(grad, exp_avg, betas=betas)
                 p.data.add_(update, alpha=-lr)
 
         return None

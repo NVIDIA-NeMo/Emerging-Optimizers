@@ -91,7 +91,9 @@ class LaPropOptimizerTest(parameterized.TestCase):
         old_param = param.detach().clone()
         exp_avg = torch.zeros_like(param)
         exp_avg_sq = torch.zeros_like(param)
-        expected_update = calculate_laprop_update(grad, exp_avg, exp_avg_sq, True, betas, 1, eps)
+        expected_update = calculate_laprop_update(
+            grad, exp_avg, exp_avg_sq, betas=betas, eps=eps, correct_bias=True, step=1
+        )
 
         param.grad = grad.clone()
         optimizer.step()

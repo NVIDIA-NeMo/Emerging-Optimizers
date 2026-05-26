@@ -26,11 +26,12 @@ def calculate_adam_update(
     grad: torch.Tensor,
     exp_avg: torch.Tensor,
     exp_avg_sq: torch.Tensor,
+    *,
     betas: tuple[float, float],
+    eps: float,
     correct_bias: bool,
     nesterov: bool,
     step: int,
-    eps: float,
 ) -> torch.Tensor:
     """Performs the Adam update.
 
@@ -47,16 +48,16 @@ def calculate_adam_update(
 
     Args:
         grad: The gradient tensor.
-        exp_avg: The accumulated first moment of the gradient.
-        exp_avg_sq: The accumulated second moment of the gradient.
-        betas: The EMA beta coefficients for the Adam update.
-        correct_bias: Whether to correct the bias of the Adam update.
-        nesterov: Whether to use nesterov momentum.
-        step: The current step of the optimizer, used to compute the bias correction terms.
-        eps: The epsilon for the Adam second moment update.
+        exp_avg: The accumulated first moment of the gradient (modified in place).
+        exp_avg_sq: The accumulated second moment of the gradient (modified in place).
+        betas: The EMA beta coefficients ``(beta1, beta2)``.
+        eps: Epsilon for the second-moment denominator.
+        correct_bias: Whether to apply Adam-style bias correction.
+        nesterov: Whether to use Nesterov momentum.
+        step: Current optimizer step (1-based), used for bias correction.
 
     Returns:
-        The Adam-update.
+        The Adam update.
     """
 
     beta1, beta2 = betas

@@ -26,6 +26,7 @@ def calculate_madam_update(
     grad: torch.Tensor,
     exp_avg: torch.Tensor,
     exp_avg_sq_scaled: torch.Tensor,
+    *,
     betas: tuple[float, float],
     correct_bias: bool,
     step: int,
@@ -83,15 +84,15 @@ def calculate_madam_update(
             ``s * EMA(g_t^2)`` (modified in place). Allocate as ``zeros_like(p)``;
             the caller is responsible for using the same ``scale`` across steps.
         betas: The EMA beta coefficients ``(beta1, beta2)``.
-        correct_bias: Whether to apply Adam's bias correction.
-        step: Current optimizer step (1-indexed), used for bias correction.
+        correct_bias: Whether to apply Adam-style bias correction.
+        step: Current optimizer step (1-based), used for bias correction.
         scale_log2: ``log2`` of the magnitude scaling factor ``s = 2 **
             scale_log2`` used for the second-moment storage. When it is an even
             integer, ``sqrt(s) = 2 ** (scale_log2 // 2)`` is exactly representable
             in floating point.
 
     Returns:
-        The MAdam update tensor.
+        The MAdam update.
     """
 
     beta1, beta2 = betas

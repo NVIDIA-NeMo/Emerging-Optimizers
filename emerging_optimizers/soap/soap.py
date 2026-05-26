@@ -269,11 +269,11 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         grad_projected,
                         state["exp_avg"],
                         state["exp_avg_sq"],
-                        group["betas"],
-                        self.correct_bias,
-                        self.nesterov,
-                        curr_iter_1_based,  # 1-based iteration index is used for bias correction
-                        group["eps"],
+                        betas=group["betas"],
+                        eps=group["eps"],
+                        correct_bias=self.correct_bias,
+                        nesterov=self.nesterov,
+                        step=curr_iter_1_based,  # 1-based iteration index is used for bias correction
                     )
 
                     # Projecting back the preconditioned (by ADAM) exponential moving average of gradients

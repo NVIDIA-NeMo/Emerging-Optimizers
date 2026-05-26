@@ -53,6 +53,34 @@ Run pre-commit at local before submitting merge request. You can also read [.pre
 
 `closure` is **not supported** on any optimizer's `step` in this repo. The parameter is kept on the signature for compatibility with `torch.optim.Optimizer`, but every `step` implementation asserts `closure is None` and returns `None`. New optimizers must do the same — do not add code paths that call `closure()` or return its result.
 
+### Argument-order convention
+
+When designing or modifying any public function in `emerging_optimizers/` — optimizer `__init__`, `calculate_*_update`, helpers — follow this precedence for argument order:
+
+1. **PyTorch native first.** Match `torch.optim` / `torch.optim._functional` signatures. For Adam-family signatures that means `betas` and `eps` adjacent (`Adam(lr, betas, eps, weight_decay, ...)`).
+2. **HuggingFace next.** For knobs PyTorch doesn't expose, follow HF's order. The clearest case is `correct_bias`: HF's `transformers.AdamW` puts it after the standard Adam scalars (`lr, betas, eps, weight_decay`), so in our update functions `correct_bias` goes **after** `eps`.
+3. **Repo-specific extras last.** Anything not in PyTorch or HF — `nesterov` on Adam, the scalar-int `step`, warmup schedulers, `alpha`, `scale_log2`, `use_shape_scaling`, etc. — goes at the end.
+
+Concrete shape for the scalar `calculate_*_update` family:
+
+```python
+def calculate_*_update(
+    grad,                   # positional: tensors only
+    <state buffers>,
+    *,                      # everything below is keyword-only
+    betas (or momentum),
+    eps,
+    correct_bias,
+    [nesterov],
+    step,
+    <other repo-specific extras>,
+):
+```
+
+`step` is a repo-specific argument and goes in the trailing bucket. (PyTorch's functional adam takes `state_steps` as a `List[Tensor]` grouped with the buffers — that is *not* the same as our scalar `step: int`, so the PyTorch precedent does not transfer.)
+
+The `*` keyword-only separator matches the convention used by every optimizer `__init__` in `emerging_optimizers/` (Muon, Soap, PSGDPro, AdaptiveMuon, etc.) and by `torch.optim._functional.adam` — only tensors are positional, scalars and flags must be passed by name. mypy will reject positional scalar passes, so the rule is enforced at type-check time.
+
 ## Test
 
 All tests should be placed under [tests](tests). We aim for 100% test coverage for this tiny project.
