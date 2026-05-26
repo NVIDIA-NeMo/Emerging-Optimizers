@@ -171,12 +171,11 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         """Performs a single optimization step.
 
         Args:
-            closure: A closure that reevaluates the model and returns the loss.
+            closure: Unsupported; must be ``None``.
         """
-        if closure is None:
-            loss = None
-        else:
-            loss = closure()
+        if closure is not None:
+            raise ValueError("closure is not supported")
+
         for group in self.param_groups:
             self._init_group(group)
 
@@ -271,11 +270,11 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         grad_projected,
                         state["exp_avg"],
                         state["exp_avg_sq"],
-                        group["betas"],
-                        self.correct_bias,
-                        self.nesterov,
-                        curr_iter_1_based,  # 1-based iteration index is used for bias correction
-                        group["eps"],
+                        betas=group["betas"],
+                        eps=group["eps"],
+                        correct_bias=self.correct_bias,
+                        nesterov=self.nesterov,
+                        step=curr_iter_1_based,  # 1-based iteration index is used for bias correction
                     )
 
                     # Projecting back the preconditioned (by ADAM) exponential moving average of gradients
@@ -295,7 +294,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             for stream in self.stream_list:
                 current_stream.wait_stream(stream)
 
-        return loss
+        return None
 
 
 @torch.no_grad()  # type: ignore[misc]

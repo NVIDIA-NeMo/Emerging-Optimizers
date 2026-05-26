@@ -105,12 +105,10 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
         """Performs a single optimization step.
 
         Args:
-            closure: A closure that reevaluates the model and returns the loss.
+            closure: Unsupported; must be ``None``.
         """
-        if closure is None:
-            loss = None
-        else:
-            loss = closure()
+        if closure is not None:
+            raise ValueError("closure is not supported")
 
         for group in self.param_groups:
             for p in group["params"]:
@@ -162,7 +160,7 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
                 # Apply weight update
                 p.add_(update, alpha=-group["lr"])
 
-        return loss
+        return None
 
 
 def _init_psgd_kron_states(

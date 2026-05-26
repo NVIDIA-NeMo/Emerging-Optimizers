@@ -25,6 +25,7 @@ __all__ = [
 def calculate_lion_update(
     grad: torch.Tensor,
     exp_avg: torch.Tensor,
+    *,
     betas: tuple[float, float],
 ) -> torch.Tensor:
     """Performs the Lion update.
@@ -39,8 +40,8 @@ def calculate_lion_update(
 
     Args:
         grad: The gradient tensor.
-        exp_avg: The accumulated first moment of the gradient.
-        betas: The EMA beta coefficients (beta1, beta2) for the Lion update.
+        exp_avg: The accumulated first moment of the gradient (modified in place).
+        betas: The EMA beta coefficients ``(beta1, beta2)``. ``beta1`` controls the sign-update interpolation; ``beta2`` controls the momentum EMA.
 
     Returns:
         The Lion update.

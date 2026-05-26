@@ -274,12 +274,10 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
         """Single optimization step.
 
         Args:
-            closure: A closure that reevaluates the model and returns the loss.
+            closure: Unsupported; must be ``None``.
         """
-        if closure is None:
-            loss = None
-        else:
-            loss = closure()
+        if closure is not None:
+            raise ValueError("closure is not supported")
 
         for group in self.param_groups:
             self._init_group(group)
@@ -330,4 +328,4 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
                 p.add_(update, alpha=-group["lr"])
                 self.post_weight_update_fn_inplace(p)
 
-        return loss
+        return None

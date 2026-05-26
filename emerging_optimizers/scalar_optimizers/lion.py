@@ -71,15 +71,16 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
         lr: float = 1e-4,
         betas: tuple[float, float] = (0.9, 0.99),
         weight_decay: float = 0.01,
+        *,
         weight_decay_method: WeightDecayT = "decoupled",
     ) -> None:
-        if not 0.0 <= lr:
+        if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
         if not 0.0 <= betas[0] < 1.0:
             raise ValueError(f"Invalid beta at index 0: {betas[0]}")
         if not 0.0 <= betas[1] < 1.0:
             raise ValueError(f"Invalid beta at index 1: {betas[1]}")
-        if not 0.0 <= weight_decay:
+        if weight_decay < 0.0:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
         defaults = dict(lr=lr, betas=betas, weight_decay=weight_decay)
         self.weight_decay_method = weight_decay_method
@@ -124,15 +125,10 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
             If you need the original gradient after this call, clone it beforehand.
 
         Args:
-            closure: A closure that reevaluates the model and returns the loss (optional).
-
-        Returns:
-            The loss from the closure, if provided.
+            closure: Unsupported; must be ``None``.
         """
-        loss = None
         if closure is not None:
-            with torch.enable_grad():
-                loss = closure()
+            raise ValueError("closure is not supported")
 
         for group in self.param_groups:
             self._init_group(group)
@@ -154,7 +150,7 @@ class Lion(WeightDecayMixin, torch.optim.Optimizer):
                 # Lion update: sign(beta1 * m + (1-beta1) * g)
                 # Note: different betas per param-group will each trigger a one-time
                 # torch.compile recompilation of calculate_lion_update.
-                update = calculate_lion_update(grad, exp_avg, betas)
+                update = calculate_lion_update(grad, exp_avg, betas=betas)
                 p.data.add_(update, alpha=-lr)
 
-        return loss
+        return None

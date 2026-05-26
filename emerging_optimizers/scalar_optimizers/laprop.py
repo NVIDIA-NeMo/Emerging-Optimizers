@@ -77,19 +77,20 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
         betas: tuple[float, float] = (0.9, 0.999),
         eps: float = 1e-8,
         weight_decay: float = 0.0,
+        *,
         correct_bias: bool = True,
         frob_normalize: bool = False,
         weight_decay_method: WeightDecayT = "decoupled",
     ) -> None:
-        if not 0.0 <= lr:
+        if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
         if not 0.0 <= betas[0] < 1.0:
             raise ValueError(f"Invalid beta at index 0: {betas[0]}")
         if not 0.0 <= betas[1] < 1.0:
             raise ValueError(f"Invalid beta at index 1: {betas[1]}")
-        if not 0.0 <= eps:
+        if eps < 0.0:
             raise ValueError(f"Invalid epsilon value: {eps}")
-        if not 0.0 <= weight_decay:
+        if weight_decay < 0.0:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
         if frob_normalize and weight_decay != 0.0:
             logging.warning("LaProp with frob_normalize=True is intended to be used with weight_decay=0.0.")
@@ -139,15 +140,10 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
             If you need the original gradient after this call, clone it beforehand.
 
         Args:
-            closure: A closure that reevaluates the model and returns the loss (optional).
-
-        Returns:
-            The loss from the closure, if provided.
+            closure: Unsupported; must be ``None``.
         """
-        if closure is None:
-            loss = None
-        else:
-            loss = closure()
+        if closure is not None:
+            raise ValueError("closure is not supported")
 
         for group in self.param_groups:
             self._init_group(group)
@@ -173,14 +169,14 @@ class LaProp(WeightDecayMixin, torch.optim.Optimizer):
                     grad,
                     state["exp_avg"],
                     state["exp_avg_sq"],
-                    correct_bias,
-                    betas,
-                    state["step"],
-                    eps,
+                    betas=betas,
+                    eps=eps,
+                    correct_bias=correct_bias,
+                    step=state["step"],
                 )
                 p.data.add_(update, alpha=-lr)
                 if self.frob_normalize:
                     assert pre_norm is not None
                     p.data.mul_(pre_norm / p.data.norm().clamp_min(eps))
 
-        return loss
+        return None

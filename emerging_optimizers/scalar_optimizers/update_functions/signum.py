@@ -25,6 +25,7 @@ __all__ = [
 def calculate_signum_update(
     grad: torch.Tensor,
     exp_avg: torch.Tensor,
+    *,
     momentum: float,
     correct_bias: bool,
     nesterov: bool,
@@ -48,12 +49,12 @@ def calculate_signum_update(
 
     Args:
         grad: The gradient tensor.
-        exp_avg: The accumulated first moment of the gradient.
-        momentum: The EMA beta coefficients for the momentum update.
-        correct_bias: Whether to correct the bias of the momentum update.
-        nesterov: Whether to use nesterov momentum.
-        step: The current step of the optimizer, used to compute the bias correction terms.
-        use_shape_scaling: Whether to scale the update by the shape of the tensor.
+        exp_avg: The accumulated first moment of the gradient (modified in place).
+        momentum: The EMA decay coefficient for the momentum buffer (single scalar).
+        correct_bias: Whether to apply Adam-style bias correction.
+        nesterov: Whether to use Nesterov momentum.
+        step: Current optimizer step (1-based), used for bias correction.
+        use_shape_scaling: Whether to scale the update by ``2 / (m + n)`` for an ``(m, n)`` tensor.
 
     Returns:
         The sign-SGD/Signum update.

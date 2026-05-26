@@ -59,11 +59,11 @@ class UpdateFunctionTest(parameterized.TestCase):
             grad,
             exp_avg_for_manual_calc,
             exp_avg_sq_for_manual_calc,
-            betas,
+            betas=betas,
+            eps=eps,
             correct_bias=True,
             nesterov=nesterov,
             step=step,
-            eps=eps,
         )
 
         initial_param_val_tensor = torch.full(shape, 10.0, device=self.device)
@@ -117,10 +117,10 @@ class UpdateFunctionTest(parameterized.TestCase):
             grad,
             exp_avg_for_laprop,
             exp_avg_sq_for_laprop,
-            correct_bias,
-            betas,
-            step,
-            eps,
+            betas=betas,
+            eps=eps,
+            correct_bias=correct_bias,
+            step=step,
         )
 
         # Manually verify with RMSProp logic
@@ -178,12 +178,12 @@ class UpdateFunctionTest(parameterized.TestCase):
             exp_avg_fast_for_ademamix,
             exp_avg_slow_for_ademamix,
             exp_avg_sq_for_ademamix,
-            num_beta_slow_warmup_steps=num_beta_slow_warmup_steps,
-            num_alpha_warmup_steps=None,
             betas=betas,
-            step=step,
             eps=eps,
             correct_bias=correct_bias,
+            step=step,
+            num_beta_slow_warmup_steps=num_beta_slow_warmup_steps,
+            num_alpha_warmup_steps=None,
             alpha=0.0,
         )
 
@@ -194,11 +194,11 @@ class UpdateFunctionTest(parameterized.TestCase):
             grad,
             exp_avg_for_adam,
             exp_avg_sq_for_adam,
-            (betas[0], betas[1]),
+            betas=(betas[0], betas[1]),
+            eps=eps,
             correct_bias=correct_bias,
             nesterov=False,
             step=step,
-            eps=eps,
         )
 
         torch.testing.assert_close(ademamix_update, adam_update, atol=1e-6, rtol=1e-6)
@@ -221,12 +221,12 @@ class UpdateFunctionTest(parameterized.TestCase):
             grad,
             exp_avg_for_sim_ademamix,
             exp_avg_sq_for_sim_ademamix,
-            num_beta_fast_warmup_steps=None,
-            min_beta_fast=0.0,
             betas=betas,
-            step=step,
             eps=eps,
             correct_bias=correct_bias,
+            step=step,
+            num_beta_fast_warmup_steps=None,
+            min_beta_fast=0.0,
             alpha=0.0,
         )
 
@@ -390,10 +390,10 @@ class MAdamUpdateTest(parameterized.TestCase):
             exp_avg_adam,
             exp_avg_sq_adam,
             betas=betas,
+            eps=0.0,
             correct_bias=correct_bias,
             nesterov=False,
             step=step,
-            eps=0.0,
         )
 
         case = f"scale_log2={scale_log2}, correct_bias={correct_bias}"
