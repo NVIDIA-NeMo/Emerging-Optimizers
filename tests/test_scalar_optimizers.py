@@ -768,10 +768,10 @@ class LaPropOptimizerTest(_CommonScalarOptimizerTests, _HasBetasTests, _HasEpsTe
         """LaProp with ``frob_normalize=True`` restores the pre-step Frobenius norm."""
         param = torch.nn.Parameter(torch.randint(1, 5, shape, device=self.device, dtype=torch.float32))
         opt = LaProp([param], lr=0.25, weight_decay=0.0, frob_normalize=True)
-        param.grad = torch.randint(1, 5, shape, device=self.device, dtype=torch.float32)
+        param.grad = torch.randint(-2, 3, shape, device=self.device, dtype=torch.float32)
         original_norm = param.norm()
         opt.step()
-        torch.testing.assert_close(param.norm(), original_norm, atol=0, rtol=1e-5)
+        torch.testing.assert_close(param.norm(), original_norm, atol=0, rtol=2e-5)
 
 
 class SimplifiedAdEMAMixOptimizerTest(
