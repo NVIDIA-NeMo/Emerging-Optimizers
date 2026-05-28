@@ -771,7 +771,7 @@ class LaPropOptimizerTest(_CommonScalarOptimizerTests, _HasBetasTests, _HasEpsTe
         param.grad = torch.randint(1, 5, shape, device=self.device, dtype=torch.float32)
         original_norm = param.norm()
         opt.step()
-        torch.testing.assert_close(param.norm(), original_norm)
+        torch.testing.assert_close(param.norm(), original_norm, atol=0, rtol=1e-5)
 
 
 class SimplifiedAdEMAMixOptimizerTest(
@@ -829,9 +829,9 @@ class SimplifiedAdEMAMixOptimizerTest(
         )
         param.grad = grad.clone()
         opt.step()
-        torch.testing.assert_close(param, old_param - lr * expected_update)
-        torch.testing.assert_close(opt.state[param]["exp_avg"], exp_avg)
-        torch.testing.assert_close(opt.state[param]["exp_avg_sq"], exp_avg_sq)
+        torch.testing.assert_close(param, old_param - lr * expected_update, atol=0, rtol=0)
+        torch.testing.assert_close(opt.state[param]["exp_avg"], exp_avg, atol=0, rtol=0)
+        torch.testing.assert_close(opt.state[param]["exp_avg_sq"], exp_avg_sq, atol=0, rtol=0)
 
 
 if __name__ == "__main__":
