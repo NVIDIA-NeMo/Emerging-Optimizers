@@ -715,6 +715,16 @@ class LaPropOptimizerTest(_CommonScalarOptimizerTests, _HasBetasTests, _HasEpsTe
     OPTIMIZER_CLS = LaProp
     STATE_KEYS = ("exp_avg", "exp_avg_sq", "step")
 
+    def test_frob_normalize_with_nonzero_weight_decay_logs_error(self) -> None:
+        """LaProp logs an ERROR when ``frob_normalize=True`` is combined with a non-zero weight decay."""
+        param = torch.nn.Parameter(torch.randn(3, 3, device=self.device))
+        with self.assertLogs(level="ERROR") as cm:
+            LaProp([param], frob_normalize=True, weight_decay=0.1)
+        self.assertTrue(
+            any("frob_normalize=True is intended to be used with weight_decay=0.0" in msg for msg in cm.output),
+            f"expected frob_normalize/weight_decay warning, got: {cm.output}",
+        )
+
     @parameterized.parameters(
         {"shape": (3, 3)},
         {"shape": (15, 31)},

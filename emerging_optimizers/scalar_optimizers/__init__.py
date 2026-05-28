@@ -119,7 +119,7 @@ class LaProp(TwoMomentsOptimizer):
     ) -> None:
         _validate_common_hparams(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
         if frob_normalize and weight_decay != 0.0:
-            logging.warning("LaProp with frob_normalize=True is intended to be used with weight_decay=0.0.")
+            logging.error("LaProp with frob_normalize=True is intended to be used with weight_decay=0.0.")
         self.frob_normalize = frob_normalize
         super().__init__(
             params,
