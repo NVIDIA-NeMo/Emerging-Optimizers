@@ -81,6 +81,7 @@ jobs:
     uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_build_docs.yml@v0.67.0
     with:
       ref: ${{ inputs.github-ref }}
+      sync-all: true
 
   publish-docs:
     runs-on: ubuntu-latest
@@ -107,7 +108,7 @@ jobs:
           docs-version-override: ${{ inputs.docs-version-override }}
           update-version-picker: ${{ inputs.update-version-picker }}
           run-on-version-tag-only: ${{ github.ref_name != 'main' }}
-          request-name: megatron-bridge-publish-docs-${{ github.run_id }}
+          request-name: emerging-optimizers-publish-docs-${{ github.run_id }}
           aws-region: ${{ vars.DOCS_AWS_REGION }}
           aws-role-to-assume: ${{ secrets.AWS_ASSUME_ROLE_ARN }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -117,4 +118,4 @@ jobs:
           akamai-client-secret: ${{ secrets.AKAMAI_CLIENT_SECRET }}
           akamai-access-token: ${{ secrets.AKAMAI_ACCESS_TOKEN }}
           s3-target-root: ${{ secrets.S3_BUCKET_NAME }}
-          s3-target-path: nemo/megatron-bridge
+          s3-target-path: nemo/emerging-optimizers
