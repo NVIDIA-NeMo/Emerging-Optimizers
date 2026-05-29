@@ -152,7 +152,7 @@ When $g_t$ is small enough so that $g_t^2$ underflows single precision, it is po
 
 When $g_t$ is comparable to $\epsilon$, the impact of $\epsilon$ depends on the magnitude of $g_t$. Let's look at a simple example: $\beta_1=0.9$, $\beta_2=0.95$, $\epsilon=10^{-8}$, constant $g_t$, and bias correction ignored for simplicity. We plot the update with and without $\epsilon$.
 
-<img src="../assets/adam.update.vs.eps.png" alt="eps" width="500" />
+![eps](../assets/adam.update.vs.eps.png)
 
 A much smaller update is applied because $\epsilon$ makes the denominator meaningfully larger than $\sqrt{\widehat{v_t}}$ alone. The effect wears off once the gradient is more than three orders of magnitude larger than $\epsilon$.
 
