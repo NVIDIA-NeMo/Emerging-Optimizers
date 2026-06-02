@@ -25,7 +25,7 @@ __all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "get_coefficient_ite
 
 CoeffIterMode = Literal["cycle", "repeat_last"]
 
-NSCoeffT = Literal["simple", "quintic", "polar_express", "cans", "aol", "deepseekv4", "custom"]
+NSCoeffT = Literal["simple", "quintic", "polar_express", "cans", "aol", "deepseekv4", "custom", "cubic5"]
 
 _COEFFICIENT_SETS = {
     # Values are rounded to closest representable in single precision.
@@ -75,6 +75,18 @@ _COEFFICIENT_SETS = {
     "deepseekv4":
     # From DeepSeekV4: https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/resolve/main/DeepSeek_V4.pdf
     [(3.4445, -4.7750, 2.0315)] * 8 + [(2.0, -1.5, 0.5)] * 2,
+    "cubic5": [
+        # Relaxed cubic Newton-Schulz schedule for Muon.
+        # Source: https://arxiv.org/abs/2606.00371
+        # The coefficients were optimized for the relaxed singular-value band with
+        # an effective BF16 lower bound l0 = 7e-3.  Setting c=0 selects the cubic
+        # path in the Newton-Schulz step and avoids the Gram-square matmul.
+        (3.3656576, -3.3420992, 0.0),
+        (2.5744352, -1.4957376, 0.0),
+        (2.5368962, -1.4312570, 0.0),
+        (2.4418906, -1.2764040, 0.0),
+        (2.2230472, -0.9630650, 0.0),
+    ],
 }
 
 
@@ -152,6 +164,7 @@ def newton_schulz(
       - "cans": CANS iteration with Remez + adaptive interval coefficients.
       - "aol": AOL coefficient set.
       - "deepseekv4": DeepSeekV4 coefficient set.
+      - "cubic5": Relaxed cubic five-step schedule.
       - "custom": Custom coefficient sets.
 
     Arguments:
@@ -193,6 +206,12 @@ def newton_schulz(
         coefficient_sets = custom_coefficient_sets
     else:
         raise ValueError(f"Invalid coefficient type: {coefficient_type}")
+
+    if coefficient_type == "cubic5" and steps != len(coefficient_sets):
+        raise ValueError(
+            f"cubic5 is a fixed {len(coefficient_sets)}-step schedule; got steps={steps}. "
+            "Use steps=5, or pass explicit custom coefficients."
+        )
 
     repeat_last_types = ("polar_express", "cans", "deepseekv4")
     iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in repeat_last_types else "cycle"
@@ -315,8 +334,11 @@ def newton_schulz_step(
     A = X @ X.mT
     if tp_group is not None:
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
-    B = torch.addmm(A, A, A, alpha=c, beta=b)
-    X = torch.addmm(X, B, X, alpha=1.0, beta=a)
+    if c != 0.0:
+        B = torch.addmm(A, A, A, alpha=c, beta=b)
+        X = torch.addmm(X, B, X, alpha=1.0, beta=a)
+    else:
+        X = torch.addmm(X, A, X, alpha=b, beta=a)
     return X
 
 
@@ -345,8 +367,11 @@ def batched_newton_schulz_step(
     A = X @ X.mT
     if tp_group is not None:
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
-    B = torch.baddbmm(A, A, A, alpha=c, beta=b)
-    X = torch.baddbmm(X, B, X, alpha=1.0, beta=a)
+    if c != 0.0:
+        B = torch.baddbmm(A, A, A, alpha=c, beta=b)
+        X = torch.baddbmm(X, B, X, alpha=1.0, beta=a)
+    else:
+        X = torch.baddbmm(X, A, X, alpha=b, beta=a)
     return X
 
 
@@ -373,6 +398,9 @@ def newton_schulz_step_tsyrk(
     A = triton_kernels.tsyrk_ex(X)  # type: ignore[attr-defined]
     if tp_group is not None:
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
-    B = triton_kernels.tsyrk_ex(A, A, alpha=c, beta=b)  # type: ignore[attr-defined]
-    X = torch.addmm(X, B, X, alpha=1.0, beta=a)
+    if c != 0.0:
+        B = triton_kernels.tsyrk_ex(A, A, alpha=c, beta=b)  # type: ignore[attr-defined]
+        X = torch.addmm(X, B, X, alpha=1.0, beta=a)
+    else:
+        X = torch.addmm(X, A, X, alpha=b, beta=a)
     return X
