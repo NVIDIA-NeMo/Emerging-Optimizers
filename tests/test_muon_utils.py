@@ -163,32 +163,11 @@ class TestNewtonSchulz(parameterized.TestCase):
             rtol=1e-7,
         )
 
-    @parameterized.product(
-        size=[(511, 513), (511, 257), (257, 513)],
-        steps=[1, 2, 3, 4],
-    )
-    def test_cubic5_prefix_close_to_reference(self, size, steps):
-        dim1, dim2 = size
-        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
-        out_cubic5_test = muon_utils.newton_schulz(x, steps=steps, coefficient_type="cubic5")
-        out_cubic5_ref = newton_schulz_ref(
-            x,
-            coefficient_sets=muon_utils._COEFFICIENT_SETS["cubic5"][:steps],
-        )
-
-        torch.testing.assert_close(
-            out_cubic5_test,
-            out_cubic5_ref,
-            atol=1e-6,
-            rtol=1e-7,
-        )
-
-    def test_cubic5_too_many_steps_matches_five_step_schedule(self) -> None:
+    @parameterized.parameters(1, 4, 6)
+    def test_cubic5_wrong_step_count_raises_value_error(self, steps) -> None:
         x = torch.randn(5, 7, device=self.device, dtype=torch.float32)
-        out_cubic5_6 = muon_utils.newton_schulz(x, steps=6, coefficient_type="cubic5")
-        out_cubic5_5 = muon_utils.newton_schulz(x, steps=5, coefficient_type="cubic5")
-
-        torch.testing.assert_close(out_cubic5_6, out_cubic5_5, atol=0, rtol=0)
+        with self.assertRaisesRegex(ValueError, "cubic5.*fixed.*5-step schedule.*steps=5"):
+            muon_utils.newton_schulz(x, steps=steps, coefficient_type="cubic5")
 
     @parameterized.parameters(
         (511, 513),
@@ -430,7 +409,7 @@ class TestBatchedNewtonSchulzStep(parameterized.TestCase):
         (4, 16, 32),
         (3, 32, 16),
     )
-    def test_batched_cubic_newton_schulz_step_matches_formula(self, batch, dim1, dim2):
+    def test_batched_cubic_newton_schulz_step_close_to_formula(self, batch, dim1, dim2):
         x = torch.randint(-3, 4, (batch, dim1, dim2), device=self.device, dtype=torch.float32)
         x = x / x.norm(dim=(-2, -1), keepdim=True).clamp_min_(1e-7)
 

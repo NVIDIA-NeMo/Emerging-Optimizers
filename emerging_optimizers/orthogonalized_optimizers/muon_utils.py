@@ -207,14 +207,11 @@ def newton_schulz(
     else:
         raise ValueError(f"Invalid coefficient type: {coefficient_type}")
 
-    if coefficient_type == "cubic5" and steps > len(coefficient_sets):
-        logging.warning(
-            "cubic5 is a fixed %d-step schedule, but steps=%d was requested. "
-            "Skipping the extra Newton-Schulz steps.",
-            len(coefficient_sets),
-            steps,
+    if coefficient_type == "cubic5" and steps != len(coefficient_sets):
+        raise ValueError(
+            f"cubic5 is a fixed {len(coefficient_sets)}-step schedule; got steps={steps}. "
+            "Use steps=5, or pass explicit custom coefficients."
         )
-        steps = len(coefficient_sets)
 
     repeat_last_types = ("polar_express", "cans", "deepseekv4")
     iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in repeat_last_types else "cycle"
