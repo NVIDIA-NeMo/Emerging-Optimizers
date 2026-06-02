@@ -134,6 +134,63 @@ class TestNewtonSchulz(parameterized.TestCase):
         torch.testing.assert_close(out_3d, out_per_slice, atol=1e-6, rtol=0)
 
     @parameterized.parameters(
+        (2, 256, 256),
+        (4, 128, 256),
+        (3, 256, 128),
+    )
+    def test_cubic5_3d_input_close_to_per_slice(self, batch, dim1, dim2):
+        x = torch.randint(-3, 4, (batch, dim1, dim2), device=self.device, dtype=torch.float32)
+        out_3d = muon_utils.newton_schulz(x, steps=5, coefficient_type="cubic5")
+        out_per_slice = torch.stack(
+            [muon_utils.newton_schulz(x[i], steps=5, coefficient_type="cubic5") for i in range(batch)]
+        )
+        torch.testing.assert_close(out_3d, out_per_slice, atol=1e-6, rtol=0)
+
+    @parameterized.parameters(
+        (512, 512),
+        (512, 256),
+        (256, 512),
+    )
+    def test_cubic5_close_to_reference(self, dim1, dim2):
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        out_cubic5_test = muon_utils.newton_schulz(x, steps=5, coefficient_type="cubic5")
+        out_cubic5_ref = newton_schulz_ref(x, coefficient_sets=muon_utils._COEFFICIENT_SETS["cubic5"])
+
+        torch.testing.assert_close(
+            out_cubic5_test,
+            out_cubic5_ref,
+            atol=1e-6,
+            rtol=1e-7,
+        )
+
+    @parameterized.product(
+        size=[(511, 513), (511, 257), (257, 513)],
+        steps=[1, 2, 3, 4],
+    )
+    def test_cubic5_prefix_close_to_reference(self, size, steps):
+        dim1, dim2 = size
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        out_cubic5_test = muon_utils.newton_schulz(x, steps=steps, coefficient_type="cubic5")
+        out_cubic5_ref = newton_schulz_ref(
+            x,
+            coefficient_sets=muon_utils._COEFFICIENT_SETS["cubic5"][:steps],
+        )
+
+        torch.testing.assert_close(
+            out_cubic5_test,
+            out_cubic5_ref,
+            atol=1e-6,
+            rtol=1e-7,
+        )
+
+    def test_cubic5_too_many_steps_matches_five_step_schedule(self) -> None:
+        x = torch.randn(5, 7, device=self.device, dtype=torch.float32)
+        out_cubic5_6 = muon_utils.newton_schulz(x, steps=6, coefficient_type="cubic5")
+        out_cubic5_5 = muon_utils.newton_schulz(x, steps=5, coefficient_type="cubic5")
+
+        torch.testing.assert_close(out_cubic5_6, out_cubic5_5, atol=0, rtol=0)
+
+    @parameterized.parameters(
         (511, 513),
         (511, 257),
         (257, 513),
@@ -367,6 +424,22 @@ class TestBatchedNewtonSchulzStep(parameterized.TestCase):
         per_item = torch.stack([muon_utils.newton_schulz_step(x[i], a, b, c) for i in range(batch)])
 
         torch.testing.assert_close(batched, per_item, atol=1e-8, rtol=0)
+
+    @parameterized.parameters(
+        (2, 16, 16),
+        (4, 16, 32),
+        (3, 32, 16),
+    )
+    def test_batched_cubic_newton_schulz_step_matches_formula(self, batch, dim1, dim2):
+        x = torch.randint(-3, 4, (batch, dim1, dim2), device=self.device, dtype=torch.float32)
+        x = x / x.norm(dim=(-2, -1), keepdim=True).clamp_min_(1e-7)
+
+        a, b, c = 2.0, -1.5, 0.0
+        test_out = muon_utils.batched_newton_schulz_step(x, a, b, c)
+        gram = x @ x.mT
+        expected = a * x + b * (gram @ x)
+
+        torch.testing.assert_close(test_out, expected, atol=1e-6, rtol=1e-7)
 
 
 @absltest.skipIf(

@@ -207,7 +207,16 @@ def newton_schulz(
     else:
         raise ValueError(f"Invalid coefficient type: {coefficient_type}")
 
-    repeat_last_types = ("polar_express", "cans", "deepseekv4", "cubic5")
+    if coefficient_type == "cubic5" and steps > len(coefficient_sets):
+        logging.warning(
+            "cubic5 is a fixed %d-step schedule, but steps=%d was requested. "
+            "Skipping the extra Newton-Schulz steps.",
+            len(coefficient_sets),
+            steps,
+        )
+        steps = len(coefficient_sets)
+
+    repeat_last_types = ("polar_express", "cans", "deepseekv4")
     iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in repeat_last_types else "cycle"
     coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
@@ -329,10 +338,10 @@ def newton_schulz_step(
     if tp_group is not None:
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
     if c != 0.0:
-        B = torch.baddbmm(A, A, A, alpha=c, beta=b)
-        X = torch.baddbmm(X, B, X, alpha=1.0, beta=a)
+        B = torch.addmm(A, A, A, alpha=c, beta=b)
+        X = torch.addmm(X, B, X, alpha=1.0, beta=a)
     else:
-        X = torch.baddbmm(X, A, X, alpha=b, beta=a)
+        X = torch.addmm(X, A, X, alpha=b, beta=a)
     return X
 
 
