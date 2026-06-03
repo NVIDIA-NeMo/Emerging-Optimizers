@@ -13,10 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from emerging_optimizers.soap.rekls import REKLS
+from emerging_optimizers.soap.sh_muon import ShMuon
 from emerging_optimizers.soap.soap import SOAP
 
 
 __all__ = [
     "REKLS",
     "SOAP",
+    "ShMuon",
 ]
