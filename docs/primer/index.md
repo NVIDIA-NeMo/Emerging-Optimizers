@@ -6,4 +6,5 @@
 
 layerwise-distributed-optimizer.md
 epsilon.md
+gradient_spike/index.md
 ```
