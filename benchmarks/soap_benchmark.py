@@ -28,6 +28,12 @@ from emerging_optimizers.soap.soap import SOAP
 flags.DEFINE_bool("use_eigh", False, "Use eigh instead of QR iteration.")
 flags.DEFINE_string("dtype", "bfloat16", "Parameter dtype: float32, bfloat16, or float16.")
 flags.DEFINE_integer("num_streams", None, "Number of CUDA streams for SOAP. None means no stream_list.")
+flags.DEFINE_enum(
+    "fp32_matmul_prec",
+    "highest",
+    ["highest", "high", "medium"],
+    "Precision of the matmul operations in optimizer states GEMM operations.",
+)
 
 
 def main(_: Any) -> None:
@@ -65,12 +71,14 @@ def main(_: Any) -> None:
         params,
         lr=0.25,
         use_eigh=FLAGS.use_eigh,
+        fp32_matmul_prec=FLAGS.fp32_matmul_prec,
         stream_list=stream_list,
     )
 
     print("\nSOAP settings:")
-    print(f"  use_eigh    : {FLAGS.use_eigh}")
-    print(f"  num_streams : {FLAGS.num_streams}")
+    print(f"  use_eigh         : {FLAGS.use_eigh}")
+    print(f"  num_streams      : {FLAGS.num_streams}")
+    print(f"  fp32_matmul_prec : {FLAGS.fp32_matmul_prec}")
 
     print(f"\nWarming up ({FLAGS.warmup_steps} steps)...")
     for _ in range(FLAGS.warmup_steps):

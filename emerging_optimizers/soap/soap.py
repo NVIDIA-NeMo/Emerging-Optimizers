@@ -89,7 +89,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         nesterov: bool = False,
         correct_bias: bool = True,
-        fp32_matmul_prec: FP32MatmulPrecT = "high",
+        fp32_matmul_prec: FP32MatmulPrecT = "highest",
         use_eigh: bool = False,
         qr_fp32_matmul_prec: FP32MatmulPrecT = "high",
         power_iter_steps: int = 1,
