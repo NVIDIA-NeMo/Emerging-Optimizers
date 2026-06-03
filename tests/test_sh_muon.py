@@ -93,7 +93,7 @@ class ShMuonTest(parameterized.TestCase):
         {"shape": (4, 8)},
         {"shape": (8, 4)},
     )
-    def test_no_ema_matches_exact_muon_polar_update(self, shape: tuple[int, int]) -> None:
+    def test_no_ema_matches_one_sided_adam_in_eigenbasis(self, shape: tuple[int, int]) -> None:
         torch.manual_seed(7)
         grad = torch.randn(shape, device=FLAGS.device)
         param = torch.zeros(shape, requires_grad=True, device=FLAGS.device)
@@ -103,18 +103,29 @@ class ShMuonTest(parameterized.TestCase):
             [param],
             lr=lr,
             momentum=0.0,
+            betas=(0.0, 0.0),
             shampoo_beta=0.0,
             eps=1e-12,
             weight_decay=0.0,
             correct_shampoo_beta_bias=False,
+            correct_bias=False,
             fp32_matmul_prec="highest",
             scale_mode="spectral",
         )
 
         optimizer.step()
 
-        u, _, vh = torch.linalg.svd(grad, full_matrices=False)
-        expected_update = u @ vh
+        state = optimizer.state[param]
+        eigenbasis = state["Q_M"]
+        if shape[0] <= shape[1]:
+            projected = eigenbasis.T @ grad
+            adam_projected = projected / (projected.abs() + optimizer.param_groups[0]["eps"])
+            expected_update = eigenbasis @ adam_projected
+        else:
+            projected = grad @ eigenbasis
+            adam_projected = projected / (projected.abs() + optimizer.param_groups[0]["eps"])
+            expected_update = adam_projected @ eigenbasis.T
+
         expected_update = expected_update * get_muon_scale_factor(*shape, mode="spectral")
         applied_update = -param.detach() / lr
         torch.testing.assert_close(
@@ -122,7 +133,7 @@ class ShMuonTest(parameterized.TestCase):
             expected_update,
             atol=1e-4,
             rtol=1e-4,
-            msg=lambda msg: f"ShMuon no-EMA update did not match exact polar update for shape {shape}:\n{msg}",
+            msg=lambda msg: f"ShMuon no-EMA update did not match projected Adam update for shape {shape}:\n{msg}",
         )
 
     def test_non_2d_param_raises_type_error(self) -> None:
