@@ -31,14 +31,14 @@ from emerging_optimizers.soap.soap import _clip_update_rms_in_place
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
-__all__ = ["ShMuon"]
+__all__ = ["MOSO"]
 
 
-@registry.register_optimizer("shmuon")
-class ShMuon(opt_mixin.WeightDecayMixin, optim.Optimizer):
-    r"""One-sided SOAP on Muon momentum.
+@registry.register_optimizer("moso")
+class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
+    r"""Momentum One-Sided SOAP.
 
-    ShMuon tracks EMA momentum like Muon, accumulates a SOAP/Shampoo-style covariance of that momentum on the
+    MOSO tracks EMA momentum like Muon, accumulates a SOAP/Shampoo-style covariance of that momentum on the
     smaller matrix side, and applies an Adam update in the covariance eigenbasis.
     Conceptually, this is one-sided SOAP where ``G_t G_t^T`` is replaced by ``M_t M_t^T`` (or ``M_t^T M_t`` for the
     right side), and the update is computed by projecting the momentum into the eigenbasis, applying Adam there, and
@@ -130,7 +130,7 @@ class ShMuon(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 continue
 
             if p.dim() != 2:
-                raise TypeError("ShMuon is only supported for 2D tensors")
+                raise TypeError("MOSO is only supported for 2D tensors")
 
             state = self.state[p]
             if len(state) == 0:

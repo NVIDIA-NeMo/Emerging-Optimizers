@@ -18,7 +18,7 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers import registry
 from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
-from emerging_optimizers.soap import ShMuon
+from emerging_optimizers.soap import MOSO
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -34,14 +34,14 @@ def setUpModule() -> None:
             torch.cuda.manual_seed_all(FLAGS.seed)
 
 
-class ShMuonTest(parameterized.TestCase):
+class MOSOTest(parameterized.TestCase):
     @parameterized.product(  # type: ignore[misc]
         shape=[(5, 3), (3, 5), (4, 4)],
         use_eigh=[True, False],
     )
     def test_3steps_smoke(self, shape: tuple[int, int], use_eigh: bool) -> None:
         param = torch.randn(shape, requires_grad=True, device=FLAGS.device)
-        optimizer = ShMuon(
+        optimizer = MOSO(
             [param],
             lr=0.001,
             weight_decay=0.01,
@@ -56,7 +56,7 @@ class ShMuonTest(parameterized.TestCase):
             param.grad = None
 
     def test_registry(self) -> None:
-        self.assertIs(registry.get_optimizer_cls("shmuon"), ShMuon)
+        self.assertIs(registry.get_optimizer_cls("moso"), MOSO)
 
     @parameterized.parameters(
         {"shape": (3, 5)},
@@ -66,7 +66,7 @@ class ShMuonTest(parameterized.TestCase):
         grad = torch.randn(shape, device=FLAGS.device)
         param = torch.zeros(shape, requires_grad=True, device=FLAGS.device)
         param.grad = grad.clone()
-        optimizer = ShMuon(
+        optimizer = MOSO(
             [param],
             lr=0.0,
             momentum=0.0,
@@ -99,7 +99,7 @@ class ShMuonTest(parameterized.TestCase):
         param = torch.zeros(shape, requires_grad=True, device=FLAGS.device)
         param.grad = grad.clone()
         lr = 0.125
-        optimizer = ShMuon(
+        optimizer = MOSO(
             [param],
             lr=lr,
             momentum=0.0,
@@ -133,12 +133,12 @@ class ShMuonTest(parameterized.TestCase):
             expected_update,
             atol=1e-4,
             rtol=1e-4,
-            msg=lambda msg: f"ShMuon no-EMA update did not match projected Adam update for shape {shape}:\n{msg}",
+            msg=lambda msg: f"MOSO no-EMA update did not match projected Adam update for shape {shape}:\n{msg}",
         )
 
     def test_non_2d_param_raises_type_error(self) -> None:
         param = torch.randn(10, requires_grad=True, device=FLAGS.device)
-        optimizer = ShMuon([param], lr=0.001)
+        optimizer = MOSO([param], lr=0.001)
         param.grad = torch.randn_like(param)
 
         with self.assertRaisesRegex(TypeError, "only supported for 2D"):
