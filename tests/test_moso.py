@@ -93,7 +93,7 @@ class MOSOTest(parameterized.TestCase):
         {"shape": (4, 8)},
         {"shape": (8, 4)},
     )
-    def test_no_ema_matches_one_sided_adam_in_eigenbasis(self, shape: tuple[int, int]) -> None:
+    def test_no_ema_is_close_to_one_sided_adam_in_eigenbasis(self, shape: tuple[int, int]) -> None:
         torch.manual_seed(7)
         grad = torch.randn(shape, device=FLAGS.device)
         param = torch.zeros(shape, requires_grad=True, device=FLAGS.device)
@@ -131,7 +131,7 @@ class MOSOTest(parameterized.TestCase):
         torch.testing.assert_close(
             applied_update,
             expected_update,
-            atol=1e-4,
+            atol=0.0,
             rtol=1e-4,
             msg=lambda msg: f"MOSO no-EMA update did not match projected Adam update for shape {shape}:\n{msg}",
         )

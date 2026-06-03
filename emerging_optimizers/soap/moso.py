@@ -250,10 +250,9 @@ def _update_one_sided_momentum_factor(
     shampoo_beta: float,
 ) -> None:
     """Update the smaller-side covariance of the Muon momentum."""
-    if momentum.shape[0] <= momentum.shape[1]:
-        momentum_factor.lerp_(momentum @ momentum.T, 1 - shampoo_beta)
-    else:
-        momentum_factor.lerp_(momentum.T @ momentum, 1 - shampoo_beta)
+    left_preconditioned = momentum.shape[0] <= momentum.shape[1]
+    maybe_transposed_momentum = momentum if left_preconditioned else momentum.T
+    momentum_factor.lerp_(maybe_transposed_momentum @ maybe_transposed_momentum.T, 1 - shampoo_beta)
 
 
 @torch.no_grad()  # type: ignore[misc]
@@ -282,13 +281,13 @@ def _update_eigenbasis_and_adam_exp_avgs(
     )
 
     if use_eigh:
-        updated_eigenbasis = soap_utils.get_eigenbasis_eigh([momentum_factor])[0]
+        (updated_eigenbasis,) = soap_utils.get_eigenbasis_eigh([momentum_factor])
     else:
-        updated_eigenbasis = soap_utils.get_eigenbasis_qr(
+        (updated_eigenbasis,) = soap_utils.get_eigenbasis_qr(
             [momentum_factor],
             [eigenbasis],
             power_iter_steps=power_iter_steps,
-        )[0]
+        )
 
     exp_avg = _project_to_one_sided_eigenbasis(
         x=exp_avg,
@@ -307,7 +306,7 @@ def _sort_one_sided_eigenbasis_and_exp_avg_sq(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Sort eigenbasis slots by approximate eigenvalue and permute Adam second moments."""
     approx_eigvals = utils.eig.conjugate(momentum_factor, eigenbasis, diag=True)
-    sort_idx = torch.argsort(approx_eigvals, descending=True)
+    sort_idx = torch.argsort(approx_eigvals, descending=True, stable=True)
     sorted_eigenbasis = eigenbasis[:, sort_idx]
     exp_avg_sq_dim = 0 if left_preconditioned else 1
     return sorted_eigenbasis, exp_avg_sq.index_select(exp_avg_sq_dim, sort_idx)
