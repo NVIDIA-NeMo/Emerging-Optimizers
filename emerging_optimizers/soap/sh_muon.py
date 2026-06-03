@@ -140,8 +140,13 @@ class ShMuon(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 state["momentum_buffer"] = torch.zeros_like(p.data, dtype=torch.float32)
                 state["exp_avg"] = torch.zeros_like(p.data, dtype=torch.float32)
                 state["exp_avg_sq"] = torch.zeros_like(p.data, dtype=torch.float32)
-                state["M"] = torch.zeros(preconditioner_size, preconditioner_size, device=p.device)
-                state["Q_M"] = torch.eye(preconditioner_size, device=p.device)
+                state["M"] = torch.zeros(
+                    preconditioner_size,
+                    preconditioner_size,
+                    device=p.device,
+                    dtype=torch.float32,
+                )
+                state["Q_M"] = torch.eye(preconditioner_size, device=p.device, dtype=torch.float32)
 
     if TYPE_CHECKING:
 
