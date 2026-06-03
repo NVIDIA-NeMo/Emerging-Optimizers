@@ -76,8 +76,9 @@ def main(_: Any) -> None:
     )
 
     print("\nSOAP settings:")
-    print(f"  use_eigh    : {FLAGS.use_eigh}")
-    print(f"  num_streams : {FLAGS.num_streams}")
+    print(f"  use_eigh         : {FLAGS.use_eigh}")
+    print(f"  num_streams      : {FLAGS.num_streams}")
+    print(f"  fp32_matmul_prec : {FLAGS.fp32_matmul_prec}")
 
     print(f"\nWarming up ({FLAGS.warmup_steps} steps)...")
     for _ in range(FLAGS.warmup_steps):
