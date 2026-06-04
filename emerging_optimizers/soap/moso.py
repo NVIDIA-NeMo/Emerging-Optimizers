@@ -61,14 +61,6 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
         shampoo_beta: EMA coefficient for the one-sided momentum covariance.
         eps: Inner Adam epsilon for numerical stability.
         weight_decay: Weight decay coefficient.
-        weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`.
-        nesterov: Whether to use Nesterov momentum.
-        correct_bias: Whether to use bias correction in the inner Adam update.
-        correct_shampoo_beta_bias: Whether to bias-correct the covariance EMA.
-        fp32_matmul_prec: Precision of the matmul operations in optimizer state GEMMs.
-        use_eigh: Whether to use full symmetric eigendecomposition for eigenbasis updates after the first step.
-        qr_fp32_matmul_prec: Precision of the matmul operations in QR decomposition.
-        power_iter_steps: Number of power iteration steps to perform before QR decomposition.
         scale_mode: Muon update scale mode.
         extra_scale_factor: Additional update scale factor.
         max_update_rms: Clip the update RMS to this value (0 means no clipping).
@@ -84,26 +76,18 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
         eps: float = 1e-8,
         weight_decay: float = 0.01,
         *,
-        weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
-        nesterov: bool = False,
-        correct_bias: bool = True,
-        correct_shampoo_beta_bias: bool = True,
-        fp32_matmul_prec: FP32MatmulPrecT = "highest",
-        use_eigh: bool = False,
-        qr_fp32_matmul_prec: FP32MatmulPrecT = "high",
-        power_iter_steps: int = 1,
         scale_mode: MuonScaleT = "spectral",
         extra_scale_factor: float = 1.0,
         max_update_rms: float = 0.0,
     ) -> None:
-        self.nesterov = nesterov
-        self.correct_bias = correct_bias
-        self.weight_decay_method = weight_decay_method
-        self.correct_shampoo_beta_bias = correct_shampoo_beta_bias
-        self.fp32_matmul_prec = fp32_matmul_prec
-        self.use_eigh = use_eigh
-        self.qr_fp32_matmul_prec = qr_fp32_matmul_prec
-        self.power_iter_steps = power_iter_steps
+        self.nesterov = False
+        self.correct_bias = True
+        self.weight_decay_method = "decoupled"
+        self.correct_shampoo_beta_bias = True
+        self.fp32_matmul_prec: FP32MatmulPrecT = "highest"
+        self.use_eigh = False
+        self.qr_fp32_matmul_prec: FP32MatmulPrecT = "highest"
+        self.power_iter_steps = 1
         self.scale_mode = scale_mode
         self.extra_scale_factor = extra_scale_factor
         self.max_update_rms = max_update_rms

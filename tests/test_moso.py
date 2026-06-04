@@ -35,11 +35,12 @@ def setUpModule() -> None:
 
 
 class MOSOTest(parameterized.TestCase):
-    @parameterized.product(  # type: ignore[misc]
-        shape=[(5, 3), (3, 5), (4, 4)],
-        use_eigh=[True, False],
+    @parameterized.parameters(  # type: ignore[misc]
+        {"shape": (5, 3)},
+        {"shape": (3, 5)},
+        {"shape": (4, 4)},
     )
-    def test_3steps_smoke(self, shape: tuple[int, int], use_eigh: bool) -> None:
+    def test_3steps_smoke(self, shape: tuple[int, int]) -> None:
         param = torch.randn(shape, requires_grad=True, device=FLAGS.device)
         optimizer = MOSO(
             [param],
@@ -47,7 +48,6 @@ class MOSOTest(parameterized.TestCase):
             weight_decay=0.01,
             momentum=0.9,
             shampoo_beta=0.95,
-            use_eigh=use_eigh,
         )
 
         for _ in range(3):
@@ -72,7 +72,6 @@ class MOSOTest(parameterized.TestCase):
             momentum=0.0,
             shampoo_beta=0.0,
             weight_decay=0.0,
-            correct_shampoo_beta_bias=False,
         )
 
         optimizer.step()
@@ -107,9 +106,6 @@ class MOSOTest(parameterized.TestCase):
             shampoo_beta=0.0,
             eps=1e-12,
             weight_decay=0.0,
-            correct_shampoo_beta_bias=False,
-            correct_bias=False,
-            fp32_matmul_prec="highest",
             scale_mode="spectral",
         )
 
