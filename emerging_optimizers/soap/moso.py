@@ -24,7 +24,6 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry, utils
-from emerging_optimizers.orthogonalized_optimizers.muon import MuonScaleT, get_muon_scale_factor
 from emerging_optimizers.scalar_optimizers import update_functions
 from emerging_optimizers.soap import soap_utils
 from emerging_optimizers.soap.soap import _clip_update_rms_in_place
@@ -61,8 +60,6 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
         shampoo_beta: EMA coefficient for the one-sided momentum covariance.
         eps: Inner Adam epsilon for numerical stability.
         weight_decay: Weight decay coefficient.
-        scale_mode: Muon update scale mode.
-        extra_scale_factor: Additional update scale factor.
         max_update_rms: Clip the update RMS to this value (0 means no clipping).
     """
 
@@ -76,8 +73,6 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
         eps: float = 1e-8,
         weight_decay: float = 0.01,
         *,
-        scale_mode: MuonScaleT = "spectral",
-        extra_scale_factor: float = 1.0,
         max_update_rms: float = 0.0,
     ) -> None:
         self.nesterov = False
@@ -88,8 +83,6 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self.use_eigh = False
         self.qr_fp32_matmul_prec: FP32MatmulPrecT = "highest"
         self.power_iter_steps = 1
-        self.scale_mode = scale_mode
-        self.extra_scale_factor = extra_scale_factor
         self.max_update_rms = max_update_rms
 
         defaults = {
@@ -217,8 +210,6 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         left_preconditioned=left_preconditioned,
                     )
 
-                scale_factor = get_muon_scale_factor(momentum.shape[0], momentum.shape[1], mode=self.scale_mode)
-                update = update * scale_factor * self.extra_scale_factor
                 _clip_update_rms_in_place(update, self.max_update_rms)
                 p.add_(update, alpha=-group["lr"])
 

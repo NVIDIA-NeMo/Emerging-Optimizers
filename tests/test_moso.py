@@ -17,7 +17,6 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import registry
-from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
 from emerging_optimizers.soap import MOSO
 
 
@@ -106,7 +105,6 @@ class MOSOTest(parameterized.TestCase):
             shampoo_beta=0.0,
             eps=1e-12,
             weight_decay=0.0,
-            scale_mode="spectral",
         )
 
         optimizer.step()
@@ -122,7 +120,6 @@ class MOSOTest(parameterized.TestCase):
             adam_projected = projected / (projected.abs() + optimizer.param_groups[0]["eps"])
             expected_update = adam_projected @ eigenbasis.T
 
-        expected_update = expected_update * get_muon_scale_factor(*shape, mode="spectral")
         applied_update = -param.detach() / lr
         torch.testing.assert_close(
             applied_update,
