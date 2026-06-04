@@ -27,7 +27,6 @@ from emerging_optimizers import registry, utils
 from emerging_optimizers.scalar_optimizers import update_functions
 from emerging_optimizers.soap import soap_utils
 from emerging_optimizers.soap.soap import _clip_update_rms_in_place
-from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 __all__ = ["MOSO"]
@@ -75,14 +74,7 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
         *,
         max_update_rms: float = 0.0,
     ) -> None:
-        self.nesterov = False
-        self.correct_bias = True
         self.weight_decay_method = "decoupled"
-        self.correct_shampoo_beta_bias = True
-        self.fp32_matmul_prec: FP32MatmulPrecT = "highest"
-        self.use_eigh = False
-        self.qr_fp32_matmul_prec: FP32MatmulPrecT = "highest"
-        self.power_iter_steps = 1
         self.max_update_rms = max_update_rms
 
         defaults = {
@@ -159,16 +151,11 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 )
 
                 state["momentum_buffer"].lerp_(grad, 1 - group["momentum"])
-                if self.nesterov:
-                    momentum = grad.lerp(state["momentum_buffer"], group["momentum"])
-                else:
-                    momentum = state["momentum_buffer"]
+                momentum = state["momentum_buffer"]
 
-                shampoo_beta = group["shampoo_beta"]
-                if self.correct_shampoo_beta_bias:
-                    shampoo_beta = 1 - (1 - shampoo_beta) / (1 - shampoo_beta**curr_iter_1_based)
+                shampoo_beta = 1 - (1 - group["shampoo_beta"]) / (1 - group["shampoo_beta"] ** curr_iter_1_based)
 
-                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                with utils.fp32_matmul_precision("highest"):
                     _update_one_sided_momentum_factor(
                         momentum_factor=state["M"],
                         momentum=momentum,
@@ -176,19 +163,18 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     )
 
                 left_preconditioned = momentum.shape[0] <= momentum.shape[1]
-                use_eigh = self.use_eigh if state["step"] != 0 else True
-                with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
+                with utils.fp32_matmul_precision("highest"):
                     state["Q_M"], state["exp_avg"], state["exp_avg_sq"] = _update_eigenbasis_and_adam_exp_avgs(
                         momentum_factor=state["M"],
                         eigenbasis=state["Q_M"],
                         exp_avg=state["exp_avg"],
                         exp_avg_sq=state["exp_avg_sq"],
                         left_preconditioned=left_preconditioned,
-                        use_eigh=use_eigh,
-                        power_iter_steps=self.power_iter_steps,
+                        use_eigh=state["step"] == 0,
+                        power_iter_steps=1,
                     )
 
-                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                with utils.fp32_matmul_precision("highest"):
                     momentum_projected = _project_to_one_sided_eigenbasis(
                         x=momentum,
                         eigenbasis=state["Q_M"],
@@ -200,7 +186,7 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         state["exp_avg_sq"],
                         betas=group["betas"],
                         eps=group["eps"],
-                        correct_bias=self.correct_bias,
+                        correct_bias=True,
                         nesterov=False,
                         step=curr_iter_1_based,
                     )
