@@ -73,6 +73,12 @@ class WeightUpdateHooksTest(absltest.TestCase):
 
         torch.testing.assert_close(torch.linalg.vector_norm(param), torch.tensor(9.0, device=self.device))
 
+    def test_radial_brake_rejects_amplifying_scale_factors(self) -> None:
+        with self.assertRaisesRegex(ValueError, "outward_scale_factor"):
+            RadialBrake(outward_scale_factor=1.1)
+        with self.assertRaisesRegex(ValueError, "inward_scale_factor"):
+            RadialBrake(inward_scale_factor=1.1)
+
     def test_hyperball_normalizes_update_and_final_weight_norm(self) -> None:
         hook = Hyperball()
         param = torch.tensor([3.0, 4.0], device=self.device)
@@ -85,6 +91,25 @@ class WeightUpdateHooksTest(absltest.TestCase):
         hook.post_weight_update_inplace(param, pre_update_state)
 
         torch.testing.assert_close(torch.linalg.vector_norm(param), torch.tensor(5.0, device=self.device))
+
+    def test_hyperball_fixed_radius_allows_zero_norm_param(self) -> None:
+        hook = Hyperball(radius=2.0)
+        param = torch.zeros(2, device=self.device)
+        update = torch.tensor([0.0, 3.0], device=self.device)
+
+        pre_update_state = hook.pre_weight_update_inplace(param, update)
+        param.add_(update, alpha=-1.0)
+        hook.post_weight_update_inplace(param, pre_update_state)
+
+        torch.testing.assert_close(torch.linalg.vector_norm(param), torch.tensor(2.0, device=self.device))
+
+    def test_hyperball_dynamic_radius_rejects_zero_norm_param(self) -> None:
+        hook = Hyperball()
+        param = torch.zeros(2, device=self.device)
+        update = torch.tensor([0.0, 3.0], device=self.device)
+
+        with self.assertRaisesRegex(ValueError, "when radius is not fixed"):
+            hook.pre_weight_update_inplace(param, update)
 
     def test_orthogonalized_optimizer_applies_weight_update_hook(self) -> None:
         param = torch.tensor([[3.0, 4.0]], device=self.device)

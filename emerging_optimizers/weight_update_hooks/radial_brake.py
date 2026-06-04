@@ -37,6 +37,10 @@ class RadialBrake:
         inward_scale_factor: float = 1.0,
         eps: float = 1e-12,
     ) -> None:
+        if not 0.0 <= outward_scale_factor <= 1.0:
+            raise ValueError(f"outward_scale_factor must be in [0, 1], got {outward_scale_factor}")
+        if not 0.0 <= inward_scale_factor <= 1.0:
+            raise ValueError(f"inward_scale_factor must be in [0, 1], got {inward_scale_factor}")
         self.outward_scale_factor = outward_scale_factor
         self.inward_scale_factor = inward_scale_factor
         self.eps = eps

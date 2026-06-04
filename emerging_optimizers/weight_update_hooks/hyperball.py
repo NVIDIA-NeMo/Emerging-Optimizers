@@ -39,14 +39,13 @@ class Hyperball:
         update: torch.Tensor,
     ) -> torch.Tensor:
         current_norm = torch.linalg.vector_norm(p.detach().to(torch.float32))
-        if current_norm.item() == 0:
-            raise ValueError("Hyperball requires all parameters to have non-zero norm.")
 
-        radius = (
-            torch.as_tensor(self.radius, device=p.device, dtype=torch.float32)
-            if self.radius is not None
-            else current_norm
-        )
+        if self.radius is not None:
+            radius = torch.as_tensor(self.radius, device=p.device, dtype=torch.float32)
+        else:
+            if current_norm.item() == 0:
+                raise ValueError("Hyperball requires all parameters to have non-zero norm when radius is not fixed.")
+            radius = current_norm
 
         update_norm = torch.linalg.vector_norm(update.to(torch.float32)).clamp_min(self.eps)
         update.mul_((radius / update_norm).to(dtype=update.dtype))

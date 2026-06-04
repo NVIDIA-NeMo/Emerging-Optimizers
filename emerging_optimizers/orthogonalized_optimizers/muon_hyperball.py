@@ -64,6 +64,11 @@ class MuonHyperball(muon.Muon):
         hyperball_radius: float | None = None,
         **kwargs: Any,
     ) -> None:
+        if "weight_update_hook" in kwargs:
+            raise TypeError(
+                "MuonHyperball does not accept a 'weight_update_hook' argument; "
+                "it manages its own Hyperball hook internally."
+            )
         kwargs["weight_update_hook"] = Hyperball(radius=hyperball_radius, eps=hyperball_eps)
         super().__init__(*args, **kwargs)
 

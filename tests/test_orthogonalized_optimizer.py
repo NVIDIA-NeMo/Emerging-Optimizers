@@ -434,6 +434,17 @@ class MuonHyperballTest(parameterized.TestCase):
         with self.assertRaises(ValueError):
             muon_hyperball.MuonHyperball([test_param], lr=0.01)
 
+    def test_rejects_weight_update_hook(self) -> None:
+        """MuonHyperball manages its own Hyperball hook internally."""
+        test_param = nn.Parameter(torch.randn((5, 7), dtype=torch.float32, device=self.device))
+
+        with self.assertRaisesRegex(TypeError, "does not accept a 'weight_update_hook' argument"):
+            muon_hyperball.MuonHyperball(
+                [test_param],
+                lr=0.01,
+                weight_update_hook=None,
+            )
+
 
 class PolarGradTest(parameterized.TestCase):
     def setUp(self):
