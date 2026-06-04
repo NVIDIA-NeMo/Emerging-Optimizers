@@ -2,11 +2,11 @@
     {
         "preferred": true,
         "name": "latest",
-        "version": "0.4.0a1",
+        "version": "0.4.0a0",
         "url": "https://docs.nvidia.com/nemo/emerging-optimizers/latest/"
     },
     {
-        "version": "0.4.0a1",
+        "version": "0.4.0a0",
         "url": "https://docs.nvidia.com/nemo/emerging-optimizers/0.4.0a0/"
     },
     {
