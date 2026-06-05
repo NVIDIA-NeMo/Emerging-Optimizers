@@ -13,7 +13,7 @@
 # limitations under the License.
 
 [project]
-name = "emerging-optimizers"
+name = "nv-emerging-optimizers"
 dynamic = [
     "version",
     "readme",
