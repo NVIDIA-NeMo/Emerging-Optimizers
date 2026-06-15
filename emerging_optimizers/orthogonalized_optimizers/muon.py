@@ -22,7 +22,7 @@ from torch.optim.optimizer import ParamsT
 from emerging_optimizers import registry, triton_kernels
 from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
-from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
+from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT, NSDTypeT
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
 from emerging_optimizers.utils import FP32MatmulPrecT
 
@@ -69,6 +69,8 @@ class Muon(OrthogonalizedOptimizer):
         extra_scale_factor: The additional scale factor to use for the update. Setting it to 0.2 can closely match
             the update RMS norm of AdamW as suggested by https://arxiv.org/abs/2502.16982.
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
+        ns_dtype: Dtype used for the Newton-Schulz iteration state and intermediates. "auto" preserves the existing
+            behavior: use bfloat16 when ``fp32_matmul_prec`` is "medium", otherwise use float32.
     """
 
     def __init__(
@@ -86,19 +88,29 @@ class Muon(OrthogonalizedOptimizer):
         scale_mode: MuonScaleT = "spectral",
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
+        ns_dtype: NSDTypeT = "auto",
     ) -> None:
         if num_ns_steps < 1:
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
 
+        muon_utils._validate_ns_dtype(ns_dtype)
+
         if use_syrk:
-            if torch.cuda.is_available():
+            resolved_ns_dtype = muon_utils._resolve_ns_dtype(ns_dtype, fp32_matmul_prec)
+            if resolved_ns_dtype != torch.bfloat16:
+                logging.error(
+                    f"use_syrk=True requires bfloat16 Newton-Schulz dtype, got {resolved_ns_dtype}. "
+                    "Setting use_syrk to False."
+                )
+                use_syrk = False
+            elif torch.cuda.is_available():
                 sm_version = torch.cuda.get_device_capability()
             else:
                 sm_version = (0, 0)
-            if not triton_kernels.HAS_TRITON_340:  # type: ignore[attr-defined]
+            if use_syrk and not triton_kernels.HAS_TRITON_340:  # type: ignore[attr-defined]
                 logging.error("Triton 3.4.0 or higher is required for use_syrk to be True.")
                 use_syrk = False
-            elif sm_version not in ((8, 0), (9, 0), (10, 0), (10, 3)):
+            elif use_syrk and sm_version not in ((8, 0), (9, 0), (10, 0), (10, 3)):
                 logging.error(
                     f"Correctness of Triton kernel on SM {sm_version} cannot be guaranteed. Setting use_syrk to False."
                 )
@@ -114,6 +126,7 @@ class Muon(OrthogonalizedOptimizer):
                 steps=num_ns_steps,
                 coefficient_type=coefficient_type,
                 use_syrk=use_syrk,
+                ns_dtype=ns_dtype,
             )
             scale_factor = get_muon_scale_factor(grad.size(-2), grad.size(-1), mode=scale_mode)
             return orth_grad * scale_factor * extra_scale_factor

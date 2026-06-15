@@ -21,11 +21,20 @@ from absl import logging
 from emerging_optimizers import triton_kernels
 
 
-__all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "get_coefficient_iterator", "CoeffIterMode"]
+__all__ = [
+    "newton_schulz",
+    "newton_schulz_tp",
+    "NSCoeffT",
+    "NSDTypeT",
+    "get_coefficient_iterator",
+    "CoeffIterMode",
+]
 
 CoeffIterMode = Literal["cycle", "repeat_last"]
 
 NSCoeffT = Literal["simple", "quintic", "polar_express", "cans", "aol", "deepseekv4", "custom", "cubic5"]
+NSDTypeT = Literal["auto", "float32", "bfloat16", "float16"]
+_VALID_NS_DTYPES = ("auto", "float32", "bfloat16", "float16")
 
 _COEFFICIENT_SETS = {
     # Values are rounded to closest representable in single precision.
@@ -136,6 +145,30 @@ def distributed_normalize_p2(x: torch.Tensor, eps: float, group: torch.distribut
     return x / torch.sqrt(x_sq_sum).clamp_min(eps)
 
 
+def _validate_ns_dtype(ns_dtype: NSDTypeT) -> None:
+    """Validate the dtype used inside Newton-Schulz iterations."""
+    if ns_dtype not in _VALID_NS_DTYPES:
+        raise ValueError(f"Invalid Newton-Schulz dtype: {ns_dtype}")
+
+
+def _resolve_ns_dtype(ns_dtype: NSDTypeT, fp32_matmul_prec: str | None = None) -> torch.dtype:
+    """Resolve the dtype used inside Newton-Schulz iterations."""
+    _validate_ns_dtype(ns_dtype)
+    if ns_dtype == "auto":
+        if fp32_matmul_prec is not None:
+            return torch.bfloat16 if fp32_matmul_prec == "medium" else torch.float32
+        if torch.get_float32_matmul_precision() == "medium":
+            return torch.bfloat16
+        return torch.float32
+    if ns_dtype == "float32":
+        return torch.float32
+    if ns_dtype == "bfloat16":
+        return torch.bfloat16
+    if ns_dtype == "float16":
+        return torch.float16
+    raise AssertionError("unreachable")
+
+
 def newton_schulz(
     x: torch.Tensor,
     steps: int,
@@ -145,6 +178,7 @@ def newton_schulz(
     transpose: bool | None = None,
     tp_group: torch.distributed.ProcessGroup | None = None,
     use_syrk: bool = False,
+    ns_dtype: NSDTypeT = "auto",
 ) -> torch.Tensor:
     """Use Newton-Schulz iteration to compute the zeroth power / orthogonalization of x.
 
@@ -177,6 +211,8 @@ def newton_schulz(
             If None, will be determined based on the size of the tensor.
         tp_group: The process group for communication if input is distributed.
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
+        ns_dtype: Dtype used for the Newton-Schulz iteration state and intermediates. "auto" preserves
+            the existing behavior: use bfloat16 when FP32 matmul precision is "medium", otherwise use float32.
 
     Returns:
         The orthogonalization of x.
@@ -218,19 +254,32 @@ def newton_schulz(
     coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
     ns_step_fn = newton_schulz_step if X.ndim == 2 else batched_newton_schulz_step
+    resolved_ns_dtype = _resolve_ns_dtype(ns_dtype)
     # Perform the NS iterations
-    if torch.get_float32_matmul_precision() == "medium":
-        # PyTorch doesn't really have FP32 I/O BF16 compute kernels for precision "medium"
-        # We explicitly convert to BF16 and back to FP32.
+    if resolved_ns_dtype != torch.float32:
+        # PyTorch doesn't really have FP32 I/O lower-precision compute kernels for precision "medium".
+        # We explicitly convert the NS state to the selected dtype and back to FP32.
         # NOTE: There is a small difference to calling FP32 I/O BF16 compute kernels because the final result
         # is converted to BF16 before converting back to FP32. The rest should be the same as long as epilogue
         # is always in FP32.
-        if use_syrk:
+        if use_syrk and resolved_ns_dtype == torch.bfloat16:
             if X.ndim > 2:
                 raise TypeError("use_syrk does not support N-d input.")
             ns_step_fn = newton_schulz_step_tsyrk
-        X = X.to(torch.bfloat16)
-        logging.log_first_n(logging.INFO, "Using BF16 I/O kernels for Newton-Schulz iteration.", 1)
+        elif use_syrk:
+            logging.log_first_n(
+                logging.WARNING,
+                "use_syrk=True requires bfloat16 Newton-Schulz dtype; falling back to addmm/baddbmm.",
+                1,
+            )
+        X = X.to(resolved_ns_dtype)
+        logging.log_first_n(logging.INFO, "Using %s I/O kernels for Newton-Schulz iteration.", 1, resolved_ns_dtype)
+    elif use_syrk:
+        logging.log_first_n(
+            logging.WARNING,
+            "use_syrk=True requires bfloat16 Newton-Schulz dtype; falling back to addmm/baddbmm.",
+            1,
+        )
 
     for a, b, c in coeff_iter:
         X = ns_step_fn(X, a, b, c, tp_group=tp_group)
@@ -251,6 +300,7 @@ def newton_schulz_tp(
     tp_group: torch.distributed.ProcessGroup,
     partition_dim: int | None = None,
     tp_mode: Literal["duplicated", "distributed"] = "duplicated",
+    ns_dtype: NSDTypeT = "auto",
 ) -> torch.Tensor:
     """Tensor Parallel Newton-Schulz iteration.
 
@@ -278,14 +328,16 @@ def newton_schulz_tp(
         partition_dim: The dimension to partition the tensor.
         tp_group: The process group for communication if input is distributed.
         tp_mode: The mode to use for the Newton-Schulz iteration.
+        ns_dtype: Dtype used for the Newton-Schulz iteration state and intermediates.
     """
     if partition_dim is None:
         # Fallback path for non TP params.
-        return newton_schulz(x, steps, coefficient_type)
+        return newton_schulz(x, steps, coefficient_type, ns_dtype=ns_dtype)
 
     kwargs: Any = {
         "steps": steps,
         "coefficient_type": coefficient_type,
+        "ns_dtype": ns_dtype,
     }
 
     if tp_mode == "duplicated":

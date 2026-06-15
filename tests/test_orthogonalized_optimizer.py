@@ -18,7 +18,7 @@ import torch.nn as nn
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.orthogonalized_optimizers import mop, muon, muon_hyperball, polargrad, scion
+from emerging_optimizers.orthogonalized_optimizers import mop, muon, muon_hyperball, muon_utils, polargrad, scion
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
 
@@ -272,6 +272,34 @@ class MuonTest(parameterized.TestCase):
             ref_param.data,
         )
 
+    def test_ns_dtype_passed_to_muon_orthogonalization(self) -> None:
+        shape = (17, 9)
+        test_param = nn.Parameter(torch.zeros(shape, dtype=torch.float32, device=self.device))
+        test_param.grad = torch.randint(-5, 5, shape, dtype=torch.float32, device=self.device)
+        grad = test_param.grad.clone()
+
+        muon_opt = muon.Muon(
+            [test_param],
+            lr=1.0,
+            momentum=0.0,
+            weight_decay=0.0,
+            coefficient_type="simple",
+            num_ns_steps=1,
+            fp32_matmul_prec="highest",
+            ns_dtype="float16",
+        )
+        muon_opt.step()
+
+        expected_update = muon_utils.newton_schulz(
+            grad,
+            steps=1,
+            coefficient_type="simple",
+            ns_dtype="float16",
+        )
+        expected_update *= muon.get_muon_scale_factor(shape[0], shape[1], mode="spectral")
+
+        torch.testing.assert_close(test_param.data, -expected_update, atol=0, rtol=0)
+
     def test_use_independent_wd(self) -> None:
         """Test that use_independent_wd properly decouples weight decay from learning rate."""
         shape = (32, 32)
@@ -305,6 +333,11 @@ class MuonTest(parameterized.TestCase):
         test_param = nn.Parameter(torch.randn(5, 7, dtype=torch.float32, device=self.device))
         with self.assertRaisesRegex(ValueError, "num_ns_steps must be at least 1"):
             muon.Muon([test_param], num_ns_steps=0)
+
+    def test_invalid_ns_dtype_raises_value_error(self) -> None:
+        test_param = nn.Parameter(torch.randn(5, 7, dtype=torch.float32, device=self.device))
+        with self.assertRaisesRegex(ValueError, "Invalid Newton-Schulz dtype"):
+            muon.Muon([test_param], ns_dtype="invalid")
 
     def test_invalid_scale_mode_raises_value_error(self) -> None:
         """Test that get_muon_scale_factor raises ValueError for invalid mode."""

@@ -199,6 +199,37 @@ class TestNewtonSchulz(parameterized.TestCase):
             rtol=1e-6,
         )
 
+    @parameterized.parameters("float32", "bfloat16", "float16")
+    def test_newton_schulz_explicit_ns_dtype_returns_fp32(self, ns_dtype):
+        x = torch.randn(17, 9, device=self.device, dtype=torch.float32)
+        out = muon_utils.newton_schulz(x, steps=1, coefficient_type="simple", ns_dtype=ns_dtype)
+
+        self.assertEqual(out.dtype, torch.float32)
+        self.assertTrue(torch.isfinite(out).all().item())
+
+    def test_newton_schulz_auto_ns_dtype_preserves_medium_precision_behavior(self):
+        x = torch.randn(17, 9, device=self.device, dtype=torch.float32)
+
+        with utils.fp32_matmul_precision("medium"):
+            out_auto = muon_utils.newton_schulz(x, steps=1, coefficient_type="simple", ns_dtype="auto")
+            out_bf16 = muon_utils.newton_schulz(x, steps=1, coefficient_type="simple", ns_dtype="bfloat16")
+
+        torch.testing.assert_close(out_auto, out_bf16, atol=0, rtol=0)
+
+    def test_newton_schulz_auto_ns_dtype_preserves_highest_precision_behavior(self):
+        x = torch.randn(17, 9, device=self.device, dtype=torch.float32)
+
+        with utils.fp32_matmul_precision("highest"):
+            out_auto = muon_utils.newton_schulz(x, steps=1, coefficient_type="simple", ns_dtype="auto")
+            out_fp32 = muon_utils.newton_schulz(x, steps=1, coefficient_type="simple", ns_dtype="float32")
+
+        torch.testing.assert_close(out_auto, out_fp32, atol=0, rtol=0)
+
+    def test_newton_schulz_invalid_ns_dtype_raises_value_error(self) -> None:
+        x = torch.randn(5, 7, device=self.device, dtype=torch.float32)
+        with self.assertRaisesRegex(ValueError, "Invalid Newton-Schulz dtype"):
+            muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic", ns_dtype="invalid")
+
     @parameterized.product(
         size=[(512, 512), (512, 256), (256, 512)],
         coefficient_type=["polar_express", "deepseekv4"],
