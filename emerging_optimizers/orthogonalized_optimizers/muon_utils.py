@@ -141,7 +141,7 @@ def newton_schulz(
     steps: int,
     coefficient_type: NSCoeffT = "quintic",
     custom_coefficient_sets: list[tuple[float, float, float]] | None = None,
-    eps: float = 1e-7,
+    eps: float = 1e-30,
     transpose: bool | None = None,
     tp_group: torch.distributed.ProcessGroup | None = None,
     use_syrk: bool = False,
@@ -192,7 +192,12 @@ def newton_schulz(
     if transpose:
         x = x.mT
 
-    # Ensure spectral norm is at most 1
+    # Ensure spectral norm is at most 1.
+    # NOTE: ``eps`` is purely a divide-by-zero guard and must stay well below any realistic
+    # ``||x||_F`` (input is fp32). If it is too large, a small-norm input is divided by ``eps``
+    # instead of its norm, so ``||X||_F = ||x||_F / eps << 1`` and the iteration (tuned for
+    # singular values ~1) cannot lift it -> silently degenerate, non-orthogonal output. This
+    # breaks the scale-invariance of orthogonalization. See issue #229.
     if tp_group is not None:
         X = distributed_normalize_p2(x, eps, tp_group)
     else:

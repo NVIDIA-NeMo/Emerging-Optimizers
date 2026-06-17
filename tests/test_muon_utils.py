@@ -120,6 +120,29 @@ class TestNewtonSchulz(parameterized.TestCase):
             rtol=1e-7,
         )
 
+    @parameterized.parameters(1e-2, 1e-6, 1e-9, 1e-12)
+    def test_newtonschulz_scale_invariance(self, scale):
+        """Orthogonalization depends only on direction, so scaling the input must not change the output.
+
+        Regression test for issue #229: a too-large ``eps`` in the internal ``F.normalize`` divides
+        small-norm inputs by ``eps`` instead of their norm, silently degenerating the output. The
+        orthogonalized result for ``x`` and ``scale * x`` must match for any ``scale > 0``.
+        """
+        x = torch.randn(256, 256, device=self.device, dtype=torch.float32)
+        x = x / x.norm()  # unit Frobenius norm direction
+        ref = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
+        out = muon_utils.newton_schulz(scale * x, steps=5, coefficient_type="quintic")
+        torch.testing.assert_close(
+            out,
+            ref,
+            atol=1e-4,
+            rtol=1e-5,
+            msg=lambda m: (
+                f"newton_schulz not scale-invariant at input scale {scale}: "
+                f"||out||_F={out.norm().item():.4f} vs ||ref||_F={ref.norm().item():.4f}\n{m}"
+            ),
+        )
+
     @parameterized.parameters(
         (2, 256, 256),
         (4, 128, 256),
