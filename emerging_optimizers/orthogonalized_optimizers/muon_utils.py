@@ -141,7 +141,7 @@ def newton_schulz(
     steps: int,
     coefficient_type: NSCoeffT = "quintic",
     custom_coefficient_sets: list[tuple[float, float, float]] | None = None,
-    eps: float = 1e-7,
+    eps: float = 1e-15,
     transpose: bool | None = None,
     tp_group: torch.distributed.ProcessGroup | None = None,
     use_syrk: bool = False,
@@ -192,7 +192,9 @@ def newton_schulz(
     if transpose:
         x = x.mT
 
-    # Ensure spectral norm is at most 1
+    # Ensure spectral norm is at most 1.
+    # NOTE: ``eps`` is a divide-by-zero guard; it must stay well below any realistic ``||x||_F``
+    # yet remain fp32-safe when squared. See issue #229.
     if tp_group is not None:
         X = distributed_normalize_p2(x, eps, tp_group)
     else:
