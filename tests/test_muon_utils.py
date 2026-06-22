@@ -121,7 +121,7 @@ class TestNewtonSchulz(parameterized.TestCase):
         )
 
     @parameterized.parameters(1e-2, 1e-6, 1e-9, 1e-12)
-    def test_newtonschulz_scale_invariance(self, scale):
+    def test_newtonschulz_small_eps(self, scale):
         """Orthogonalization depends only on direction, so scaling the input must not change the output.
 
         Regression test for issue #229: a too-large ``eps`` in the internal ``F.normalize`` divides

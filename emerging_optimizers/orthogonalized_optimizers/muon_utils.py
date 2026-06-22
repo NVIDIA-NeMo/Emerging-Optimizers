@@ -193,13 +193,8 @@ def newton_schulz(
         x = x.mT
 
     # Ensure spectral norm is at most 1.
-    # NOTE: ``eps`` is purely a divide-by-zero guard and must stay well below any realistic
-    # ``||x||_F`` (input is fp32). If it is too large, a small-norm input is divided by ``eps``
-    # instead of its norm, so ``||X||_F = ||x||_F / eps << 1`` and the iteration (tuned for
-    # singular values ~1) cannot lift it -> silently degenerate, non-orthogonal output. This
-    # breaks the scale-invariance of orthogonalization. It must also stay above ~1e-15 so that
-    # ``eps**2`` is still representable in fp32 (1e-15**2 = 1e-30, a normal float); a much smaller
-    # guard such as 1e-30 would underflow when squared. See issue #229.
+    # NOTE: ``eps`` is a divide-by-zero guard; it must stay well below any realistic ``||x||_F``
+    # yet remain fp32-safe when squared. See issue #229.
     if tp_group is not None:
         X = distributed_normalize_p2(x, eps, tp_group)
     else:
