@@ -26,6 +26,7 @@ from torch.optim.optimizer import ParamsT
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import utils
 from emerging_optimizers.utils import FP32MatmulPrecT
+from emerging_optimizers.weight_update_hooks import NoOpWeightUpdateHook, WeightUpdateHook
 
 
 _args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
@@ -37,6 +38,7 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
             for more details.
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
+        weight_update_hook: Optional hook that runs around the final in-place weight update.
 """
 
 
@@ -103,6 +105,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay_method: opt_mixin.WeightDecayT,
         fp32_matmul_prec: FP32MatmulPrecT,
         scaled_orthogonalize_fn: Callable | None = None,
+        weight_update_hook: WeightUpdateHook | None = None,
         **kwargs: Any,
     ):
         if scaled_orthogonalize_fn is None:
@@ -112,6 +115,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self.fp32_matmul_prec = fp32_matmul_prec
         self.nesterov = nesterov
         self.weight_decay_method = weight_decay_method
+        self.weight_update_hook = weight_update_hook if weight_update_hook is not None else NoOpWeightUpdateHook()
 
         default_args_dict = dict(
             lr=lr,
@@ -195,8 +199,10 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 # perform weight update with pre and post weight update functions for subclass customization
                 self.pre_weight_update_fn_inplace(p, orth_grad)
+                weight_update_hook_pre_update_state = self.weight_update_hook.pre_weight_update_inplace(p, orth_grad)
                 p.add_(orth_grad, alpha=-group["lr"])
                 self.post_weight_update_fn_inplace(p)
+                self.weight_update_hook.post_weight_update_inplace(p, weight_update_hook_pre_update_state)
 
         return None
 
