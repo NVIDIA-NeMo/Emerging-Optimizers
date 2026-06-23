@@ -19,7 +19,8 @@ import torch
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.soap.rekls import REKLS, TpRekls
+from emerging_optimizers.soap.rekls import REKLS
+from emerging_optimizers.soap.tp_rekls import TpRekls
 from emerging_optimizers.utils import get_pg_rank, get_pg_size
 
 
