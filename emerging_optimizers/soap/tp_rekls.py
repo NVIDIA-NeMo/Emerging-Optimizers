@@ -269,13 +269,14 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     full_grad_projected = soap.precondition(full_grad, eigenbasis_list, dims=[[0], [0]])
 
                     # No matmul inside adam update. Put it under fp32_matmul_precision for code simplicity.
-                    full_adam_update = update_functions.calculate_laprop_update(
+                    full_adam_update = update_functions.calculate_adam_update(
                         full_grad_projected,
                         state["exp_avg"],
                         state["exp_avg_sq"],
-                        betas=group["betas"],
                         eps=group["eps"],
+                        betas=group["betas"],
                         correct_bias=True,
+                        nesterov=False,
                         step=curr_iter_1_based,
                     )
 

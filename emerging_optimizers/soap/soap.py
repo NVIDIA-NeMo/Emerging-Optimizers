@@ -404,7 +404,7 @@ def update_kronecker_factors_kl_shampoo(
         shampoo_beta: Momentum coefficient for updating preconditioners.
         eigenbasis_list: List of orthonormal eigenbases of the kronecker factor matrices
         eps: Small offset for numerical stability.
-        eigval_exp: Exponent applied to the (clamped) eigenvalues. Defaults to ``-1.0``.
+        eigval_exp: Exponent applied to the (clamped) eigenvalues.
     """
     if grad.dim() != 2:
         raise TypeError("KL-Shampoo mathematical correction is only supported for 2D tensors")
