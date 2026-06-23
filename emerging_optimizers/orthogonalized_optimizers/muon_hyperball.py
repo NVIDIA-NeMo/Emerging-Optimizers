@@ -48,7 +48,6 @@ class MuonHyperball(muon.Muon):
     Args:
         *args: Arguments passed to Muon.
         hyperball_eps: Epsilon for numerical stability in normalization.
-            Default: ``1e-8``.
         hyperball_radius: Fixed radius for the hyperball. All parameters must
             already have this Frobenius norm at construction time.
         **kwargs: Keyword arguments passed to Muon.
@@ -62,8 +61,8 @@ class MuonHyperball(muon.Muon):
     def __init__(
         self,
         *args: Any,
-        hyperball_eps: float = 1e-8,
         hyperball_radius: float,
+        hyperball_eps: float = 1e-15,
         **kwargs: Any,
     ) -> None:
         self.hyperball_eps = hyperball_eps
@@ -74,16 +73,16 @@ class MuonHyperball(muon.Muon):
             for group in self.param_groups:
                 for p in group["params"]:
                     p_norm = p.norm()
-                    if p_norm == 0:
+                    if p_norm.abs() <= hyperball_eps:
                         raise ValueError(
                             "MuonHyperball requires all parameters to have non-zero norm. "
-                            "Found parameter with zero norm."
+                            "Found parameter with almost zero norm."
                         )
                     if not torch.isclose(
                         p_norm,
-                        torch.tensor(self.hyperball_radius, dtype=p.dtype, device=p.device),
+                        torch.tensor(self.hyperball_radius, dtype=p_norm.dtype, device=p_norm.device),
+                        atol=0,
                         rtol=1e-5,
-                        atol=1e-8,
                     ):
                         raise ValueError(
                             f"hyperball_radius={self.hyperball_radius} was specified but a parameter "
@@ -99,9 +98,9 @@ class MuonHyperball(muon.Muon):
             p: The parameter tensor.
             update: The orthogonalized gradient tensor.
         """
-        if "hyperball_R" not in self.state[p]:
-            self.state[p]["hyperball_R"] = torch.tensor(self.hyperball_radius, dtype=p.dtype, device=p.device)
-        R = self.state[p]["hyperball_R"]
+        if "hyperball_radius" not in self.state[p]:
+            self.state[p]["hyperball_radius"] = torch.tensor(self.hyperball_radius, dtype=p.dtype, device=p.device)
+        R = self.state[p]["hyperball_radius"]
 
         update_norm = update.norm().clamp_min(self.hyperball_eps)
         update.mul_(R / update_norm)
@@ -114,7 +113,7 @@ class MuonHyperball(muon.Muon):
             p: The parameter tensor (already updated).
         """
         # Retrieve R from per-parameter state
-        R = self.state[p]["hyperball_R"]
+        R = self.state[p]["hyperball_radius"]
 
         # Normalize the result and scale back by R: p = R * (p / ||p||_F) using Frobenius norm.
         p_norm = p.norm().clamp_min(self.hyperball_eps)
