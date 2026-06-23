@@ -393,11 +393,19 @@ class MuonHyperballTest(parameterized.TestCase):
             )
 
     def test_zero_norm_raises_error(self) -> None:
-        """Test that MuonHyperball raises ValueError for zero-norm parameters."""
-        test_param = nn.Parameter(torch.zeros((5, 7), dtype=torch.float32, device=self.device))
+        test_param = nn.Parameter(torch.zeros((5, 7), device=self.device))
 
         with self.assertRaises(ValueError):
             muon_hyperball.MuonHyperball([test_param], lr=0.01, hyperball_radius=1.0)
+
+    def test_radius_mismatch_raises_error(self) -> None:
+        """Test that MuonHyperball raises ValueError when a parameter's norm does not match the radius."""
+        test_param = nn.Parameter(torch.randn((5, 7), dtype=torch.float32, device=self.device))
+        # Pick a radius that differs from the parameter's actual Frobenius norm.
+        mismatched_radius = test_param.norm().item() + 1.0
+
+        with self.assertRaises(ValueError):
+            muon_hyperball.MuonHyperball([test_param], lr=0.01, hyperball_radius=mismatched_radius)
 
 
 class PolarGradTest(parameterized.TestCase):

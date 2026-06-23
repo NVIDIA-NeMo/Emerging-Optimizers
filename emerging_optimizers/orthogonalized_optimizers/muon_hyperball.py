@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from typing import Any, override
 
 import torch
@@ -47,9 +46,9 @@ class MuonHyperball(muon.Muon):
 
     Args:
         *args: Arguments passed to Muon.
-        hyperball_eps: Epsilon for numerical stability in normalization.
         hyperball_radius: Fixed radius for the hyperball. All parameters must
             already have this Frobenius norm at construction time.
+        hyperball_eps: Epsilon for numerical stability in normalization.
         **kwargs: Keyword arguments passed to Muon.
 
     Raises:
@@ -73,7 +72,7 @@ class MuonHyperball(muon.Muon):
             for group in self.param_groups:
                 for p in group["params"]:
                     p_norm = p.norm()
-                    if p_norm.abs() <= hyperball_eps:
+                    if p_norm <= hyperball_eps:  # p_norm is non-negative, abs() is not needed
                         raise ValueError(
                             "MuonHyperball requires all parameters to have non-zero norm. "
                             "Found parameter with almost zero norm."
@@ -98,12 +97,8 @@ class MuonHyperball(muon.Muon):
             p: The parameter tensor.
             update: The orthogonalized gradient tensor.
         """
-        if "hyperball_radius" not in self.state[p]:
-            self.state[p]["hyperball_radius"] = torch.tensor(self.hyperball_radius, dtype=p.dtype, device=p.device)
-        R = self.state[p]["hyperball_radius"]
-
         update_norm = update.norm().clamp_min(self.hyperball_eps)
-        update.mul_(R / update_norm)
+        update.mul_(self.hyperball_radius / update_norm)
 
     @override
     def post_weight_update_fn_inplace(self, p: torch.Tensor) -> None:
@@ -112,9 +107,6 @@ class MuonHyperball(muon.Muon):
         Args:
             p: The parameter tensor (already updated).
         """
-        # Retrieve R from per-parameter state
-        R = self.state[p]["hyperball_radius"]
-
         # Normalize the result and scale back by R: p = R * (p / ||p||_F) using Frobenius norm.
         p_norm = p.norm().clamp_min(self.hyperball_eps)
-        p.mul_(R / p_norm)
+        p.mul_(self.hyperball_radius / p_norm)
