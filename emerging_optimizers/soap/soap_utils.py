@@ -26,6 +26,7 @@ __all__ = [
     "get_eigenbasis_eigh",
     "get_eigenbasis_qr",
     "sort_eigenbasis_by_approx_eigvals",
+    "get_eigenbasis_svd",
 ]
 
 
@@ -89,6 +90,44 @@ def get_eigenbasis_eigh(
     for kronecker_factor in kronecker_factor_list:
         _, eigenvectors = eig_utils.eigh_with_fallback(kronecker_factor, force_double=False)
         updated_eigenbasis_list.append(eigenvectors)
+
+    return updated_eigenbasis_list
+
+
+def get_eigenbasis_svd(
+    kronecker_factor_list: TensorList,
+) -> TensorList:
+    """Computes the eigenbases of the preconditioner using torch.linalg.svd decomposition.
+
+    The kronecker factors :math:`L = GG^\\top` and :math:`R = G^\\top G` are symmetric positive
+    semi-definite, so the left and right singular vectors coincide (up to sign in the presence
+    of repeated singular values); this function returns the left singular vectors :math:`U` as
+    the eigenbasis. Singular values from ``torch.linalg.svd`` are returned in descending order.
+
+    Args:
+        kronecker_factor_list: Matrix List to compute eigenbases of
+
+    Returns:
+        List of orthonormal kronecker factor eigenbases matrices
+
+    Example:
+        .. code-block:: python
+
+            # Create sample Kronecker factors (symmetric positive definite matrices)
+            k_factor1 = torch.randn(4, 4)
+            k_factor1 = k_factor1 @ k_factor1.T  # Make symmetric positive definite
+            k_factor2 = torch.randn(5, 5)
+            k_factor2 = k_factor2 @ k_factor2.T  # Make symmetric positive definite
+
+            # Get orthogonal matrices for these factors
+            ortho_matrices = get_eigenbasis_svd([k_factor1, k_factor2])
+            # ortho_matrices[0] has shape [4, 4] and ortho_matrices[1] has shape [5, 5]
+    """
+    updated_eigenbasis_list: TensorList = []
+
+    for kronecker_factor in kronecker_factor_list:
+        U, _, _ = torch.linalg.svd(kronecker_factor)
+        updated_eigenbasis_list.append(U)
 
     return updated_eigenbasis_list
 
