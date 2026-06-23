@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from typing import Any, override
 
 import torch
@@ -35,8 +34,8 @@ class MuonHyperball(muon.Muon):
 
         W_{t+1} = R \\cdot \\text{normalize}(W_t - \\text{lr} \\cdot R \\cdot \\text{normalize}(\\text{update}))
 
-    where :math:`R` is the Frobenius norm of :math:`W_t` (or a user-specified radius). This keeps
-    the weight matrix at constant scale while updating.
+    where :math:`R` is the user-specified Frobenius norm. This keeps the weight matrix at
+    constant scale while updating.
 
     Warning:
         This optimizer is experimental and may change in future versions.
@@ -47,56 +46,59 @@ class MuonHyperball(muon.Muon):
 
     Args:
         *args: Arguments passed to Muon.
+        hyperball_radius: Fixed radius for the hyperball. All parameters must
+            already have this Frobenius norm at construction time.
         hyperball_eps: Epsilon for numerical stability in normalization.
-            Default: ``1e-8``.
-        hyperball_radius: Fixed radius for the hyperball. If ``None`` (default),
-            uses each parameter's initial Frobenius norm as its radius. If specified, all
-            parameters will be rescaled to have this radius at initialization.
         **kwargs: Keyword arguments passed to Muon.
+
+    Raises:
+        ValueError: If any parameter has zero norm, or if a parameter's
+            Frobenius norm does not match ``hyperball_radius``.
 
     """
 
     def __init__(
         self,
         *args: Any,
-        hyperball_eps: float = 1e-8,
-        hyperball_radius: float | None = None,
+        hyperball_radius: float,
+        hyperball_eps: float = 1e-15,
         **kwargs: Any,
     ) -> None:
         self.hyperball_eps = hyperball_eps
         self.hyperball_radius = hyperball_radius
         super().__init__(*args, **kwargs)
 
-        # Validate and optionally rescale parameters based on hyperball_radius.
         with torch.no_grad():
             for group in self.param_groups:
                 for p in group["params"]:
                     p_norm = p.norm()
-                    # Validate that parameter has non-zero norm.
-                    if p_norm.item() == 0:
+                    if p_norm <= hyperball_eps:  # p_norm is non-negative, abs() is not needed
                         raise ValueError(
-                            "MuonHyperball requires all parameters to have non-zero norm. Found parameter with zero norm."
+                            "MuonHyperball requires all parameters to have non-zero norm. "
+                            "Found parameter with almost zero norm."
                         )
-                    # Rescale parameter to have the specified radius if provided.
-                    if self.hyperball_radius is not None:
-                        p.mul_(self.hyperball_radius / p_norm.clamp_min(self.hyperball_eps))
+                    if not torch.isclose(
+                        p_norm,
+                        torch.tensor(self.hyperball_radius, dtype=p_norm.dtype, device=p_norm.device),
+                        atol=0,
+                        rtol=1e-5,
+                    ):
+                        raise ValueError(
+                            f"hyperball_radius={self.hyperball_radius} was specified but a parameter "
+                            f"has Frobenius norm {p_norm.item()}. Rescale your model parameters to the "
+                            f"desired radius before constructing the optimizer."
+                        )
 
     @override
     def pre_weight_update_fn_inplace(self, p: torch.Tensor, update: torch.Tensor) -> None:
-        """Store the original weight norm and normalize the update using Frobenius norm.
+        """Normalize the update using Frobenius norm, scaled by R.
 
         Args:
             p: The parameter tensor.
             update: The orthogonalized gradient tensor.
         """
-        # Use user-specified radius or compute R = ||W_t||_F (Frobenius norm)
-        R = self.hyperball_radius if self.hyperball_radius is not None else p.norm().item()
-        self.state[p]["hyperball_R"] = R
-
-        # Normalize the update in-place and scale by R
-        # This modifies update to be: R * normalize(update) using Frobenius norm.
         update_norm = update.norm().clamp_min(self.hyperball_eps)
-        update.mul_(R / update_norm)
+        update.mul_(self.hyperball_radius / update_norm)
 
     @override
     def post_weight_update_fn_inplace(self, p: torch.Tensor) -> None:
@@ -105,9 +107,6 @@ class MuonHyperball(muon.Muon):
         Args:
             p: The parameter tensor (already updated).
         """
-        # Retrieve R from per-parameter state
-        R = self.state[p]["hyperball_R"]
-
         # Normalize the result and scale back by R: p = R * (p / ||p||_F) using Frobenius norm.
         p_norm = p.norm().clamp_min(self.hyperball_eps)
-        p.mul_(R / p_norm)
+        p.mul_(self.hyperball_radius / p_norm)

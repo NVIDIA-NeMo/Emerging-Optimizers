@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import torch
 import torch.nn as nn
 from absl import flags, logging
@@ -377,6 +376,7 @@ class MuonHyperballTest(parameterized.TestCase):
             lr=0.01,
             momentum=0.0,
             weight_decay=0.0,
+            hyperball_radius=initial_norm,
         )
 
         # Run multiple steps with random gradients
@@ -392,47 +392,20 @@ class MuonHyperballTest(parameterized.TestCase):
                 rtol=1e-5,
             )
 
-    @parameterized.product(
-        shape=[(5, 7), (33, 65), (127, 257)],
-        hyperball_radius=[0.5, 1.0, 2.0],
-    )
-    def test_hyperball_radius_rescales_params(self, shape, hyperball_radius) -> None:
-        """Test that hyperball_radius kwarg rescales parameters to specified radius."""
-        test_param = nn.Parameter(torch.randn(shape, dtype=torch.float32, device=self.device))
-
-        opt = muon_hyperball.MuonHyperball(
-            [test_param],
-            lr=0.01,
-            hyperball_radius=hyperball_radius,
-        )
-
-        # After initialization, parameter should have the specified radius
-        torch.testing.assert_close(
-            test_param.norm(),
-            torch.tensor(hyperball_radius, device=self.device),
-            atol=1e-5,
-            rtol=1e-5,
-        )
-
-        # Run multiple steps with random gradients
-        for _ in range(5):
-            test_param.grad = torch.randn_like(test_param)
-            opt.step()
-
-            # Norm should remain at hyperball_radius after each step
-            torch.testing.assert_close(
-                test_param.norm(),
-                torch.tensor(hyperball_radius, device=self.device),
-                atol=1e-5,
-                rtol=1e-5,
-            )
-
     def test_zero_norm_raises_error(self) -> None:
-        """Test that MuonHyperball raises ValueError for zero-norm parameters."""
-        test_param = nn.Parameter(torch.zeros((5, 7), dtype=torch.float32, device=self.device))
+        test_param = nn.Parameter(torch.zeros((5, 7), device=self.device))
 
         with self.assertRaises(ValueError):
-            muon_hyperball.MuonHyperball([test_param], lr=0.01)
+            muon_hyperball.MuonHyperball([test_param], lr=0.01, hyperball_radius=1.0)
+
+    def test_radius_mismatch_raises_error(self) -> None:
+        """Test that MuonHyperball raises ValueError when a parameter's norm does not match the radius."""
+        test_param = nn.Parameter(torch.randn((5, 7), dtype=torch.float32, device=self.device))
+        # Pick a radius that differs from the parameter's actual Frobenius norm.
+        mismatched_radius = test_param.norm().item() + 1.0
+
+        with self.assertRaises(ValueError):
+            muon_hyperball.MuonHyperball([test_param], lr=0.01, hyperball_radius=mismatched_radius)
 
 
 class PolarGradTest(parameterized.TestCase):
