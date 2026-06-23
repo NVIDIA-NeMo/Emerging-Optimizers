@@ -273,10 +273,10 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         full_grad_projected,
                         state["exp_avg"],
                         state["exp_avg_sq"],
-                        True,  # correct_bias
-                        group["betas"],
-                        curr_iter_1_based,
-                        group["eps"],
+                        betas=group["betas"],
+                        eps=group["eps"],
+                        correct_bias=True,
+                        step=curr_iter_1_based,
                     )
 
                     full_precond_update = soap.precondition(full_adam_update, eigenbasis_list, dims=[[0], [1]])
