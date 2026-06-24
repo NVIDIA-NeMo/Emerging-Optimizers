@@ -136,7 +136,7 @@ def right_polargrad_orth_fn(
                ...
                alpha: float = 1.0,
                center_rows: bool = False,
-               eps: float = 1e-8,
+               eps: float = 1e-15,
                extra_scale_factor: float = 1.0,
            ) -> None:
                scaled_orthogonalize_fn = functools.partial(
@@ -151,10 +151,10 @@ def right_polargrad_orth_fn(
                )
 
     Args:
-        grad: The (momentum) tensor to orthogonalize, shape ``[m, n]`` with ``m >= n``.
+        grad: The (momentum) tensor to orthogonalize.
         alpha: Exponent applied to the nuclear-norm scale factor.
-        center_rows: If True, project onto the zero-row-mean subspace before and after the update,
-            removing the shared logit-shift direction. Intended for LM-head matrices.
+        center_rows: If True, subtract the per-column mean (the average over the row / vocabulary axis,
+            ``dim=0``) before and after the update, so each column is zero-mean.
         eps: Floor on the right-Gram eigenvalues for the inverse sqrt and nuclear-norm computation.
         extra_scale_factor: Extra multiplier on the update.
 
