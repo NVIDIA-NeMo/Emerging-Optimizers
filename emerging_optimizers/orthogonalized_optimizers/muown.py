@@ -32,6 +32,31 @@ from emerging_optimizers.utils import FP32MatmulPrecT
 __all__ = ["Muown"]
 
 
+@torch.compile
+def _weight_norm_decompose(
+    weight: torch.Tensor,
+    grad: torch.Tensor,
+    g: torch.Tensor,
+    v_norm: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    r"""Reconstructs the direction and splits the gradient under the weight-norm reparameterization.
+
+    Args:
+        weight: The current 2D weight ``W``.
+        grad: The gradient ``grad_W`` with respect to ``W``.
+        g: Per-row magnitude, shape ``[rows, 1]``.
+        v_norm: Cached row norms ``||v||_row`` of the direction, shape ``[rows, 1]``.
+
+    Returns:
+        ``(v, grad_g, grad_v)``: the reconstructed direction and the magnitude and direction gradients.
+    """
+    u = weight / g
+    v = u * v_norm
+    grad_g = (grad * u).sum(dim=1, keepdim=True)
+    grad_v = (g / v_norm) * (grad - u * grad_g)
+    return v, grad_g, grad_v
+
+
 @registry.register_optimizer("muown")
 class Muown(Muon):
     """Muown: Muon with internal weight normalization (row-norm control).
@@ -105,8 +130,10 @@ class Muown(Muon):
                 raise TypeError("Muown is only supported for 2D parameters")
             state = self.state[p]
             if len(state) == 0:
-                # Seed g, v from the current weight so Muown starts from the same point as Muon.
-                row_norm = p.norm(dim=1, keepdim=True).to(torch.float32)
+                # Seed g, v from the current weight so Muown starts from the same point as Muon. Floor the
+                # row norm so an all-zero weight row does not give g=0, which would make u = weight / g a
+                # 0/0 NaN on the first step.
+                row_norm = p.norm(dim=1, keepdim=True).to(torch.float32).clamp_min(1e-12)
                 state["step"] = 0
                 state["g"] = row_norm.clone()
                 state["v_norm"] = row_norm.clone()
@@ -148,13 +175,7 @@ class Muown(Muon):
                 g = state["g"]
                 v_norm = state["v_norm"]
 
-                grad = p.grad.to(torch.float32)
-                weight = p.to(torch.float32)
-
-                u = weight / g
-                v = u * v_norm
-                grad_g = (grad * u).sum(dim=1, keepdim=True)
-                grad_v = (g / v_norm) * (grad - u * grad_g)
+                v, grad_g, grad_v = _weight_norm_decompose(p.to(torch.float32), p.grad.to(torch.float32), g, v_norm)
 
                 state["momentum_buffer"].lerp_(grad_v, 1 - momentum)
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
@@ -173,7 +194,8 @@ class Muown(Muon):
                 )
                 g.add_(magnitude_update, alpha=-lr)
 
-                g.add_(g, alpha=-weight_decay * lr)
+                # Decoupled weight decay on the magnitude (the spectral-norm driver).
+                self._apply_weight_decay_inplace(g, grad_g, lr, weight_decay)
 
                 v_norm_new = v_new.norm(dim=1, keepdim=True)
                 p.copy_(g * (v_new / v_norm_new))

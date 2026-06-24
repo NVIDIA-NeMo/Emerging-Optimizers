@@ -79,6 +79,13 @@ class MuownTest(parameterized.TestCase):
 
     @parameterized.product(shape=[(8, 16), (16, 8), (33, 65)], momentum=[0.0, 0.95])
     def test_close_reference(self, shape, momentum):
+        """Muown matches the reference even though their momentum conventions differ.
+
+        Muown uses EMA momentum (``buf = m*buf + (1-m)*grad_v``) while the reference uses heavy-ball
+        (``buf = m*buf + grad_v``). The two buffers differ only by the constant factor ``(1 - m)``, which
+        the scale-invariant Newton-Schulz orthogonalization removes, so the direction updates agree (to
+        Newton-Schulz's eps-normalization tolerance). Both feed the same orthogonalization function.
+        """
         p = torch.nn.Parameter(torch.randn(shape, device=self.device))
         p_ref = torch.nn.Parameter(p.detach().clone())
 
