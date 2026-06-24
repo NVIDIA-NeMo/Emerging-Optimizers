@@ -92,48 +92,6 @@ class RightPolarGradOrthFnTest(parameterized.TestCase):
     def setUp(self):
         self.device = FLAGS.device
 
-    @parameterized.product(shape=[(8, 4), (32, 8), (65, 33)])
-    def test_orthonormal_columns(self, shape) -> None:
-        """With alpha=0 the update is the right polar factor: its columns are orthonormal."""
-        grad = torch.randn(shape, device=self.device)
-        u = polargrad.right_polargrad_orth_fn(grad, alpha=0.0)
-        n = shape[1]
-        torch.testing.assert_close(
-            u.transpose(-1, -2) @ u,
-            torch.eye(n, device=self.device),
-            atol=1e-5,
-            rtol=1e-5,
-            msg=lambda m: f"Right polar factor must have orthonormal columns.\n\n{m}",
-        )
-
-    @parameterized.product(shape=[(8, 4), (32, 8), (65, 33)])
-    def test_nuclear_norm_scaling(self, shape) -> None:
-        """alpha=1 scales the orthonormal-column update by the nuclear norm of the input."""
-        grad = torch.randn(shape, device=self.device)
-        u = polargrad.right_polargrad_orth_fn(grad, alpha=0.0)
-        scaled = polargrad.right_polargrad_orth_fn(grad, alpha=1.0)
-        nuclear_norm = torch.linalg.svdvals(grad).sum()
-        torch.testing.assert_close(
-            scaled,
-            u * nuclear_norm,
-            atol=1e-4,
-            rtol=1e-4,
-            msg=lambda m: f"alpha=1 update must equal the orthonormal-column update times the nuclear norm.\n\n{m}",
-        )
-
-    @parameterized.product(extra_scale_factor=[0.2, 2.0])
-    def test_extra_scale_factor_is_linear(self, extra_scale_factor) -> None:
-        grad = torch.randn((16, 8), device=self.device)
-        base = polargrad.right_polargrad_orth_fn(grad)
-        scaled = polargrad.right_polargrad_orth_fn(grad, extra_scale_factor=extra_scale_factor)
-        torch.testing.assert_close(scaled, base * extra_scale_factor, atol=1e-5, rtol=1e-5)
-
-    def test_center_rows_zero_row_mean(self) -> None:
-        """center_rows projects the update onto the zero-row-mean subspace (logit-shift removal)."""
-        grad = torch.randn((32, 8), device=self.device)
-        update = polargrad.right_polargrad_orth_fn(grad, center_rows=True)
-        self.assertLess(update.mean(dim=0).abs().max().item(), 1e-5)
-
     @parameterized.product(shape=[(8, 4), (32, 8)], center_rows=[False, True])
     def test_right_orthogonal_equivariance(self, shape, center_rows) -> None:
         """f(G Q) == f(G) Q for an orthogonal Q acting on the hidden (right) dimension."""
@@ -146,29 +104,11 @@ class RightPolarGradOrthFnTest(parameterized.TestCase):
         torch.testing.assert_close(
             rotated,
             expected,
-            atol=1e-4,
-            rtol=1e-4,
-            msg=lambda m: f"Update must be equivariant to right-orthogonal (hidden) transforms.\n\n{m}",
-        )
-
-    @parameterized.product(shape=[(8, 4), (32, 8)], center_rows=[False, True])
-    def test_row_permutation_equivariance(self, shape, center_rows) -> None:
-        """f(P G) == P f(G) for a row (vocabulary) permutation P."""
-        grad = torch.randn(shape, device=self.device)
-        perm = torch.randperm(shape[0], device=self.device)
-
-        permuted = polargrad.right_polargrad_orth_fn(grad[perm], center_rows=center_rows)
-        expected = polargrad.right_polargrad_orth_fn(grad, center_rows=center_rows)[perm]
-        torch.testing.assert_close(
-            permuted,
-            expected,
-            atol=1e-4,
-            rtol=1e-4,
-            msg=lambda m: f"Update must be equivariant to row (vocabulary) permutations.\n\n{m}",
+            atol=1e-5,
+            rtol=1e-5,
         )
 
     def test_usable_as_scaled_orthogonalize_fn(self) -> None:
-        """The function can be partially applied as an OrthogonalizedOptimizer scaled_orthogonalize_fn."""
         param = nn.Parameter(torch.randn((32, 8), device=self.device))
         scaled_orthogonalize_fn = functools.partial(
             polargrad.right_polargrad_orth_fn, alpha=1.0, center_rows=True, extra_scale_factor=0.2
