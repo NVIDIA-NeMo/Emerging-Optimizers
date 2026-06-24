@@ -23,9 +23,10 @@ from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
 from emerging_optimizers.utils import FP32MatmulPrecT
+from emerging_optimizers.utils.eig import eigh_with_fallback
 
 
-__all__ = ["PolarGrad"]
+__all__ = ["PolarGrad", "right_polargrad_orth_fn"]
 
 
 @registry.register_optimizer("polargrad")
@@ -103,3 +104,75 @@ class PolarGrad(OrthogonalizedOptimizer):
 
 
 PolarGrad.__doc__ = PolarGrad.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
+
+
+def right_polargrad_orth_fn(
+    grad: torch.Tensor,
+    *,
+    alpha: float = 1.0,
+    center_rows: bool = False,
+    eps: float = 1e-15,
+    extra_scale_factor: float = 1.0,
+) -> torch.Tensor:
+    r"""Right-spectral (one-sided polar) orthogonalization for tall matrices.
+
+    Orthogonalizes only the right factor of a tall matrix ``G`` (e.g. an embedding or LM-head weight,
+    ``vocab x hidden``):
+
+    .. math::
+        u = G \, (G^\top G)^{-1/2}, \qquad \text{update} = \lVert G \rVert_*^{\,\alpha} \, u
+
+    .. code-block:: python
+       :caption: Define a ``RightPolarGrad`` by partially applying this orthogonalization
+
+       class RightPolarGrad(OrthogonalizedOptimizer):
+           def __init__(
+               self,
+               params,
+               lr: float = 3e-4,
+               momentum: float = 0.95,
+               weight_decay: float = 0.01,
+               *,
+               ...
+               alpha: float = 1.0,
+               center_rows: bool = False,
+               eps: float = 1e-8,
+               extra_scale_factor: float = 1.0,
+           ) -> None:
+               scaled_orthogonalize_fn = functools.partial(
+                   right_polargrad_orth_fn,
+                   alpha=alpha,
+                   center_rows=center_rows,
+                   eps=eps,
+                   extra_scale_factor=extra_scale_factor,
+               )
+               super().__init__(
+                   ...
+               )
+
+    Args:
+        grad: The (momentum) tensor to orthogonalize, shape ``[m, n]`` with ``m >= n``.
+        alpha: Exponent applied to the nuclear-norm scale factor.
+        center_rows: If True, project onto the zero-row-mean subspace before and after the update,
+            removing the shared logit-shift direction. Intended for LM-head matrices.
+        eps: Floor on the right-Gram eigenvalues for the inverse sqrt and nuclear-norm computation.
+        extra_scale_factor: Extra multiplier on the update.
+
+    Returns:
+        The scaled right-polar update, same shape and dtype as ``grad``.
+    """
+    m = grad.to(torch.float32)
+    if center_rows:
+        m = m - m.mean(dim=0, keepdim=True)
+
+    eigvals, eigvecs = eigh_with_fallback(m.transpose(-1, -2) @ m)
+    eigvals.clamp_min_(eps)
+    right_gram_inv_sqrt = (eigvecs * eigvals.rsqrt().unsqueeze(-2)) @ eigvecs.transpose(-1, -2)
+
+    u = m @ right_gram_inv_sqrt
+    nuclear_norm = eigvals.sqrt().sum()
+    update = u * nuclear_norm.pow(alpha) * extra_scale_factor
+
+    if center_rows:
+        update = update - update.mean(dim=0, keepdim=True)
+    return update.to(grad.dtype)
