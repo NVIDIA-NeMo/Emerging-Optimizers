@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 import torch
 from absl import logging
-from torch import nn, optim
+from torch import optim
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
@@ -589,10 +589,13 @@ def _clip_update_rms_in_place(u: torch.Tensor, max_rms: float, eps: float = 1e-7
 
 
 def _stack_2d(x: torch.Tensor) -> torch.Tensor:
-    """Flattens a (>=2D) tensor to 2D, merging the leading (batch) dims into the smaller matrix edge.
+    """Flattens a 2D or 3D tensor to 2D, merging the batch dim into the smaller matrix edge.
+
+    A 2D tensor is returned unchanged. A 3D tensor ``(b, p, q)`` is merged into the smaller of its two
+    matrix edges: ``(p, b * q)`` when ``q <= p``, otherwise ``(b * p, q)``.
 
     Args:
-        x: Tensor with at least 2 dimensions.
+        x: A 2D matrix or a 3D batched matrix ``(batch, p, q)``.
 
     Returns:
         The 2D stacking of ``x``.
@@ -621,29 +624,27 @@ def _unstack(u: torch.Tensor, shape: torch.Size) -> torch.Tensor:
 
 @registry.register_optimizer("stacked_soap")
 class StackedSoap(SOAP):
-    """Limited-memory SOAP for batched / 3D parameters via 2D stacking.
+    """Limited-memory SOAP for batched / 3D parameters via transient 2D stacking.
 
-    Each parameter is flattened to 2D by merging its leading (batch) dims into the smaller matrix edge
-    (see :func:`_stack_2d`); the resulting 2D ``shadow`` parameters are what the base :class:`SOAP`
-    optimizes. Stacking on the smaller edge keeps both Kronecker factors small (the larger edge becomes a
-    single shared factor) and reuses the full, unmodified SOAP machinery (KL-Shampoo + QR eigenbasis).
-    ``step`` only bridges gradients in and the update out; all preconditioning is the inherited SOAP step.
+    Optimizes the real parameters directly: ``self.param_groups``, ``self.state``, and gradients are all
+    keyed by the user's parameters, so learning-rate schedulers, gradient clipping, and ``state_dict``
+    behave exactly as for plain :class:`SOAP`. Each 3D parameter is flattened to 2D by merging its batch
+    dim into the smaller matrix edge (see :func:`_stack_2d`) only for the duration of :meth:`step`: the
+    parameter's ``data`` and ``grad`` are swapped to their 2D views, the inherited SOAP step runs, and the
+    2D update is unstacked back into the original storage. Because the swap happens before the inherited
+    step, its lazy state initialization sizes the optimizer state to the stacked 2D shape automatically.
 
-    The shadow shares storage with the real parameter whenever the stacking is a pure view (the row-merge
-    branch and plain 2D parameters), in which case the base SOAP step writes through directly and no
-    copy-back is needed; the permute branch allocates an independent shadow and the update is copied back.
-    A plain 2D parameter is stacked as itself, so this is exactly stock SOAP.
-
-    Because the base optimizer operates on the shadows, ``self.param_groups`` and ``state_dict`` are keyed
-    by the shadow parameters; ``zero_grad`` is overridden to clear the *real* parameters' gradients (the
-    ones ``backward()`` populates).
+    Stacking on the smaller edge keeps both Kronecker factors small (the larger edge becomes a single
+    shared factor) while reusing the full, unmodified SOAP machinery (KL-Shampoo + QR eigenbasis). The
+    stacking is a storage-sharing view except for the permute branch (``q <= p``), which allocates one
+    transient 2D buffer per step. A plain 2D parameter is stacked as itself, so this is exactly stock SOAP.
 
     SOAP is configured with the fixed settings appropriate for this use: decoupled weight decay, no
     Nesterov, bias correction on, the QR eigenbasis path with 1 power-iteration step, KL-Shampoo on, and
     the default matmul precision.
 
     Args:
-        params: Iterable of parameters to optimize.
+        params: Iterable of 2D or 3D parameters to optimize.
         lr: The learning rate.
         betas: Inner Adam betas ``(b1, b2)``.
         shampoo_beta: Beta for the kronecker factor moving average.
@@ -660,13 +661,8 @@ class StackedSoap(SOAP):
         eps: float = 1e-8,
         weight_decay: float = 0.01,
     ) -> None:
-        # Build a 2D shadow per parameter; it shares storage with the real param when _stack_2d returns a
-        # view (row-merge / plain 2D), otherwise it is an independent buffer.
-        self._pairs: list[tuple[torch.Tensor, nn.Parameter]] = [
-            (p, nn.Parameter(_stack_2d(p.detach()))) for p in params
-        ]
         super().__init__(
-            [shadow for _, shadow in self._pairs],
+            params,
             lr,
             betas=betas,
             shampoo_beta=shampoo_beta,
@@ -679,16 +675,6 @@ class StackedSoap(SOAP):
             power_iter_steps=1,
             use_kl_shampoo=True,
         )
-
-    @override
-    def zero_grad(self, set_to_none: bool = True) -> None:
-        for p, _ in self._pairs:
-            if p.grad is None:
-                continue
-            if set_to_none:
-                p.grad = None
-            else:
-                p.grad.zero_()
 
     if TYPE_CHECKING:
 
@@ -703,12 +689,28 @@ class StackedSoap(SOAP):
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
         if closure is not None:
             raise ValueError("closure is not supported")
-        for p, shadow in self._pairs:
-            shadow.grad = _stack_2d(p.grad) if p.grad is not None else None
+
+        # Swap each parameter's data/grad to their 2D stacking, run the inherited SOAP step on the 2D
+        # views (state is keyed by the real parameter and sized for the stacked shape), then unstack the
+        # update back into the original storage.
+        saved: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
+        for group in self.param_groups:
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+                data, grad = p.data, p.grad
+                saved.append((p, data, grad))
+                p.data = _stack_2d(data)
+                p.grad = _stack_2d(grad)
+
         super().step()
-        for p, shadow in self._pairs:
-            # Only copy back when the shadow has independent storage (the permute branch); otherwise
-            # the base SOAP step already wrote through to p.
-            if shadow.data_ptr() != p.data_ptr():
-                p.copy_(_unstack(shadow, p.shape))
+
+        for p, data, grad in saved:
+            stacked = p.data
+            p.data = data
+            p.grad = grad
+            # Copy back only when stacking allocated an independent buffer (permute branch); the view
+            # branches already wrote the update through to the original storage.
+            if stacked.data_ptr() != data.data_ptr():
+                data.copy_(_unstack(stacked, data.shape))
         return None
