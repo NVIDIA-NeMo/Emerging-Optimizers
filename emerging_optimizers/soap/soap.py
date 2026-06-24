@@ -605,7 +605,7 @@ def _stack_2d(x: torch.Tensor) -> torch.Tensor:
     b, p, q = x.shape
     if q <= p:
         # -> (p, b*q): move the batch next to the smaller edge, then merge.
-        out = x.reshape(b, p, q).permute(1, 0, 2).reshape(p, b * q)
+        out = x.permute(1, 0, 2).reshape(p, b * q)
     else:
         # -> (b*p, q): contiguous merge into rows.
         out = x.reshape(b * p, q)
@@ -692,25 +692,27 @@ class StackedSoap(SOAP):
 
         # Swap each parameter's data/grad to their 2D stacking, run the inherited SOAP step on the 2D
         # views (state is keyed by the real parameter and sized for the stacked shape), then unstack the
-        # update back into the original storage.
+        # update back into the original storage. The restore runs in a finally so that an exception inside
+        # super().step() (e.g. OOM, a NaN check) cannot leave parameters stuck in their 2D stacked shape.
         saved: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
-        for group in self.param_groups:
-            for p in group["params"]:
-                if p.grad is None:
-                    continue
-                data, grad = p.data, p.grad
-                saved.append((p, data, grad))
-                p.data = _stack_2d(data)
-                p.grad = _stack_2d(grad)
+        try:
+            for group in self.param_groups:
+                for p in group["params"]:
+                    if p.grad is None:
+                        continue
+                    data, grad = p.data, p.grad
+                    saved.append((p, data, grad))
+                    p.data = _stack_2d(data)
+                    p.grad = _stack_2d(grad)
 
-        super().step()
-
-        for p, data, grad in saved:
-            stacked = p.data
-            p.data = data
-            p.grad = grad
-            # Copy back only when stacking allocated an independent buffer (permute branch); the view
-            # branches already wrote the update through to the original storage.
-            if stacked.data_ptr() != data.data_ptr():
-                data.copy_(_unstack(stacked, data.shape))
+            super().step()
+        finally:
+            for p, data, grad in saved:
+                stacked = p.data
+                p.data = data
+                p.grad = grad
+                # Copy back only when stacking allocated an independent buffer (permute branch); the view
+                # branches already wrote the update through to the original storage.
+                if stacked.data_ptr() != data.data_ptr():
+                    data.copy_(_unstack(stacked, data.shape))
         return None
