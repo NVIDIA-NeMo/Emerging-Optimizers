@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from collections.abc import Iterable
 from contextlib import nullcontext
 from functools import partial
 from typing import TYPE_CHECKING, Callable, override
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 
 import torch
 from absl import logging
-from torch import optim
+from torch import nn, optim
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
@@ -34,6 +35,7 @@ from emerging_optimizers.utils import FP32MatmulPrecT
 
 __all__ = [
     "SOAP",
+    "StackedSoap",
     "precondition",
     "init_kronecker_factors",
     "update_kronecker_factors",
@@ -584,3 +586,129 @@ def _clip_update_rms_in_place(u: torch.Tensor, max_rms: float, eps: float = 1e-7
     scale = (max_rms / (rms + eps)).clamp(max=1.0)
     # in‐place scale
     u.mul_(scale)
+
+
+def _stack_2d(x: torch.Tensor) -> torch.Tensor:
+    """Flattens a (>=2D) tensor to 2D, merging the leading (batch) dims into the smaller matrix edge.
+
+    Args:
+        x: Tensor with at least 2 dimensions.
+
+    Returns:
+        The 2D stacking of ``x``.
+    """
+    if x.ndim == 2:
+        return x
+    b, p, q = x.shape
+    if q <= p:
+        # -> (p, b*q): move the batch next to the smaller edge, then merge.
+        out = x.reshape(b, p, q).permute(1, 0, 2).reshape(p, b * q)
+    else:
+        # -> (b*p, q): contiguous merge into rows.
+        out = x.reshape(b * p, q)
+    return out.contiguous()
+
+
+def _unstack(u: torch.Tensor, shape: torch.Size) -> torch.Tensor:
+    """Inverse of :func:`_stack_2d`, restoring the original ``shape``."""
+    if len(shape) == 2:
+        return u
+    b, p, q = shape
+    if q <= p:
+        return u.reshape(p, b, q).permute(1, 0, 2).reshape(shape)
+    return u.reshape(shape)
+
+
+@registry.register_optimizer("stacked_soap")
+class StackedSoap(SOAP):
+    """Limited-memory SOAP for batched / 3D parameters via 2D stacking.
+
+    Each parameter is flattened to 2D by merging its leading (batch) dims into the smaller matrix edge
+    (see :func:`_stack_2d`); the resulting 2D ``shadow`` parameters are what the base :class:`SOAP`
+    optimizes. Stacking on the smaller edge keeps both Kronecker factors small (the larger edge becomes a
+    single shared factor) and reuses the full, unmodified SOAP machinery (KL-Shampoo + QR eigenbasis).
+    ``step`` only bridges gradients in and the update out; all preconditioning is the inherited SOAP step.
+
+    The shadow shares storage with the real parameter whenever the stacking is a pure view (the row-merge
+    branch and plain 2D parameters), in which case the base SOAP step writes through directly and no
+    copy-back is needed; the permute branch allocates an independent shadow and the update is copied back.
+    A plain 2D parameter is stacked as itself, so this is exactly stock SOAP.
+
+    Because the base optimizer operates on the shadows, ``self.param_groups`` and ``state_dict`` are keyed
+    by the shadow parameters; ``zero_grad`` is overridden to clear the *real* parameters' gradients (the
+    ones ``backward()`` populates).
+
+    SOAP is configured with the fixed settings appropriate for this use: decoupled weight decay, no
+    Nesterov, bias correction on, the QR eigenbasis path with 1 power-iteration step, KL-Shampoo on, and
+    the default matmul precision.
+
+    Args:
+        params: Iterable of parameters to optimize.
+        lr: The learning rate.
+        betas: Inner Adam betas ``(b1, b2)``.
+        shampoo_beta: Beta for the kronecker factor moving average.
+        eps: Inner Adam epsilon.
+        weight_decay: Decoupled weight decay coefficient.
+    """
+
+    def __init__(
+        self,
+        params: Iterable[torch.Tensor],
+        lr: float,
+        betas: tuple[float, float] = (0.9, 0.95),
+        shampoo_beta: float = 0.95,
+        eps: float = 1e-8,
+        weight_decay: float = 0.01,
+    ) -> None:
+        # Build a 2D shadow per parameter; it shares storage with the real param when _stack_2d returns a
+        # view (row-merge / plain 2D), otherwise it is an independent buffer.
+        self._pairs: list[tuple[torch.Tensor, nn.Parameter]] = [
+            (p, nn.Parameter(_stack_2d(p.detach()))) for p in params
+        ]
+        super().__init__(
+            [shadow for _, shadow in self._pairs],
+            lr,
+            betas=betas,
+            shampoo_beta=shampoo_beta,
+            eps=eps,
+            weight_decay=weight_decay,
+            weight_decay_method="decoupled",
+            nesterov=False,
+            correct_bias=True,
+            use_eigh=False,
+            power_iter_steps=1,
+            use_kl_shampoo=True,
+        )
+
+    @override
+    def zero_grad(self, set_to_none: bool = True) -> None:
+        for p, _ in self._pairs:
+            if p.grad is None:
+                continue
+            if set_to_none:
+                p.grad = None
+            else:
+                p.grad.zero_()
+
+    if TYPE_CHECKING:
+
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
+
+    @torch.no_grad()  # type: ignore[misc]
+    @override
+    def step(self, closure: Callable[[], float] | None = None) -> float | None:
+        if closure is not None:
+            raise ValueError("closure is not supported")
+        for p, shadow in self._pairs:
+            shadow.grad = _stack_2d(p.grad) if p.grad is not None else None
+        super().step()
+        for p, shadow in self._pairs:
+            # Only copy back when the shadow has independent storage (the permute branch); otherwise
+            # the base SOAP step already wrote through to p.
+            if shadow.data_ptr() != p.data_ptr():
+                p.copy_(_unstack(shadow, p.shape))
+        return None
