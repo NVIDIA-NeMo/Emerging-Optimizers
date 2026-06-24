@@ -40,37 +40,6 @@ class Muown(Muon):
     replacement for :class:`~emerging_optimizers.orthogonalized_optimizers.muon.Muon` that splits each 2D
     weight into a per-row magnitude and a direction, then optimizes them under their natural geometries:
 
-    - **Direction** ``v``: the Muon update (EMA momentum + Newton-Schulz orthogonalization), reusing the
-      parent's ``scaled_orthogonalize_fn``.
-    - **Magnitude** ``g`` (one entry per output row): Adam, which realizes the :math:`\\ell_\\infty` duality
-      map for the diagonal per-neuron gain.
-
-    The reparameterization ``W = Diag(g / ||v||_row) v`` is held implicitly inside the optimizer, so the
-    forward pass is unchanged. At init ``g``, ``v`` are seeded from ``W`` so Muown starts from the same
-    point as Muon. The row magnitude is the empirical driver of spectral-norm drift under Muon; making it an
-    explicit, separately-optimized variable controls that drift without the indiscriminate shrinkage of
-    plain weight decay.
-
-    A single ``lr`` drives both halves: the direction step carries the ``0.2 * sqrt(max(m, n))`` scaling
-    (via ``extra_scale_factor``) that matches Adam's update RMS norm, so no separate magnitude lr is needed.
-
-    State per parameter:
-      - ``step``
-      - ``g``: per-row magnitude, shape ``[out, 1]``.
-      - ``v_norm``: cached row norms ``||v||_row`` of the direction, shape ``[out, 1]``.
-      - ``momentum_buffer``: EMA momentum of the direction gradient (the Muon momentum on ``v``).
-      - ``m_g``, ``v_g``: Adam first/second moments of the magnitude gradient.
-
-    Note:
-        Weight decay is decoupled and applied to the magnitude ``g`` (which is exactly the spectral-norm
-        driver). Because ``W`` is recomposed from ``g`` after the decay, the invariant ``||W_row|| == g``
-        holds without a separate resync.
-
-    Warning:
-        - This optimizer requires that all parameters passed in are 2D.
-        - It should not be used for the embedding layer, the final fully connected layer, or any 1-D
-          parameters; those can all be optimized by a standard method (e.g., AdamW).
-        - This optimizer is experimental and may change in future versions.
 
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups.
@@ -182,20 +151,16 @@ class Muown(Muon):
                 grad = p.grad.to(torch.float32)
                 weight = p.to(torch.float32)
 
-                # Decompose grad_W into magnitude and direction gradients via the weight-norm Jacobian.
-                # u = v / ||v||_row is O(1) per element; reconstruct the direction v from the live weight.
                 u = weight / g
                 v = u * v_norm
                 grad_g = (grad * u).sum(dim=1, keepdim=True)
                 grad_v = (g / v_norm) * (grad - u * grad_g)
 
-                # Direction: Muon update on v (EMA momentum + Newton-Schulz), reusing the parent LMO.
                 state["momentum_buffer"].lerp_(grad_v, 1 - momentum)
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     direction_update = self.scaled_orthogonalize_fn(state["momentum_buffer"])
                 v_new = v.add(direction_update, alpha=-lr)
 
-                # Magnitude: Adam on g (the l-infinity duality map for the diagonal gain), same lr.
                 magnitude_update = update_functions.calculate_adam_update(
                     grad_g,
                     state["m_g"],
@@ -208,12 +173,8 @@ class Muown(Muon):
                 )
                 g.add_(magnitude_update, alpha=-lr)
 
-                # Decoupled weight decay on the magnitude (the spectral-norm driver).
-                if weight_decay != 0.0:
-                    g.add_(g, alpha=-weight_decay * lr)
+                g.add_(g, alpha=-weight_decay * lr)
 
-                # Recompose W = g * v_new / ||v_new||_row and refresh the cached direction norm. Recomposing
-                # from the decayed g keeps the invariant ||W_row|| == g without a separate resync.
                 v_norm_new = v_new.norm(dim=1, keepdim=True)
                 p.copy_(g * (v_new / v_norm_new))
                 state["v_norm"] = v_norm_new
