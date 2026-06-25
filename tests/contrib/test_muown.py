@@ -17,7 +17,7 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 from muown_reference import MuownReference
 
-from emerging_optimizers.orthogonalized_optimizers.muown import Muown
+from emerging_optimizers.contrib.muown import Muown
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")

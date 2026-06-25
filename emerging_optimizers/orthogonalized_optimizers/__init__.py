@@ -16,7 +16,6 @@ from emerging_optimizers.orthogonalized_optimizers.adaptive_muon import *
 from emerging_optimizers.orthogonalized_optimizers.mop import *
 from emerging_optimizers.orthogonalized_optimizers.muon import *
 from emerging_optimizers.orthogonalized_optimizers.muon_hyperball import *
-from emerging_optimizers.orthogonalized_optimizers.muown import *
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import *
 from emerging_optimizers.orthogonalized_optimizers.polargrad import *
 from emerging_optimizers.orthogonalized_optimizers.scion import *
