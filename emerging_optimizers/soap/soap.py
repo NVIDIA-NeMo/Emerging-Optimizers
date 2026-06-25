@@ -698,7 +698,7 @@ class StackedSoap(SOAP):
             for group in self.param_groups:
                 for p in group["params"]:
                     if p.grad is None:
-                        continue
+                        continue  # pragma: no cover
                     data, grad = p.data, p.grad
                     saved.append((p, data, grad))
                     p.data = _stack_2d(data)
