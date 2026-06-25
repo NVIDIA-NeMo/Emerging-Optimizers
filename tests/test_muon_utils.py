@@ -16,6 +16,7 @@ import math
 from copy import deepcopy
 
 import torch
+from _comparison import assert_close_to_orthogonal, assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -83,7 +84,7 @@ class TestNewtonSchulz(parameterized.TestCase):
         (512, 256),
         (256, 512),
     )
-    def test_newtonschulz5_svd_close(self, dim1, dim2):
+    def test_newtonschulz5_close_to_svd(self, dim1, dim2):
         shape = (dim1, dim2)
         x = torch.randn(*shape, device=self.device, dtype=torch.float32)
         out_zeropowerns = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
@@ -261,6 +262,18 @@ class TestNewtonSchulz(parameterized.TestCase):
             l2_norm_diff_quintic,
             f"{coefficient_type} norm is larger than Quintic norm: {l2_norm_diff_polar:.6f} > {l2_norm_diff_quintic:.6f}",
         )
+
+    @parameterized.product(size=[(512, 256), (256, 512)])
+    def test_polar_express_16steps_almost_orthogonal(self, size):
+        """Polar Express Newton-Schulz with enough steps yields an almost-orthogonal matrix.
+
+        The output ``O`` should satisfy ``O Oᵀ ≈ I`` (or ``Oᵀ O ≈ I`` for the tall case), i.e. its
+        smaller-dimension Gram is close to the identity.
+        """
+        dim1, dim2 = size
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        out = muon_utils.newton_schulz(x, steps=16, coefficient_type="polar_express")
+        assert_close_to_orthogonal(out, diag_atol=1e-5, off_diag_atol=1e-5)
 
     @parameterized.parameters(
         (511, 513),
@@ -461,7 +474,7 @@ class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):
         test_out = muon_utils.newton_schulz_step_tsyrk(x, 2**-1, 2**-2, 2**-3)
         test_ref = muon_utils.newton_schulz_step(x, 2**-1, 2**-2, 2**-3)
 
-        torch.testing.assert_close(test_out, test_ref, atol=0, rtol=0)
+        assert_equal(test_out, test_ref)
 
 
 if __name__ == "__main__":
