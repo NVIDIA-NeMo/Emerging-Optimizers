@@ -606,8 +606,8 @@ class StackedSoapTest(parameterized.TestCase):
         if x.ndim == 2:
             expected_2d = shape
         else:
-            b, p, q = shape
-            expected_2d = (p, b * q) if q <= p else (b * p, q)
+            b, m, n = shape
+            expected_2d = (m, b * n) if n <= m else (b * m, n)
 
         stacked = _stack_2d(x)
         self.assertEqual(stacked.shape, torch.Size(expected_2d))

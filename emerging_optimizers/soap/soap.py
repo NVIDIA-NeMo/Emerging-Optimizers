@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from collections.abc import Iterable
 from contextlib import nullcontext
 from functools import partial
 from typing import TYPE_CHECKING, Callable, override
@@ -591,24 +590,24 @@ def _clip_update_rms_in_place(u: torch.Tensor, max_rms: float, eps: float = 1e-7
 def _stack_2d(x: torch.Tensor) -> torch.Tensor:
     """Flattens a 2D or 3D tensor to 2D, merging the batch dim into the smaller matrix edge.
 
-    A 2D tensor is returned unchanged. A 3D tensor ``(b, p, q)`` is merged into the smaller of its two
-    matrix edges: ``(p, b * q)`` when ``q <= p``, otherwise ``(b * p, q)``.
+    A 2D tensor is returned unchanged. A 3D tensor ``(b, m, n)`` is merged into the smaller of its two
+    matrix edges: ``(m, b * n)`` when ``n <= m``, otherwise ``(b * m, n)``.
 
     Args:
-        x: A 2D matrix or a 3D batched matrix ``(batch, p, q)``.
+        x: A 2D matrix ``(m, n)`` or a 3D batched matrix ``(b, m, n)``.
 
     Returns:
         The 2D stacking of ``x``.
     """
     if x.ndim == 2:
         return x
-    b, p, q = x.shape
-    if q <= p:
-        # -> (p, b*q): move the batch next to the smaller edge, then merge.
-        out = x.permute(1, 0, 2).reshape(p, b * q)
+    b, m, n = x.shape
+    if n <= m:
+        # -> (m, b*n): move the batch next to the smaller edge, then merge.
+        out = x.permute(1, 0, 2).reshape(m, b * n)
     else:
-        # -> (b*p, q): contiguous merge into rows.
-        out = x.reshape(b * p, q)
+        # -> (b*m, n): contiguous merge into rows.
+        out = x.reshape(b * m, n)
     return out.contiguous()
 
 
@@ -616,9 +615,9 @@ def _unstack(u: torch.Tensor, shape: torch.Size) -> torch.Tensor:
     """Inverse of :func:`_stack_2d`, restoring the original ``shape``."""
     if len(shape) == 2:
         return u
-    b, p, q = shape
-    if q <= p:
-        return u.reshape(p, b, q).permute(1, 0, 2).reshape(shape)
+    b, m, n = shape
+    if n <= m:
+        return u.reshape(m, b, n).permute(1, 0, 2).reshape(shape)
     return u.reshape(shape)
 
 
@@ -644,7 +643,7 @@ class StackedSoap(SOAP):
     the default matmul precision.
 
     Args:
-        params: Iterable of 2D or 3D parameters to optimize.
+        params: Iterable of 2D or 3D parameters to optimize or dicts defining parameter groups.
         lr: The learning rate.
         betas: Inner Adam betas ``(b1, b2)``.
         shampoo_beta: Beta for the kronecker factor moving average.
@@ -654,7 +653,7 @@ class StackedSoap(SOAP):
 
     def __init__(
         self,
-        params: Iterable[torch.Tensor],
+        params: ParamsT,
         lr: float,
         betas: tuple[float, float] = (0.9, 0.95),
         shampoo_beta: float = 0.95,
