@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -122,24 +123,20 @@ class SoapUtilsTest(BaseTestCase):
 
         # Each eigenbasis is column-permuted by its own sort_idx.
         for i, (Q_old, Q_sorted) in enumerate(zip(eigenbasis_list, sorted_eigenbasis_list, strict=True)):
-            torch.testing.assert_close(
+            assert_equal(
                 Q_sorted,
                 Q_old[:, sort_idx_list[i]],
                 msg=lambda m, i=i: f"eigenbasis i={i} not permuted by sort_idx\n\n{m}",
-                atol=0,
-                rtol=0,
             )
 
         # exp_avg_sq is permuted along every axis cumulatively.
         expected_sq = exp_avg_sq
         for i, sort_idx in enumerate(sort_idx_list):
             expected_sq = expected_sq.index_select(i, sort_idx)
-        torch.testing.assert_close(
+        assert_equal(
             sorted_exp_avg_sq,
             expected_sq,
             msg=lambda m: f"exp_avg_sq not permuted to match sorted eigenbases\n\n{m}",
-            atol=0,
-            rtol=0,
         )
 
         # Sorted eigenbases yield descending approximate eigenvalues.

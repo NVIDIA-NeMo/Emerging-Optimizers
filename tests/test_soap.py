@@ -17,6 +17,7 @@ from functools import partial
 
 import soap_reference
 import torch
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -440,11 +441,9 @@ class SoapMultiStreamTest(parameterized.TestCase):
             torch.cuda.synchronize()
 
             for i, (p_no, p_with) in enumerate(zip(params_no_stream, params_with_stream)):
-                torch.testing.assert_close(
+                assert_equal(
                     p_with,
                     p_no,
-                    atol=0,
-                    rtol=0,
                     msg=lambda msg: f"Parameter {i} mismatch at step {step}:\n{msg}",
                 )
 

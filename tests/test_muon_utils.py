@@ -16,6 +16,7 @@ import math
 from copy import deepcopy
 
 import torch
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -461,7 +462,7 @@ class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):
         test_out = muon_utils.newton_schulz_step_tsyrk(x, 2**-1, 2**-2, 2**-3)
         test_ref = muon_utils.newton_schulz_step(x, 2**-1, 2**-2, 2**-3)
 
-        torch.testing.assert_close(test_out, test_ref, atol=0, rtol=0)
+        assert_equal(test_out, test_ref)
 
 
 if __name__ == "__main__":

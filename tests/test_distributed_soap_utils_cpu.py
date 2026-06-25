@@ -16,6 +16,7 @@ import os
 import sys
 
 import torch
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -75,9 +76,9 @@ class AllGatherGradAndKroneckerFactorsTpCpuTest(parameterized.TestCase):
             tp_group=self.tp_group,
         )
 
-        torch.testing.assert_close(gathered_grad, full_grad, atol=0, rtol=0)
-        torch.testing.assert_close(gathered_factors[0], full_l, atol=0, rtol=0)
-        torch.testing.assert_close(gathered_factors[1], full_r, atol=0, rtol=0)
+        assert_equal(gathered_grad, full_grad)
+        assert_equal(gathered_factors[0], full_l)
+        assert_equal(gathered_factors[1], full_r)
 
     @parameterized.product(
         shape=((16, 32), (32, 16), (96, 200)),
@@ -113,8 +114,8 @@ class AllGatherGradAndKroneckerFactorsTpCpuTest(parameterized.TestCase):
         )
         soap.update_kronecker_factors(gathered_factors, gathered_grad, shampoo_beta=shampoo_beta)
 
-        torch.testing.assert_close(gathered_factors[0], ref_l, atol=0, rtol=0)
-        torch.testing.assert_close(gathered_factors[1], ref_r, atol=0, rtol=0)
+        assert_equal(gathered_factors[0], ref_l)
+        assert_equal(gathered_factors[1], ref_r)
 
 
 if __name__ == "__main__":

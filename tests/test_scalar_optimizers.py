@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
+from _comparison import assert_equal
 from absl import flags, logging, testing
 from absl.testing import parameterized
 
@@ -282,7 +283,7 @@ class UpdateFunctionTest(parameterized.TestCase):
             grad, exp_avg, momentum=momentum, correct_bias=correct_bias, nesterov=nesterov, step=step
         )
 
-        torch.testing.assert_close(update.abs(), torch.ones(shape, device=self.device), atol=0, rtol=0)
+        assert_equal(update.abs(), torch.ones(shape, device=self.device))
 
     def test_calculate_signum_with_shape_scaling_returns_sign(self) -> None:
         shape = (8, 12)
@@ -300,7 +301,7 @@ class UpdateFunctionTest(parameterized.TestCase):
             use_shape_scaling=True,
         ).abs()
         expected_update = torch.sign(exp_avg).abs() * (2 / (shape[0] + shape[1]))
-        torch.testing.assert_close(update_abs, expected_update, atol=0, rtol=0)
+        assert_equal(update_abs, expected_update)
 
     def test_calculate_lion_update_returns_sign(self) -> None:
         """Tests that Lion update returns sign of interpolated momentum."""
@@ -314,7 +315,7 @@ class UpdateFunctionTest(parameterized.TestCase):
 
         # Update should be sign(beta * m + (1 - beta) * g)
         expected_update = torch.sign(beta * exp_avg_clone + (1 - beta) * grad)
-        torch.testing.assert_close(update, expected_update, atol=0, rtol=0)
+        assert_equal(update, expected_update)
 
         # exp_avg should be updated in-place: lerp_(grad, 1 - beta)
         expected_exp_avg = torch.lerp(exp_avg_clone, grad, 1 - beta)
@@ -331,7 +332,7 @@ class UpdateFunctionTest(parameterized.TestCase):
         update = update_functions.calculate_lion_update(grad, exp_avg, betas=(beta1, beta2), step=1)
 
         expected_update = torch.sign(beta1 * exp_avg_clone + (1 - beta1) * grad)
-        torch.testing.assert_close(update, expected_update, atol=0, rtol=0)
+        assert_equal(update, expected_update)
 
         # With separate beta2, momentum uses beta2
         expected_exp_avg = torch.lerp(exp_avg_clone, grad, 1 - beta2)
@@ -403,21 +404,17 @@ class MAdamUpdateTest(parameterized.TestCase):
         )
 
         case = f"scale_log2={scale_log2}, correct_bias={correct_bias}"
-        torch.testing.assert_close(
+        assert_equal(
             madam_update,
             adam_update,
-            atol=0,
-            rtol=0,
             msg=lambda msg: f"MAdam vs Adam(eps=0) mismatch at {case}:\n\n{msg}",
         )
         # First-moment EMA is unaffected by scaling.
-        torch.testing.assert_close(exp_avg_madam, exp_avg_adam, atol=0, rtol=0)
+        assert_equal(exp_avg_madam, exp_avg_adam)
         # Second-moment storage differs by exactly the (power-of-two) scale.
-        torch.testing.assert_close(
+        assert_equal(
             exp_avg_sq_scaled,
             exp_avg_sq_adam * (2**scale_log2),
-            atol=0,
-            rtol=0,
             msg=lambda msg: f"exp_avg_sq_scaled != s * exp_avg_sq at {case}:\n\n{msg}",
         )
 
@@ -446,11 +443,9 @@ class MAdamUpdateTest(parameterized.TestCase):
             )
 
         # Masked column: exactly zero (not NaN/Inf).
-        torch.testing.assert_close(
+        assert_equal(
             update[:, zero_col],
             torch.zeros(shape[0], device=self.device, dtype=update.dtype),
-            atol=0,
-            rtol=0,
         )
         # Non-masked columns: finite and non-zero.
         nonzero_col_idx = [c for c in range(shape[1]) if c != zero_col]
@@ -487,7 +482,7 @@ class _CommonScalarOptimizerTests:
         original = param.detach().clone()
         opt = self.OPTIMIZER_CLS([param], lr=1e-4)
         opt.step()
-        torch.testing.assert_close(param, original, atol=0, rtol=0)
+        assert_equal(param, original)
 
     def test_state_keys_after_first_step(self) -> None:
         """First step populates exactly the expected state keys, with step==1 and matching-shape buffers."""
@@ -598,7 +593,7 @@ class LionOptimizerTest(_CommonScalarOptimizerTests, _HasBetasTests, parameteriz
         old_param = param.data.clone()
         opt.step()
         diff = old_param - param.data
-        torch.testing.assert_close(diff.abs(), torch.full_like(diff, 0.25), atol=0, rtol=0)
+        assert_equal(diff.abs(), torch.full_like(diff, 0.25))
 
     @parameterized.parameters(
         {"shape": (3, 3)},
@@ -633,7 +628,7 @@ class LionOptimizerTest(_CommonScalarOptimizerTests, _HasBetasTests, parameteriz
         param.grad = torch.zeros(*shape, device=self.device)
         old_param = param.data.clone()
         opt.step()
-        torch.testing.assert_close(param.data, old_param * (1 - lr * wd), atol=0, rtol=0)
+        assert_equal(param.data, old_param * (1 - lr * wd))
 
     @parameterized.parameters(
         {"shape": (3, 3)},
@@ -646,7 +641,7 @@ class LionOptimizerTest(_CommonScalarOptimizerTests, _HasBetasTests, parameteriz
         param.grad = torch.zeros(*shape, device=self.device)
         old_param = param.data.clone()
         opt.step()
-        torch.testing.assert_close(param.data, old_param * (1 - wd), atol=0, rtol=0)
+        assert_equal(param.data, old_param * (1 - wd))
 
     @parameterized.parameters(
         {"shape": (3, 3)},
@@ -660,7 +655,7 @@ class LionOptimizerTest(_CommonScalarOptimizerTests, _HasBetasTests, parameteriz
         param.grad = torch.zeros(*shape, device=self.device)
         old_param = param.data.clone()
         opt.step()
-        torch.testing.assert_close(param.data, old_param - lr, atol=0, rtol=0)
+        assert_equal(param.data, old_param - lr)
 
     @parameterized.parameters(
         {"shape": (3, 3)},
@@ -674,7 +669,7 @@ class LionOptimizerTest(_CommonScalarOptimizerTests, _HasBetasTests, parameteriz
         param.grad = torch.randint(-10, -5, shape, device=self.device, dtype=torch.float32)
         old_param = param.data.clone()
         opt.step()
-        torch.testing.assert_close(param.data, old_param + lr, atol=0, rtol=0)
+        assert_equal(param.data, old_param + lr)
 
 
 class SignumOptimizerTest(_CommonScalarOptimizerTests, parameterized.TestCase):
@@ -708,7 +703,7 @@ class SignumOptimizerTest(_CommonScalarOptimizerTests, parameterized.TestCase):
         old_param = param.data.clone()
         opt.step()
         # bias_correction at step 1 cancels the (1-momentum) factor, so sign(corrected) = sign(grad) = +1.
-        torch.testing.assert_close(old_param - param.data, torch.full(shape, 0.25, device=self.device), atol=0, rtol=0)
+        assert_equal(old_param - param.data, torch.full(shape, 0.25, device=self.device))
 
 
 class LaPropOptimizerTest(_CommonScalarOptimizerTests, _HasBetasTests, _HasEpsTests, parameterized.TestCase):
@@ -741,8 +736,8 @@ class LaPropOptimizerTest(_CommonScalarOptimizerTests, _HasBetasTests, _HasEpsTe
         expected_exp_avg_sq = (1 - beta2) * grad.square()
         normalized_grad = grad / (grad.abs() + opt.param_groups[0]["eps"])
         expected_exp_avg = (1 - beta1) * normalized_grad
-        torch.testing.assert_close(opt.state[param]["exp_avg_sq"], expected_exp_avg_sq, atol=0, rtol=0)
-        torch.testing.assert_close(opt.state[param]["exp_avg"], expected_exp_avg, atol=0, rtol=0)
+        assert_equal(opt.state[param]["exp_avg_sq"], expected_exp_avg_sq)
+        assert_equal(opt.state[param]["exp_avg"], expected_exp_avg)
 
     @parameterized.parameters(
         {"shape": (3, 3)},
@@ -765,9 +760,9 @@ class LaPropOptimizerTest(_CommonScalarOptimizerTests, _HasBetasTests, _HasEpsTe
         )
         param.grad = grad.clone()
         opt.step()
-        torch.testing.assert_close(param, old_param - lr * expected_update, atol=0, rtol=0)
-        torch.testing.assert_close(opt.state[param]["exp_avg"], exp_avg, atol=0, rtol=0)
-        torch.testing.assert_close(opt.state[param]["exp_avg_sq"], exp_avg_sq, atol=0, rtol=0)
+        assert_equal(param, old_param - lr * expected_update)
+        assert_equal(opt.state[param]["exp_avg"], exp_avg)
+        assert_equal(opt.state[param]["exp_avg_sq"], exp_avg_sq)
 
     @parameterized.parameters(
         {"shape": (3, 3)},
@@ -839,9 +834,9 @@ class SimplifiedAdEMAMixOptimizerTest(
         )
         param.grad = grad.clone()
         opt.step()
-        torch.testing.assert_close(param, old_param - lr * expected_update, atol=0, rtol=0)
-        torch.testing.assert_close(opt.state[param]["exp_avg"], exp_avg, atol=0, rtol=0)
-        torch.testing.assert_close(opt.state[param]["exp_avg_sq"], exp_avg_sq, atol=0, rtol=0)
+        assert_equal(param, old_param - lr * expected_update)
+        assert_equal(opt.state[param]["exp_avg"], exp_avg)
+        assert_equal(opt.state[param]["exp_avg_sq"], exp_avg_sq)
 
 
 if __name__ == "__main__":

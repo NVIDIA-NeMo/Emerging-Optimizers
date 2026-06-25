@@ -14,6 +14,7 @@
 # limitations under the License.
 import torch
 import torch.nn as nn
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -94,11 +95,9 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         orthogonalized_opt.step()
         sgd_opt.step()
 
-        torch.testing.assert_close(
+        assert_equal(
             test_param.data,
             ref_param.data,
-            atol=0,
-            rtol=0,
         )
 
     @parameterized.parameters(
@@ -139,11 +138,9 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             orthogonalized_opt.step()
             sgd_opt.step()
 
-        torch.testing.assert_close(
+        assert_equal(
             test_param.data,
             ref_param.data,
-            atol=0,
-            rtol=0,
         )
 
     @parameterized.parameters(
@@ -206,11 +203,9 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         assert not torch.allclose(test_param, test_param.grad)
 
         ref_out = dummy_interleaved_split_orth_fn(test_param.grad)
-        torch.testing.assert_close(
+        assert_equal(
             test_param,
             ref_out,
-            atol=0,
-            rtol=0,
         )
 
     def test_non_2d_param_raises_value_error(self) -> None:
@@ -292,11 +287,9 @@ class MuonTest(parameterized.TestCase):
         )
         muon_opt_indep.step()
 
-        torch.testing.assert_close(
+        assert_equal(
             test_param,
             expected_param,
-            atol=0,
-            rtol=0,
         )
 
     def test_zero_num_ns_steps_raises_value_error(self) -> None:

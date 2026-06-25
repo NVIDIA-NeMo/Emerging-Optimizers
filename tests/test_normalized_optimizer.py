@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import torch
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -164,22 +165,18 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
 
         param.grad = first_grad.clone()
         optimizer.step()
-        torch.testing.assert_close(
+        assert_equal(
             optimizer.state[param]["momentum_buffer"],
             first_grad,
-            atol=0,
-            rtol=0,
         )
 
         param.grad = second_grad.clone()
         optimizer.step()
 
         expected_buffer = second_grad + 0.8 * first_grad
-        torch.testing.assert_close(
+        assert_equal(
             optimizer.state[param]["momentum_buffer"],
             expected_buffer,
-            atol=0,
-            rtol=0,
         )
 
     def test_oblique_adam_zero_gradient(self) -> None:

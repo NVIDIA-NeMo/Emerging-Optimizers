@@ -16,6 +16,7 @@ import os
 import sys
 
 import torch
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -122,11 +123,9 @@ class TpReklsCpuTest(parameterized.TestCase):
                     ref_local = ref_p.detach()
                 else:
                     ref_local = ref_p.detach().chunk(self.world_size, dim=pd)[self.rank]
-                torch.testing.assert_close(
+                assert_equal(
                     tp_p.detach(),
                     ref_local,
-                    atol=0,
-                    rtol=0,
                 )
 
 

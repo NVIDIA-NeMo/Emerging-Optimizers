@@ -15,6 +15,7 @@
 
 import torch
 import torch.nn as nn
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -60,17 +61,15 @@ class TestConv1dFlatWeights(parameterized.TestCase):
         y_ref = conv(x)
         y_test = conv_flat(x)
 
-        torch.testing.assert_close(y_ref, y_test, atol=0, rtol=0)
+        assert_equal(y_ref, y_test)
 
         y_ref.sum().backward()
         y_test.sum().backward()
         if bias:
-            torch.testing.assert_close(
-                conv.weight.grad.view(-1), conv_flat.weight.grad[:, :-1].reshape(-1), atol=0, rtol=0
-            )
-            torch.testing.assert_close(conv.bias.grad, conv_flat.weight.grad[:, -1], atol=0, rtol=0)
+            assert_equal(conv.weight.grad.view(-1), conv_flat.weight.grad[:, :-1].reshape(-1))
+            assert_equal(conv.bias.grad, conv_flat.weight.grad[:, -1])
         else:
-            torch.testing.assert_close(conv.weight.grad.view(-1), conv_flat.weight.grad.reshape(-1), atol=0, rtol=0)
+            assert_equal(conv.weight.grad.view(-1), conv_flat.weight.grad.reshape(-1))
 
     @parameterized.product(
         bias=[False, True],
@@ -97,16 +96,14 @@ class TestConv1dFlatWeights(parameterized.TestCase):
         x = torch.randn(batch_size, in_channels, kernel_size, device=self.device)
         y_ref = conv(x)
         y_test = conv_flat(x)
-        torch.testing.assert_close(y_ref, y_test, atol=0, rtol=0)
+        assert_equal(y_ref, y_test)
         y_ref.sum().backward()
         y_test.sum().backward()
         if bias:
-            torch.testing.assert_close(
-                conv.weight.grad.view(-1), conv_flat.weight.grad[:, :-1].reshape(-1), atol=0, rtol=0
-            )
-            torch.testing.assert_close(conv.bias.grad, conv_flat.weight.grad[:, -1], atol=0, rtol=0)
+            assert_equal(conv.weight.grad.view(-1), conv_flat.weight.grad[:, :-1].reshape(-1))
+            assert_equal(conv.bias.grad, conv_flat.weight.grad[:, -1])
         else:
-            torch.testing.assert_close(conv.weight.grad.view(-1), conv_flat.weight.grad.reshape(-1), atol=0, rtol=0)
+            assert_equal(conv.weight.grad.view(-1), conv_flat.weight.grad.reshape(-1))
 
 
 if __name__ == "__main__":

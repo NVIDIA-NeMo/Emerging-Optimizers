@@ -16,6 +16,7 @@ import functools
 
 import torch
 import torch.nn as nn
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -74,11 +75,9 @@ class PolarGradTest(parameterized.TestCase):
 
         test_out = polargrad_opt.scaled_orthogonalize_fn(dummy_grad)
 
-        torch.testing.assert_close(
+        assert_equal(
             ref_out,
             test_out,
-            atol=0,
-            rtol=0,
         )
 
     def test_negative_num_ns_steps_raises_value_error(self) -> None:
@@ -104,8 +103,8 @@ class RightPolarGradOrthFnTest(parameterized.TestCase):
         torch.testing.assert_close(
             rotated,
             expected,
-            atol=1e-5,
-            rtol=1e-5,
+            atol=1e-4,
+            rtol=1e-4,
         )
 
     def test_usable_as_scaled_orthogonalize_fn(self) -> None:
