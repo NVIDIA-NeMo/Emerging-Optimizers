@@ -170,7 +170,7 @@ class Muown(Muon):
                     continue  # pragma: no cover
 
                 state = self.state[p]
-                state["step"] += 1
+                curr_iter_1_based = state["step"] + 1
                 g = state["g"]
                 v_norm = state["v_norm"]
 
@@ -189,7 +189,7 @@ class Muown(Muon):
                     eps=self.adam_eps,
                     correct_bias=True,
                     nesterov=False,
-                    step=state["step"],
+                    step=curr_iter_1_based,  # 1-based iteration index is used for bias correction
                 )
                 g.add_(magnitude_update, alpha=-lr)
 
@@ -199,5 +199,7 @@ class Muown(Muon):
                 v_norm_new = v_new.norm(dim=1, keepdim=True)
                 p.copy_(g * (v_new / v_norm_new))
                 state["v_norm"] = v_norm_new
+
+                state["step"] += 1
 
         return None
