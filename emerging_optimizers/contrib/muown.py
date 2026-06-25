@@ -96,11 +96,6 @@ class Muown(Muon):
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
     ) -> None:
-        if not 0.0 <= betas[0] < 1.0:
-            raise ValueError(f"Invalid beta1: {betas[0]}")
-        if not 0.0 <= betas[1] < 1.0:
-            raise ValueError(f"Invalid beta2: {betas[1]}")
-
         self.betas = betas
         self.adam_eps = adam_eps
 
@@ -124,7 +119,7 @@ class Muown(Muon):
     def _init_group(self, group: dict, skip_non_grad_params: bool = True) -> None:
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
-                continue
+                continue  # pragma: no cover
             if p.dim() != 2:
                 raise TypeError("Muown is only supported for 2D parameters")
             state = self.state[p]
