@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
-from _comparison import assert_equal
+from _comparison import assert_close_to_identity, assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -77,23 +77,8 @@ class SoapUtilsTest(BaseTestCase):
         self.assertEqual(Q_new_R.shape, (N, N))
 
         # check Q^T Q ~ I
-        expected_identity = torch.eye(M, dtype=Q_new_L.dtype, device=Q_new_L.device)
-        torch.testing.assert_close(
-            Q_new_L.t() @ Q_new_L,
-            expected_identity,
-            atol=1e-5,
-            rtol=1e-5,
-            msg="Orthogonalization failed: Q^T Q is not close enough to the identity matrix.",
-        )
-
-        expected_identity = torch.eye(N, dtype=Q_new_R.dtype, device=Q_new_R.device)
-        torch.testing.assert_close(
-            Q_new_R.t() @ Q_new_R,
-            expected_identity,
-            atol=1e-5,
-            rtol=1e-5,
-            msg="Orthogonalization failed: Q^T Q is not close enough to the identity matrix.",
-        )
+        assert_close_to_identity(Q_new_L.t() @ Q_new_L, diag_atol=1e-5, off_diag_atol=1e-5)
+        assert_close_to_identity(Q_new_R.t() @ Q_new_R, diag_atol=1e-5, off_diag_atol=1e-5)
 
     @parameterized.parameters(  # type: ignore[misc]
         {"N": 4, "M": 8},
@@ -165,16 +150,10 @@ class SoapUtilsTest(BaseTestCase):
             self.assertEqual(Q.shape, (orig_dim, orig_dim))
 
             # Check orthogonality: Q.T @ Q should be close to identity due to orthonormal matrix property
-            identity = torch.eye(orig_dim, dtype=Q.dtype, device=self.device)
             with utils.fp32_matmul_precision("highest"):
                 orthogonality_check = Q.T @ Q
 
-            torch.testing.assert_close(
-                orthogonality_check,
-                identity,
-                atol=1e-3,
-                rtol=1e-3,
-            )
+            assert_close_to_identity(orthogonality_check, diag_atol=1e-3, off_diag_atol=1e-3)
             with utils.fp32_matmul_precision("highest"):
                 # Check that Q diagonalizes the original matrix, by checking if off-diagonal elements are close to zero
                 diagonalized_matrix = Q.T @ kronecker_factor_list[i].float() @ Q
