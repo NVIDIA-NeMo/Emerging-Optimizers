@@ -142,7 +142,7 @@ def distributed_normalize_p2(
     torch.distributed.all_reduce(x_sq_sum, op=torch.distributed.ReduceOp.SUM, group=group)
     norm = torch.sqrt(x_sq_sum).to(x.dtype)
     if not normalize_in_double:
-        norm.clamp_min(eps)
+        norm.clamp_min_(eps)
     return x / norm
 
 
