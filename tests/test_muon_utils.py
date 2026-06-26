@@ -121,28 +121,21 @@ class TestNewtonSchulz(parameterized.TestCase):
             rtol=1e-7,
         )
 
-    @parameterized.parameters(1e-2, 1e-6, 1e-9, 1e-12)
-    def test_newtonschulz_small_eps(self, scale):
-        """Orthogonalization depends only on direction, so scaling the input must not change the output.
-
-        Regression test for issue #229: a too-large ``eps`` in the internal ``F.normalize`` divides
-        small-norm inputs by ``eps`` instead of their norm, silently degenerating the output. The
-        orthogonalized result for ``x`` and ``scale * x`` must match for any ``scale > 0``.
-        """
+    @parameterized.parameters(-20, -40, -60)
+    def test_normalization_scale_invariant(self, exp2):
         x = torch.randn(256, 256, device=self.device, dtype=torch.float32)
-        x = x / x.norm()  # unit Frobenius norm direction
-        ref = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
-        out = muon_utils.newton_schulz(scale * x, steps=5, coefficient_type="quintic")
-        torch.testing.assert_close(
-            out,
-            ref,
-            atol=1e-4,
-            rtol=1e-5,
-            msg=lambda m: (
-                f"newton_schulz not scale-invariant at input scale {scale}: "
-                f"||out||_F={out.norm().item():.4f} vs ||ref||_F={ref.norm().item():.4f}\n{m}"
-            ),
-        )
+        ref = muon_utils.newton_schulz(x, steps=0, eps=0)
+        out = muon_utils.newton_schulz(2**exp2 * x, steps=0, eps=1e-15)
+        assert_equal(ref, out)
+
+    def test_preserve_values_with_underflowed_norm(self):
+        scale = 1e-30
+        x = torch.randn(256, 256, device=self.device, dtype=torch.float32) * scale
+        assert torch.linalg.vector_norm(x) == 0  # should underflow
+        norm_ref = torch.linalg.vector_norm(x, dtype=torch.double)
+        assert norm_ref != 0
+        out = muon_utils.newton_schulz(x, steps=0)
+        torch.testing.assert_close(x / norm_ref, out, atol=0, rtol=1e-7)
 
     @parameterized.parameters(
         (2, 256, 256),

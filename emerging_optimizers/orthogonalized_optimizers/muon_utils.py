@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 from itertools import chain, cycle, islice, repeat
 from typing import Any, Iterator, Literal, Sequence
 
@@ -130,10 +131,18 @@ def get_coefficient_iterator(
 
 
 def distributed_normalize_p2(x: torch.Tensor, eps: float, group: torch.distributed.ProcessGroup) -> torch.Tensor:
-    """Normalize a tensor in a distributed way."""
+    """Normalize a tensor by its distributed Frobenius norm."""
     x_sq_sum = (x * x).sum()
     torch.distributed.all_reduce(x_sq_sum, op=torch.distributed.ReduceOp.SUM, group=group)
-    return x / torch.sqrt(x_sq_sum).clamp_min(eps)
+    norm = torch.sqrt(x_sq_sum)
+    if norm < eps:
+        shift = torch.ceil(torch.where(norm > 0, torch.log2(eps / norm), math.log2(1 / eps)))
+        x = x * torch.exp2(shift)
+        x_sq_sum = (x * x).sum()
+        torch.distributed.all_reduce(x_sq_sum, op=torch.distributed.ReduceOp.SUM, group=group)
+        norm = torch.sqrt(x_sq_sum)
+        assert norm > 0  # Fail if it still underflows
+    return x / norm
 
 
 def newton_schulz(
@@ -192,13 +201,19 @@ def newton_schulz(
     if transpose:
         x = x.mT
 
-    # Ensure spectral norm is at most 1.
-    # NOTE: ``eps`` is a divide-by-zero guard; it must stay well below any realistic ``||x||_F``
-    # yet remain fp32-safe when squared. See issue #229.
+    # Ensure spectral norm is at most 1 by normalizing with the Frobenius norm.
+    # When the norm is below ``eps`` (or has underflowed to 0 because ``x``'s entries are tiny),
+    # we try to scale it to close to eps value.
     if tp_group is not None:
         X = distributed_normalize_p2(x, eps, tp_group)
     else:
-        X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)  # type: ignore[arg-type]
+        norm = torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True)
+        if (norm < eps).any():
+            shift = torch.ceil(torch.where(norm > 0, torch.log2(eps / norm), math.log2(1 / eps)))
+            x = x * torch.exp2(shift)
+            norm = torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True)
+            assert (norm > 0).all()  # assert if it still underflows
+        X = x / norm
 
     if coefficient_type in _COEFFICIENT_SETS:
         coefficient_sets = _COEFFICIENT_SETS[coefficient_type]
