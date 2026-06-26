@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import math
 from itertools import chain, cycle, islice, repeat
 from typing import Any, Iterator, Literal, Sequence
 
@@ -130,18 +129,20 @@ def get_coefficient_iterator(
     return islice(base, steps)
 
 
-def distributed_normalize_p2(x: torch.Tensor, eps: float, group: torch.distributed.ProcessGroup) -> torch.Tensor:
-    """Normalize a tensor by its distributed Frobenius norm."""
-    x_sq_sum = (x * x).sum()
+def distributed_normalize_p2(
+    x: torch.Tensor, eps: float, group: torch.distributed.ProcessGroup, normalize_in_double: bool = False
+) -> torch.Tensor:
+    """Normalize a tensor by its distributed Frobenius norm.
+
+    When ``normalize_in_double`` is set, the squared sum is accumulated in float64 so that tiny
+    entries do not underflow to zero when squared in float32.
+    """
+    x_sq = x.double() if normalize_in_double else x
+    x_sq_sum = (x_sq * x_sq).sum()
     torch.distributed.all_reduce(x_sq_sum, op=torch.distributed.ReduceOp.SUM, group=group)
-    norm = torch.sqrt(x_sq_sum)
-    if norm < eps:
-        shift = torch.ceil(torch.where(norm > 0, torch.log2(eps / norm), math.log2(1 / eps)))
-        x = x * torch.exp2(shift)
-        x_sq_sum = (x * x).sum()
-        torch.distributed.all_reduce(x_sq_sum, op=torch.distributed.ReduceOp.SUM, group=group)
-        norm = torch.sqrt(x_sq_sum)
-        assert norm > 0  # Fail if it still underflows
+    norm = torch.sqrt(x_sq_sum).to(x.dtype)
+    if not normalize_in_double:
+        norm.clamp_min(eps)
     return x / norm
 
 
@@ -154,6 +155,7 @@ def newton_schulz(
     transpose: bool | None = None,
     tp_group: torch.distributed.ProcessGroup | None = None,
     use_syrk: bool = False,
+    normalize_in_double: bool = False,
 ) -> torch.Tensor:
     """Use Newton-Schulz iteration to compute the zeroth power / orthogonalization of x.
 
@@ -186,6 +188,9 @@ def newton_schulz(
             If None, will be determined based on the size of the tensor.
         tp_group: The process group for communication if input is distributed.
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
+        normalize_in_double: Whether to reduce the Frobenius norm in float64. This keeps the squared
+            sum out of float32 underflow for inputs with very small entries, at the cost of a float64
+            reduction.
 
     Returns:
         The orthogonalization of x.
@@ -201,19 +206,17 @@ def newton_schulz(
     if transpose:
         x = x.mT
 
-    # Ensure spectral norm is at most 1 by normalizing with the Frobenius norm.
-    # When the norm is below ``eps`` (or has underflowed to 0 because ``x``'s entries are tiny),
-    # we try to scale it to close to eps value.
+    # Ensure spectral norm is at most 1 by normalizing with the Frobenius norm. Reducing in float64
+    # (``normalize_in_double``) keeps the squared sum out of float32 underflow for tiny-norm inputs.
     if tp_group is not None:
-        X = distributed_normalize_p2(x, eps, tp_group)
+        X = distributed_normalize_p2(x, eps, tp_group, normalize_in_double)
     else:
-        norm = torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True)
-        if (norm < eps).any():
-            shift = torch.ceil(torch.where(norm > 0, torch.log2(eps / norm), math.log2(1 / eps)))
-            x = x * torch.exp2(shift)
-            norm = torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True)
-            assert (norm > 0).all()  # assert if it still underflows
-        X = x / norm
+        if not normalize_in_double:
+            X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)  # type: ignore[arg-type]
+        else:
+            logging.warning("eps is ignored when normalize in double.")
+            norm = torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True, dtype=torch.float64).to(x.dtype)
+            X = x / norm
 
     if coefficient_type in _COEFFICIENT_SETS:
         coefficient_sets = _COEFFICIENT_SETS[coefficient_type]

@@ -125,16 +125,16 @@ class TestNewtonSchulz(parameterized.TestCase):
     def test_normalization_scale_invariant(self, exp2):
         x = torch.randn(256, 256, device=self.device, dtype=torch.float32)
         ref = muon_utils.newton_schulz(x, steps=0, eps=0)
-        out = muon_utils.newton_schulz(2**exp2 * x, steps=0, eps=1e-15)
+        out = muon_utils.newton_schulz(2**exp2 * x, steps=0, eps=0, normalize_in_double=True)
         assert_equal(ref, out)
 
-    def test_preserve_values_with_underflowed_norm(self):
+    def test_preserve_values_with_underflowed_norm_in_fp64(self):
         scale = 1e-30
         x = torch.randn(256, 256, device=self.device, dtype=torch.float32) * scale
         assert torch.linalg.vector_norm(x) == 0  # should underflow
         norm_ref = torch.linalg.vector_norm(x, dtype=torch.double)
         assert norm_ref != 0
-        out = muon_utils.newton_schulz(x, steps=0)
+        out = muon_utils.newton_schulz(x, steps=0, normalize_in_double=True)
         torch.testing.assert_close(x / norm_ref, out, atol=0, rtol=1e-6)
 
     @parameterized.parameters(
