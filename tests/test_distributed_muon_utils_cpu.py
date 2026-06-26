@@ -17,6 +17,7 @@ import sys
 
 import numpy as np
 import torch
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -195,7 +196,7 @@ class TestTensorParallelNewtonSchulz(parameterized.TestCase):
         )
         ref_out = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
 
-        torch.testing.assert_close(test_out, ref_out, atol=0, rtol=0)
+        assert_equal(test_out, ref_out)
 
     @parameterized.product(
         shape=((20, 16), (16, 32)),

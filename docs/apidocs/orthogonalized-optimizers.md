@@ -46,6 +46,8 @@ emerging_optimizers.orthogonalized_optimizers
 .. autoclass:: PolarGrad
     :members:
 
+.. autofunction:: right_polargrad_orth_fn
+
 
 :hidden:`AdaptiveMuon`
 ~~~~~~~~~~~~~~~~~~~~~~~

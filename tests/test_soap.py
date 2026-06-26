@@ -17,6 +17,7 @@ from functools import partial
 
 import soap_reference
 import torch
+from _comparison import assert_close_to_identity, assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -248,14 +249,7 @@ class SoapFunctionsTest(parameterized.TestCase):
 
         # Check eigenbasis orthogonality
         for Q in updated_eigenbasis_list:
-            identity = torch.eye(Q.shape[0], device=Q.device, dtype=Q.dtype)
-            torch.testing.assert_close(
-                Q.T @ Q,
-                identity,
-                atol=1e-5,
-                rtol=1e-5,
-                msg="Updated eigenbasis is not orthogonal.",
-            )
+            assert_close_to_identity(Q.T @ Q, diag_atol=1e-5, off_diag_atol=1e-5)
 
         # exp_avg is projected via orthogonal transforms, so norm should be preserved
         torch.testing.assert_close(
@@ -440,11 +434,9 @@ class SoapMultiStreamTest(parameterized.TestCase):
             torch.cuda.synchronize()
 
             for i, (p_no, p_with) in enumerate(zip(params_no_stream, params_with_stream)):
-                torch.testing.assert_close(
+                assert_equal(
                     p_with,
                     p_no,
-                    atol=0,
-                    rtol=0,
                     msg=lambda msg: f"Parameter {i} mismatch at step {step}:\n{msg}",
                 )
 

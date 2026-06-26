@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -145,7 +146,7 @@ class EigUtilsTest(BaseTestCase):
         _, p = torch.linalg.eigh(a)
 
         ref = p.T @ a @ p
-        torch.testing.assert_close(eig_utils.conjugate(a, p), ref, atol=0, rtol=0)
+        assert_equal(eig_utils.conjugate(a, p), ref)
 
     def test_eigh_with_fallback_reraises_runtime_error_when_force_double(self) -> None:
         """Test that eigh_with_fallback re-raises when force_double=True and eigh fails."""
