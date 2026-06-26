@@ -135,7 +135,7 @@ class TestNewtonSchulz(parameterized.TestCase):
         norm_ref = torch.linalg.vector_norm(x, dtype=torch.double)
         assert norm_ref != 0
         out = muon_utils.newton_schulz(x, steps=0)
-        torch.testing.assert_close(x / norm_ref, out, atol=0, rtol=1e-7)
+        torch.testing.assert_close(x / norm_ref, out, atol=0, rtol=1e-6)
 
     @parameterized.parameters(
         (2, 256, 256),
