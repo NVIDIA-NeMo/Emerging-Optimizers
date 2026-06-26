@@ -606,7 +606,7 @@ class StackedSoapTest(parameterized.TestCase):
 
         restored = _unstack(stacked, x.shape)
         self.assertEqual(restored.shape, x.shape)
-        torch.testing.assert_close(restored, x, atol=0, rtol=0)
+        assert_equal(restored, x)
 
     @parameterized.product(shape=[(8, 5), (16, 16), (5, 7)])
     def test_2d_input_7steps_matches_vanilla_soap(self, shape) -> None:
@@ -633,11 +633,9 @@ class StackedSoapTest(parameterized.TestCase):
             p_ref.grad = grad.clone()
             opt_stacked.step()
             opt_ref.step()
-            torch.testing.assert_close(
+            assert_equal(
                 p_stacked.detach(),
                 p_ref.detach(),
-                atol=0,
-                rtol=0,
                 msg=lambda m: f"StackedSoap must match stock SOAP exactly on 2D params.\n\n{m}",
             )
 
@@ -668,11 +666,9 @@ class StackedSoapTest(parameterized.TestCase):
             p_ref.grad = _stack_2d(grad)
             opt_stacked.step()
             opt_ref.step()
-            torch.testing.assert_close(
+            assert_equal(
                 _stack_2d(p_stacked.detach()),
                 p_ref.detach(),
-                atol=0,
-                rtol=0,
                 msg=lambda m: f"StackedSoap on a 3D param must match vanilla SOAP on its 2D stacking.\n\n{m}",
             )
 
