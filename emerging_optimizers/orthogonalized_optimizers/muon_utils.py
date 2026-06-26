@@ -190,7 +190,8 @@ def newton_schulz(
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
         normalize_in_double: Whether to reduce the Frobenius norm in float64. This keeps the squared
             sum out of float32 underflow for inputs with very small entries, at the cost of a float64
-            reduction.
+            reduction. Without customized kernels, manually handle scaling without triggering a device to host
+            sync are usually more expensive than using double.
 
     Returns:
         The orthogonalization of x.
