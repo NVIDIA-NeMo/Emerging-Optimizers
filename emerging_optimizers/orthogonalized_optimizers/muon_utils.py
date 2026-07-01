@@ -284,6 +284,8 @@ def newton_schulz_tp(
         use_syrk: Whether to use the Triton SYRK kernel for the Newton-Schulz iteration. Forwarded to the
             underlying ``newton_schulz`` in every path (non-TP fallback, ``duplicated``, ``distributed``); it only
             takes effect when the fp32 matmul precision is ``"medium"`` (see ``newton_schulz``).
+            Requires both matrix dimensions to be multiples of 8 (16-byte stride alignment for bf16/fp32);
+            weights with unaligned shapes will raise an ``AssertionError`` inside ``tsyrk_ex``.
     """
     if partition_dim is None:
         # Fallback path for non TP params.
