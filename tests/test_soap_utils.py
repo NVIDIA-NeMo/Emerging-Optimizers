@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
-from _comparison import assert_close_to_identity, assert_equal
+from _comparison import assert_close_to_identity
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -61,10 +61,12 @@ class SoapUtilsTest(BaseTestCase):
             torch.randn(M, M, device=self.device),
             torch.randn(N, N, device=self.device),
         ]
+        exp_avg_sq = torch.abs(torch.randn(M, N, device=self.device))
 
-        eigvals_list, Q_new_list = soap_utils.get_eigenbasis_qr(
+        eigvals_list, Q_new_list, permuted_exp_avg_sq = soap_utils.get_eigenbasis_qr(
             kronecker_factor_list=kronecker_factor_list,
             eigenbasis_list=eigenbasis_list,
+            exp_avg_sq=exp_avg_sq,
             power_iter_steps=1,
         )
 
@@ -83,6 +85,8 @@ class SoapUtilsTest(BaseTestCase):
         self.assertEqual(len(eigvals_list), 2)
         for eigvals, kronecker_factor, Q_new in zip(eigvals_list, kronecker_factor_list, Q_new_list, strict=True):
             self.assertEqual(eigvals.shape, (kronecker_factor.shape[0],))
+            # Eigenvalues (and matching eigenbasis columns) are returned in descending order
+            self.assertTrue(torch.all(eigvals[:-1] >= eigvals[1:]))
             torch.testing.assert_close(
                 eigvals,
                 torch.diag(Q_new.t() @ kronecker_factor @ Q_new),
@@ -91,54 +95,7 @@ class SoapUtilsTest(BaseTestCase):
                 msg=lambda msg: f"eigvals do not match the Rayleigh quotients diag(Q^T K Q)\n\n{msg}",
             )
 
-    @parameterized.parameters(  # type: ignore[misc]
-        {"N": 4, "M": 8},
-        {"N": 16, "M": 8},
-    )
-    def test_sort_eigenbasis_by_approx_eigvals(self, N: int, M: int) -> None:
-        """Sort function permutes eigenbasis columns and exp_avg_sq slots consistently."""
-        g = torch.randint(-5, 6, (M, N), device=self.device) / 16.0
-        # Add a small ridge so K is full-rank (g @ g.t() is rank-deficient when M > N, etc.),
-        # which keeps the approximate eigenvalues away from numerical zero where ordering becomes
-        # ambiguous under float rounding.
-        eps_eye = lambda n: 1e-3 * torch.eye(n, device=self.device)
-        kronecker_factor_list = [g @ g.t() + eps_eye(M), g.t() @ g + eps_eye(N)]
-        eigenbasis_list = [torch.linalg.qr(Q).Q for Q in kronecker_factor_list]
-        exp_avg_sq = torch.abs(torch.randint(-5, 6, (M, N), device=self.device) / 16.0)
-
-        sorted_eigenbasis_list, sorted_exp_avg_sq = soap_utils.sort_eigenbasis_by_approx_eigvals(
-            kronecker_factor_list,
-            eigenbasis_list,
-            exp_avg_sq,
-        )
-
-        # Compute the expected per-axis permutations from the originals.
-        sort_idx_list = []
-        for K, Q in zip(kronecker_factor_list, eigenbasis_list, strict=True):
-            sort_idx_list.append(torch.argsort(torch.diag(Q.t() @ K @ Q), descending=True))
-
-        # Each eigenbasis is column-permuted by its own sort_idx.
-        for i, (Q_old, Q_sorted) in enumerate(zip(eigenbasis_list, sorted_eigenbasis_list, strict=True)):
-            assert_equal(
-                Q_sorted,
-                Q_old[:, sort_idx_list[i]],
-                msg=lambda m, i=i: f"eigenbasis i={i} not permuted by sort_idx\n\n{m}",
-            )
-
-        # exp_avg_sq is permuted along every axis cumulatively.
-        expected_sq = exp_avg_sq
-        for i, sort_idx in enumerate(sort_idx_list):
-            expected_sq = expected_sq.index_select(i, sort_idx)
-        assert_equal(
-            sorted_exp_avg_sq,
-            expected_sq,
-            msg=lambda m: f"exp_avg_sq not permuted to match sorted eigenbases\n\n{m}",
-        )
-
-        # Sorted eigenbases yield descending approximate eigenvalues.
-        for K, Q in zip(kronecker_factor_list, sorted_eigenbasis_list, strict=True):
-            sorted_eigvals = torch.diag(Q.t() @ K @ Q)
-            self.assertTrue(torch.all(sorted_eigvals[:-1] >= sorted_eigvals[1:]))
+        self.assertEqual(permuted_exp_avg_sq.shape, (M, N))
 
     @parameterized.parameters(  # type: ignore[misc]
         {"dims": [128, 512]},
