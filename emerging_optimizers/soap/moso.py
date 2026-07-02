@@ -242,9 +242,9 @@ def _update_eigenbasis_and_adam_exp_avgs(
     )
 
     if use_eigh:
-        (updated_eigenbasis,) = soap_utils.get_eigenbasis_eigh([momentum_factor])
+        _, (updated_eigenbasis,) = soap_utils.get_eigenbasis_eigh([momentum_factor])
     else:
-        (updated_eigenbasis,) = soap_utils.get_eigenbasis_qr(
+        _, (updated_eigenbasis,) = soap_utils.get_eigenbasis_qr(
             [momentum_factor],
             [eigenbasis],
             power_iter_steps=power_iter_steps,

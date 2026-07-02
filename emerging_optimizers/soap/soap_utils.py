@@ -16,6 +16,7 @@ from typing import TypeAlias
 
 import torch
 
+from emerging_optimizers import utils
 from emerging_optimizers.utils import eig as eig_utils
 
 
@@ -63,14 +64,15 @@ def sort_eigenbasis_by_approx_eigvals(
 
 def get_eigenbasis_eigh(
     kronecker_factor_list: TensorList,
-) -> TensorList:
-    """Computes the eigenbases of the preconditioner using torch.linalg.eigh decomposition.
+) -> tuple[TensorList, TensorList]:
+    """Computes the eigenvalues and eigenbases of the preconditioner using torch.linalg.eigh decomposition.
 
     Args:
         kronecker_factor_list: Matrix List to compute eigenbases of
 
     Returns:
-        List of orthonormal kronecker factor eigenbases matrices
+        Tuple of (list of eigenvalues in descending order, list of orthonormal kronecker factor
+        eigenbases matrices).
 
     Example:
         .. code-block:: python
@@ -81,17 +83,17 @@ def get_eigenbasis_eigh(
             k_factor2 = torch.randn(5, 5)
             k_factor2 = k_factor2 @ k_factor2.T  # Make symmetric positive definite
 
-            # Get orthogonal matrices for these factors
-            ortho_matrices = get_eigenbasis_eigh([k_factor1, k_factor2])
-            # ortho_matrices[0] has shape [4, 4] and ortho_matrices[1] has shape [5, 5]
+            eigvals_list, ortho_matrices = get_eigenbasis_eigh([k_factor1, k_factor2])
     """
     updated_eigenbasis_list: TensorList = []
+    updated_eigvals_list: TensorList = []
 
     for kronecker_factor in kronecker_factor_list:
-        _, eigenvectors = eig_utils.eigh_with_fallback(kronecker_factor, force_double=False)
+        eigvals, eigenvectors = eig_utils.eigh_with_fallback(kronecker_factor, force_double=False)
+        updated_eigvals_list.append(eigvals)
         updated_eigenbasis_list.append(eigenvectors)
 
-    return updated_eigenbasis_list
+    return updated_eigvals_list, updated_eigenbasis_list
 
 
 def get_eigenbasis_svd(
@@ -136,12 +138,15 @@ def get_eigenbasis_qr(
     kronecker_factor_list: TensorList,
     eigenbasis_list: TensorList,
     power_iter_steps: int = 1,
-) -> TensorList:
+) -> tuple[TensorList, TensorList]:
     """Updates the eigenbases of the preconditioner using power iteration and QR.
 
     Computes using multiple rounds of power iteration followed by QR decomposition (orthogonal iteration).
     ``eigenbasis_list`` is expected to be already sorted by descending approximate eigenvalues (see
     :func:`sort_eigenbasis_by_approx_eigvals`).
+
+    The approximate eigenvalues of each kronecker factor in its updated eigenbasis (the Rayleigh
+    quotients :math:`\\mathrm{diag}(Q^{\\top} K Q)`) are also computed.
 
     Args:
         kronecker_factor_list: List of preconditioner matrices (L and R).
@@ -150,7 +155,8 @@ def get_eigenbasis_qr(
             More steps can lead to better convergence but increased computation time.
 
     Returns:
-        Updated list of orthonormal eigenbases (QL and QR).
+        Tuple of (list of approximate eigenvalues of each kronecker factor in its updated eigenbasis,
+        updated list of orthonormal eigenbases (QL and QR)).
 
     Example:
         .. code-block:: python
@@ -164,7 +170,7 @@ def get_eigenbasis_qr(
 
             # Get orthogonal matrices for these kronecker factors
             kronecker_factor_list = [k_factor1, k_factor2]
-            eigenbasis_list = get_eigenbasis_eigh(kronecker_factor_list)
+            _, eigenbasis_list = get_eigenbasis_eigh(kronecker_factor_list)
 
             # Perturb the kronecker factor matrices, simulating the effect of gradient updates
             perturbation = 1e-2*torch.randn(n, m)
@@ -173,12 +179,13 @@ def get_eigenbasis_qr(
             perturbed_kronecker_factor_list[1] = k_factor2 + perturbation.T@perturbation
 
             # Refine the orthogonal matrices using QR (eigenbasis_list already sorted)
-            updated_ortho_matrices = get_eigenbasis_qr(
+            eigvals_list, updated_ortho_matrices = get_eigenbasis_qr(
                 perturbed_kronecker_factor_list,
                 eigenbasis_list,
             )
     """
     updated_eigenbasis_list: TensorList = []
+    updated_eigvals_list: TensorList = []
     for kronecker_factor, eigenbasis in zip(kronecker_factor_list, eigenbasis_list, strict=True):
         Q = eig_utils.orthogonal_iteration(
             kronecker_factor=kronecker_factor,
@@ -186,5 +193,7 @@ def get_eigenbasis_qr(
             power_iter_steps=power_iter_steps,
         )
         updated_eigenbasis_list.append(Q)
+        with utils.fp32_matmul_precision("highest"):
+            updated_eigvals_list.append(eig_utils.conjugate(kronecker_factor, Q, diag=True))
 
-    return updated_eigenbasis_list
+    return updated_eigvals_list, updated_eigenbasis_list

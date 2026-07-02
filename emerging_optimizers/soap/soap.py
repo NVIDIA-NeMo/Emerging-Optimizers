@@ -157,6 +157,9 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 state["L"], state["R"] = init_kronecker_factors(p.shape, device=p.device)
                 state["Q_L"] = torch.eye(p.shape[0], device=p.device)
                 state["Q_R"] = torch.eye(p.shape[1], device=p.device)
+                # Zeros match diag(Q^T K Q) of the zero-initialized kronecker factors; consumers clamp by eps.
+                state["eigvals_L"] = torch.zeros(p.shape[0], device=p.device)
+                state["eigvals_R"] = torch.zeros(p.shape[1], device=p.device)
 
     if TYPE_CHECKING:
 
@@ -208,10 +211,9 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     # in the math equation that needs 1-based iteration count.
                     curr_iter_1_based = state["step"] + 1
 
-                    # Define kronecker_factor_update_fn based on whether to use KL-Shampoo here
-                    # because it needs access to eigenbasis_list and group
                     kronecker_factor_list = [state["L"], state["R"]]
                     eigenbasis_list = [state["Q_L"], state["Q_R"]]
+                    eigvals_list = [state["eigvals_L"], state["eigvals_R"]]
 
                     if not self.use_kl_shampoo:
                         kronecker_factor_update_fn = update_kronecker_factors
@@ -219,6 +221,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         kronecker_factor_update_fn = partial(
                             update_kronecker_factors_kl_shampoo,
                             eigenbasis_list=eigenbasis_list,
+                            eigvals_list=eigvals_list,
                             eps=group["eps"],
                         )
 
@@ -235,15 +238,18 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     use_eigh = self.use_eigh if state["step"] != 0 else True
 
                     with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
-                        updated_eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_exp_avgs(
-                            kronecker_factor_list=kronecker_factor_list,
-                            eigenbasis_list=eigenbasis_list,
-                            exp_avg_sq=state["exp_avg_sq"],
-                            exp_avg=state["exp_avg"],
-                            use_eigh=use_eigh,
-                            power_iter_steps=self.power_iter_steps,
+                        updated_eigvals_list, updated_eigenbasis_list, exp_avg, exp_avg_sq = (
+                            update_eigenbasis_and_exp_avgs(
+                                kronecker_factor_list=kronecker_factor_list,
+                                eigenbasis_list=eigenbasis_list,
+                                exp_avg_sq=state["exp_avg_sq"],
+                                exp_avg=state["exp_avg"],
+                                use_eigh=use_eigh,
+                                power_iter_steps=self.power_iter_steps,
+                            )
                         )
                         state["Q_L"], state["Q_R"] = updated_eigenbasis_list
+                        state["eigvals_L"], state["eigvals_R"] = updated_eigvals_list
 
                         # rebind local ref so precondition() below uses the updated Q
                         eigenbasis_list = updated_eigenbasis_list
@@ -375,6 +381,7 @@ def update_kronecker_factors_kl_shampoo(
     grad: torch.Tensor,
     shampoo_beta: float,
     eigenbasis_list: list[torch.Tensor],
+    eigvals_list: list[torch.Tensor],
     eps: float,
     eigval_exp: float = -1.0,
 ) -> None:
@@ -383,15 +390,17 @@ def update_kronecker_factors_kl_shampoo(
     Implements the Kullback–Leibler minimization update from https://arxiv.org/pdf/2509.03378.
 
     For a gradient :math:`G \\in \\mathbb{R}^{m \\times n}`, current kronecker factors
-    :math:`L_t \\in \\mathbb{R}^{m \\times m}`, :math:`R_t \\in \\mathbb{R}^{n \\times n}`, and their
-    orthonormal eigenbases :math:`Q_L, Q_R`, the approximate eigenvalues in the current eigenbasis are
+    :math:`L_t \\in \\mathbb{R}^{m \\times m}`, :math:`R_t \\in \\mathbb{R}^{n \\times n}`, their
+    orthonormal eigenbases :math:`Q_L, Q_R`, and the approximate eigenvalues in those eigenbases
 
     .. math::
         \\Lambda_L = \\mathrm{diag}(Q_L^{\\top} L_t Q_L), \\quad
         \\Lambda_R = \\mathrm{diag}(Q_R^{\\top} R_t Q_R)
 
-    and the EMA update with momentum :math:`\\beta` (= ``shampoo_beta``) and exponent :math:`p`
-    (= ``eigval_exp``, default ``-1``) is
+    (passed as ``eigvals_list``, typically computed and stored at the previous eigenbasis update, see
+    :func:`~emerging_optimizers.soap.soap_utils.get_eigenbasis_qr` and
+    :func:`~emerging_optimizers.soap.soap_utils.get_eigenbasis_eigh`), the EMA update with momentum
+    :math:`\\beta` (= ``shampoo_beta``) and exponent :math:`p` (= ``eigval_exp``, default ``-1``) is
 
     .. math::
         L_{t+1} = \\beta\\, L_t + \\frac{1-\\beta}{n}\\, G\\, Q_R\\, \\mathrm{diag}(\\Lambda_R^{p})\\, Q_R^{\\top} G^{\\top} \\\\
@@ -404,6 +413,7 @@ def update_kronecker_factors_kl_shampoo(
         grad: Gradient tensor of the parameter being optimized
         shampoo_beta: Momentum coefficient for updating preconditioners.
         eigenbasis_list: List of orthonormal eigenbases of the kronecker factor matrices
+        eigvals_list: List of approximate eigenvalues of each kronecker factor in its eigenbasis.
         eps: Small offset for numerical stability.
         eigval_exp: Exponent applied to the (clamped) eigenvalues.
     """
@@ -413,8 +423,7 @@ def update_kronecker_factors_kl_shampoo(
     # Scale the gradient matrix by the approximate eigenvalues and the eigenbasis
     # G@Q_R@λ_R^(−1)@Q_R.T@G.T/dim(GG.T) and G.T@Q_L@λ_L^(−1)@Q_L.T@G/dim(G.TG)
     updates = []
-    for idx, (kronecker_factor, eigenbasis) in enumerate(zip(kronecker_factor_list, eigenbasis_list, strict=True)):
-        approx_eigvals = utils.eig.conjugate(kronecker_factor, eigenbasis, diag=True)
+    for idx, (eigenbasis, approx_eigvals) in enumerate(zip(eigenbasis_list, eigvals_list, strict=True)):
         scale_factor = 1 / grad.shape[idx] * approx_eigvals.clamp_min(eps) ** eigval_exp
 
         logging.debug(f"scale_factor[{idx}]: {scale_factor}")
@@ -437,14 +446,15 @@ def update_eigenbasis_and_exp_avgs(
     exp_avg: torch.Tensor,
     use_eigh: bool = False,
     power_iter_steps: int = 1,
-) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
+) -> tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor, torch.Tensor]:
     """Updates the eigenbases and moving averages.
 
     This function performs an update of the eigenbases (QL and QR)
     used for preconditioning. It follows these steps:
 
     1. Projects exp_avg back to the original basis
-    2. Updates the eigenbases using QR decomposition and power iteration (orthogonal iteration)
+    2. Updates the eigenbases (via eigh, or QR decomposition and power iteration (orthogonal iteration)),
+       along with the (approximate) eigenvalues of the kronecker factors in the updated eigenbases
     3. Projects exp_avg back to the new eigenbasis
 
     Args:
@@ -463,6 +473,7 @@ def update_eigenbasis_and_exp_avgs(
 
     Returns:
         A tuple containing:
+            - List of (approximate) eigenvalues of each kronecker factor in its updated eigenbasis
             - Updated list of eigenbases (QL and QR)
             - Updated exp_avg tensor projected to the new eigenbasis
             - Updated exp_avg_sq tensor
@@ -474,8 +485,8 @@ def update_eigenbasis_and_exp_avgs(
         >>> QR = torch.randn(20, 20)
         >>> exp_avg_sq = torch.randn(10, 20)
         >>> exp_avg = torch.randn(10, 20)
-        >>> updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = update_eigenbasis_and_exp_avgs(
-        ...     [L, R], [QL, QR], exp_avg_sq, exp_avg)
+        >>> eigvals_list, updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = (
+        ...     update_eigenbasis_and_exp_avgs([L, R], [QL, QR], exp_avg_sq, exp_avg))
 
     """
     # Step 1: Project exp_avg back to the original basis
@@ -496,15 +507,15 @@ def update_eigenbasis_and_exp_avgs(
         exp_avg_sq,
     )
 
-    # Step 2b: Update eigenbases
+    # Step 2b: Update eigenbases and compute the eigenvalues in the updated eigenbases
     if use_eigh:
-        updated_eigenbasis_list = soap_utils.get_eigenbasis_eigh(
+        updated_eigvals_list, updated_eigenbasis_list = soap_utils.get_eigenbasis_eigh(
             kronecker_factor_list,
         )
     else:
         # Use QR decomposition and power iteration (orthogonal iteration) starting from the
         # pre-sorted eigenbases.
-        updated_eigenbasis_list = soap_utils.get_eigenbasis_qr(
+        updated_eigvals_list, updated_eigenbasis_list = soap_utils.get_eigenbasis_qr(
             kronecker_factor_list,
             eigenbasis_list,
             power_iter_steps,
@@ -517,7 +528,7 @@ def update_eigenbasis_and_exp_avgs(
         dims=[[0], [0]],
     )
 
-    return updated_eigenbasis_list, exp_avg, exp_avg_sq
+    return updated_eigvals_list, updated_eigenbasis_list, exp_avg, exp_avg_sq
 
 
 @torch.no_grad()  # type: ignore[misc]

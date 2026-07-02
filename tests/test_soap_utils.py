@@ -62,7 +62,7 @@ class SoapUtilsTest(BaseTestCase):
             torch.randn(N, N, device=self.device),
         ]
 
-        Q_new_list = soap_utils.get_eigenbasis_qr(
+        eigvals_list, Q_new_list = soap_utils.get_eigenbasis_qr(
             kronecker_factor_list=kronecker_factor_list,
             eigenbasis_list=eigenbasis_list,
             power_iter_steps=1,
@@ -79,6 +79,17 @@ class SoapUtilsTest(BaseTestCase):
         # check Q^T Q ~ I
         assert_close_to_identity(Q_new_L.t() @ Q_new_L, diag_atol=1e-5, off_diag_atol=1e-5)
         assert_close_to_identity(Q_new_R.t() @ Q_new_R, diag_atol=1e-5, off_diag_atol=1e-5)
+
+        self.assertEqual(len(eigvals_list), 2)
+        for eigvals, kronecker_factor, Q_new in zip(eigvals_list, kronecker_factor_list, Q_new_list, strict=True):
+            self.assertEqual(eigvals.shape, (kronecker_factor.shape[0],))
+            torch.testing.assert_close(
+                eigvals,
+                torch.diag(Q_new.t() @ kronecker_factor @ Q_new),
+                atol=1e-5,
+                rtol=1e-5,
+                msg=lambda msg: f"eigvals do not match the Rayleigh quotients diag(Q^T K Q)\n\n{msg}",
+            )
 
     @parameterized.parameters(  # type: ignore[misc]
         {"N": 4, "M": 8},
@@ -141,13 +152,18 @@ class SoapUtilsTest(BaseTestCase):
             k_factor = k_factor @ k_factor.T + torch.eye(dim, device=self.device) * 1e-5
             kronecker_factor_list.append(k_factor)
 
-        Q_list = soap_utils.get_eigenbasis_eigh(kronecker_factor_list)
+        eigvals_list, Q_list = soap_utils.get_eigenbasis_eigh(kronecker_factor_list)
 
         self.assertEqual(len(Q_list), len(kronecker_factor_list))
+        self.assertEqual(len(eigvals_list), len(kronecker_factor_list))
 
-        for i, Q in enumerate(Q_list):
+        for i, (eigvals, Q) in enumerate(zip(eigvals_list, Q_list, strict=True)):
             orig_dim = dims[i]
             self.assertEqual(Q.shape, (orig_dim, orig_dim))
+            self.assertEqual(eigvals.shape, (orig_dim,))
+
+            # Eigenvalues are returned in descending order
+            self.assertTrue(torch.all(eigvals[:-1] >= eigvals[1:]))
 
             # Check orthogonality: Q.T @ Q should be close to identity due to orthonormal matrix property
             with utils.fp32_matmul_precision("highest"):

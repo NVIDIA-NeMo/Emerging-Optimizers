@@ -21,6 +21,7 @@ from _comparison import assert_close_to_identity, assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
+from emerging_optimizers import utils
 from emerging_optimizers.soap import REKLS, SOAP, soap
 from emerging_optimizers.soap.soap import StackedSoap, _clip_update_rms_in_place, _stack_2d, _unstack
 
@@ -232,18 +233,23 @@ class SoapFunctionsTest(parameterized.TestCase):
         exp_avg = torch.randn(M, N, device=self.device)
         exp_avg_norm_before = torch.linalg.norm(exp_avg)
 
-        updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = soap.update_eigenbasis_and_exp_avgs(
-            kronecker_factor_list=kronecker_factor_list,
-            eigenbasis_list=eigenbasis_list,
-            exp_avg_sq=exp_avg_sq,
-            exp_avg=exp_avg,
-            use_eigh=use_eigh,
+        eigvals_list, updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = (
+            soap.update_eigenbasis_and_exp_avgs(
+                kronecker_factor_list=kronecker_factor_list,
+                eigenbasis_list=eigenbasis_list,
+                exp_avg_sq=exp_avg_sq,
+                exp_avg=exp_avg,
+                use_eigh=use_eigh,
+            )
         )
 
         # Check output shapes
         self.assertEqual(len(updated_eigenbasis_list), 2)
         self.assertEqual(updated_eigenbasis_list[0].shape, (M, M))
         self.assertEqual(updated_eigenbasis_list[1].shape, (N, N))
+        self.assertEqual(len(eigvals_list), 2)
+        self.assertEqual(eigvals_list[0].shape, (M,))
+        self.assertEqual(eigvals_list[1].shape, (N,))
         self.assertEqual(updated_exp_avg.shape, (M, N))
         self.assertEqual(updated_exp_avg_sq.shape, (M, N))
 
@@ -283,7 +289,12 @@ class SoapFunctionsTest(parameterized.TestCase):
             eigenbasis_list=eigenbasis_list,
         )
         kl_shampoo_update_ref(kronecker_factor_list_ref, **kwargs)
-        soap.update_kronecker_factors_kl_shampoo(kronecker_factor_list, **kwargs)
+
+        eigvals_list = [
+            utils.eig.conjugate(kronecker_factor, eigenbasis, diag=True)
+            for kronecker_factor, eigenbasis in zip(kronecker_factor_list, eigenbasis_list, strict=True)
+        ]
+        soap.update_kronecker_factors_kl_shampoo(kronecker_factor_list, eigvals_list=eigvals_list, **kwargs)
 
         torch.testing.assert_close(kronecker_factor_list[0], kronecker_factor_list_ref[0], atol=1e-6, rtol=1e-6)
         torch.testing.assert_close(kronecker_factor_list[1], kronecker_factor_list_ref[1], atol=1e-6, rtol=1e-6)
@@ -298,9 +309,15 @@ class SoapFunctionsTest(parameterized.TestCase):
         grad = torch.randn(3, device=self.device)
         kronecker_factors = [torch.eye(3, device=self.device)]
         eigenbasis = [torch.eye(3, device=self.device)]
+        eigvals = [torch.ones(3, device=self.device)]
         with self.assertRaisesRegex(TypeError, "only supported for 2D"):
             soap.update_kronecker_factors_kl_shampoo(
-                kronecker_factors, grad=grad, shampoo_beta=0.9, eps=1e-8, eigenbasis_list=eigenbasis
+                kronecker_factors,
+                grad=grad,
+                shampoo_beta=0.9,
+                eps=1e-8,
+                eigvals_list=eigvals,
+                eigenbasis_list=eigenbasis,
             )
 
     def test_soap_non_2d_param_raises_type_error(self) -> None:
