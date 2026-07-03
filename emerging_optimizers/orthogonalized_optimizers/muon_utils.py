@@ -272,6 +272,7 @@ def newton_schulz_tp(
     tp_group: torch.distributed.ProcessGroup,
     partition_dim: int | None = None,
     tp_mode: Literal["duplicated", "distributed"] = "duplicated",
+    use_syrk: bool = False,
 ) -> torch.Tensor:
     """Tensor Parallel Newton-Schulz iteration.
 
@@ -299,14 +300,20 @@ def newton_schulz_tp(
         partition_dim: The dimension to partition the tensor.
         tp_group: The process group for communication if input is distributed.
         tp_mode: The mode to use for the Newton-Schulz iteration.
+        use_syrk: Whether to use the Triton SYRK kernel for the Newton-Schulz iteration. Forwarded to the
+            underlying ``newton_schulz`` in every path (non-TP fallback, ``duplicated``, ``distributed``); it only
+            takes effect when the fp32 matmul precision is ``"medium"`` (see ``newton_schulz``).
+            Requires both matrix dimensions to be multiples of 8 (16-byte stride alignment for bf16/fp32);
+            weights with unaligned shapes will raise an ``AssertionError`` inside ``tsyrk_ex``.
     """
     if partition_dim is None:
         # Fallback path for non TP params.
-        return newton_schulz(x, steps, coefficient_type)
+        return newton_schulz(x, steps, coefficient_type, use_syrk=use_syrk)
 
     kwargs: Any = {
         "steps": steps,
         "coefficient_type": coefficient_type,
+        "use_syrk": use_syrk,
     }
 
     if tp_mode == "duplicated":
