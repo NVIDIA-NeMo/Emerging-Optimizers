@@ -582,13 +582,26 @@ class SoapVsReferenceTest(parameterized.TestCase):
                 rtol=1e-5,
             )
 
-            for eigenbasis_test, eigenbasis_ref in zip([test_state["Q_L"], test_state["Q_R"]], ref_state["Q"]):
+            # SOAP returns eigenbases sorted by descending approximate eigenvalues while the reference
+            # keeps its power-iteration column order, so sort both by their approximate eigenvalues
+            # (against the shared kronecker factor, asserted equal above) before comparing.
+            for kronecker_factor, eigenbasis_test, eigenbasis_ref in zip(
+                [test_state["L"], test_state["R"]],
+                [test_state["Q_L"], test_state["Q_R"]],
+                ref_state["Q"],
+                strict=True,
+            ):
+                sorted_eigenbasis_list = []
+                for eigenbasis in (eigenbasis_test, eigenbasis_ref):
+                    approx_eigvals = torch.diag(eigenbasis.T @ kronecker_factor @ eigenbasis)
+                    sort_idx = torch.argsort(approx_eigvals, descending=True)
+                    sorted_eigenbasis_list.append(eigenbasis[:, sort_idx])
                 torch.testing.assert_close(
-                    eigenbasis_test,
-                    eigenbasis_ref,
+                    sorted_eigenbasis_list[0],
+                    sorted_eigenbasis_list[1],
                     atol=1e-4,
                     rtol=1e-4,
-                    msg=lambda msg: f"Eigenbasis mismatch at step {step}:\n{msg}",
+                    msg=lambda msg, step=step: f"Eigenbasis mismatch at step {step}:\n{msg}",
                 )
 
             # Compare step counters

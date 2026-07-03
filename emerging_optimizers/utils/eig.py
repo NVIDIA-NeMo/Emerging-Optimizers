@@ -76,10 +76,9 @@ def orthogonal_iteration(
     """Refines an eigenbasis via power iteration with QR re-orthogonalization.
 
     Performs ``power_iter_steps`` rounds of ``Q = QR(kronecker_factor @ Q)`` starting from
-    ``eigenbasis``. The columns of ``eigenbasis`` are expected to already be approximately aligned
-    with the descending-eigenvalue ordering of ``kronecker_factor`` (maintained in the SOAP pipeline
-    by :func:`emerging_optimizers.soap.soap_utils.get_eigenbasis_qr`, which returns its eigenbases in
-    descending order).
+    ``eigenbasis``. The columns of ``eigenbasis`` are expected to already be aligned with the
+    intended descending-eigenvalue ordering of ``kronecker_factor`` (see
+    :func:`emerging_optimizers.soap.soap_utils.permute_eigenbasis_and_exp_avg_sq`).
 
     Args:
         kronecker_factor: Kronecker factor matrix (symmetric, used as the projector).

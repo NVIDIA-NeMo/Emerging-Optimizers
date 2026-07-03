@@ -455,8 +455,9 @@ def update_eigenbasis_and_exp_avgs(
     1. Projects exp_avg back to the original basis
     2. Updates the eigenbases (via eigh, or QR decomposition and power iteration (orthogonal iteration))
        along with the (approximate) eigenvalues of the kronecker factors in the updated eigenbases;
-       on the QR path exp_avg_sq is permuted to match the sorted eigenbasis columns (not needed for
-       the eigh path, which rebuilds the basis from scratch)
+       on the QR path the eigenbases and exp_avg_sq slots are first permuted by descending approximate
+       eigenvalues of the updated factors (not needed for the eigh path, which rebuilds the basis
+       from scratch)
     3. Projects exp_avg back to the new eigenbasis
 
     Args:
@@ -505,10 +506,16 @@ def update_eigenbasis_and_exp_avgs(
             kronecker_factor_list,
         )
     else:
-        updated_eigvals_list, updated_eigenbasis_list, exp_avg_sq = soap_utils.get_eigenbasis_qr(
+        # Orthogonal iteration is column-order sensitive, so first permute the eigenbases (and the
+        # matching exp_avg_sq slots) by descending approximate eigenvalues of the updated factors.
+        eigenbasis_list, exp_avg_sq = soap_utils.permute_eigenbasis_and_exp_avg_sq(
             kronecker_factor_list,
             eigenbasis_list,
             exp_avg_sq,
+        )
+        updated_eigvals_list, updated_eigenbasis_list = soap_utils.get_eigenbasis_qr(
+            kronecker_factor_list,
+            eigenbasis_list,
             power_iter_steps,
         )
 
