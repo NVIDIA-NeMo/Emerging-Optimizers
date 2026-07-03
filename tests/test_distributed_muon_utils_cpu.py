@@ -21,6 +21,7 @@ from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
+from emerging_optimizers import utils
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
 
 
@@ -226,6 +227,41 @@ class TestTensorParallelNewtonSchulz(parameterized.TestCase):
         ref_out = muon_utils.newton_schulz(x, steps=1, coefficient_type="simple")
 
         torch.testing.assert_close(ref_out.chunk(world_size, dim=partition_dim)[rank], dist_out, atol=1e-6, rtol=0)
+
+    @parameterized.product(
+        partition_dim=(0, 1),
+        tp_mode=("distributed", "duplicated"),
+    )
+    def test_use_syrk_forwarded_to_newton_schulz(self, partition_dim, tp_mode):
+        shape = (8, 16, 32)
+        world_size = torch.distributed.get_world_size()
+        if shape[partition_dim] % world_size != 0:
+            self.skipTest("Skipping because incompatible shape and world size")
+        rank = torch.distributed.get_rank()
+        x = torch.randint(-5, 5, shape, device="cpu", dtype=torch.float32)
+        torch.distributed.all_reduce(x, op=torch.distributed.ReduceOp.SUM)
+        local_x = x.chunk(world_size, dim=partition_dim)[rank]
+
+        with utils.fp32_matmul_precision("medium"):
+            muon_utils.newton_schulz_tp(
+                local_x,
+                steps=1,
+                coefficient_type="simple",
+                tp_group=torch.distributed.group.WORLD,
+                partition_dim=partition_dim,
+                tp_mode=tp_mode,
+                use_syrk=False,
+            )
+            with self.assertRaisesRegex(TypeError, "use_syrk does not support"):
+                muon_utils.newton_schulz_tp(
+                    local_x,
+                    steps=1,
+                    coefficient_type="simple",
+                    tp_group=torch.distributed.group.WORLD,
+                    partition_dim=partition_dim,
+                    tp_mode=tp_mode,
+                    use_syrk=True,
+                )
 
 
 if __name__ == "__main__":
