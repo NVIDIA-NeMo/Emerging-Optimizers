@@ -255,9 +255,6 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     state["R"].copy_(kronecker_factor_list[1].chunk(self.tp_size, dim=0)[self.tp_rank])
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    # Rotate exp_avg from the pre-update eigenbasis to the post-update eigenbasis,
-                    # and recompute the post-update eigenbasis via eigh. The eigenvalues are discarded
-                    # since eigenbases (and eigenvalues) are not persisted across steps.
                     _, eigenbasis_list, state["exp_avg"], state["exp_avg_sq"] = soap.update_eigenbasis_and_exp_avgs(
                         kronecker_factor_list=kronecker_factor_list,
                         eigenbasis_list=pre_eigenbasis_list,

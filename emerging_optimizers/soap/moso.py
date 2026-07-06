@@ -237,8 +237,6 @@ def _update_eigenbasis_and_adam_exp_avgs(
     if use_eigh:
         _, (updated_eigenbasis,) = soap_utils.get_eigenbasis_eigh([momentum_factor])
     else:
-        # permute_eigenbasis_and_exp_avg_sq permutes exp_avg_sq along the factor-list axes (dim 0 for
-        # the single factor here), so transpose the right-preconditioned case in and out.
         x = exp_avg_sq if left_preconditioned else exp_avg_sq.mT
         (eigenbasis,), x = soap_utils.permute_eigenbasis_and_exp_avg_sq(
             [momentum_factor],

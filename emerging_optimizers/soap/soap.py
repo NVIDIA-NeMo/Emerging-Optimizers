@@ -157,7 +157,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 state["L"], state["R"] = init_kronecker_factors(p.shape, device=p.device)
                 state["Q_L"] = torch.eye(p.shape[0], device=p.device)
                 state["Q_R"] = torch.eye(p.shape[1], device=p.device)
-                # Zeros match diag(Q^T K Q) of the zero-initialized kronecker factors; consumers clamp by eps.
                 state["eigvals_L"] = torch.zeros(p.shape[0], device=p.device)
                 state["eigvals_R"] = torch.zeros(p.shape[1], device=p.device)
 
@@ -453,11 +452,7 @@ def update_eigenbasis_and_exp_avgs(
     used for preconditioning. It follows these steps:
 
     1. Projects exp_avg back to the original basis
-    2. Updates the eigenbases (via eigh, or QR decomposition and power iteration (orthogonal iteration))
-       along with the (approximate) eigenvalues of the kronecker factors in the updated eigenbases;
-       on the QR path the eigenbases and exp_avg_sq slots are first permuted by descending approximate
-       eigenvalues of the updated factors (not needed for the eigh path, which rebuilds the basis
-       from scratch)
+    2. Updates the eigenbases using QR decomposition and power iteration (orthogonal iteration)
     3. Projects exp_avg back to the new eigenbasis
 
     Args:
@@ -469,7 +464,6 @@ def update_eigenbasis_and_exp_avgs(
             Permuted along each kronecker-factor axis on the QR path to track the sorted eigenbasis
             columns; returned unchanged on the eigh path.
         exp_avg: Inner Adam's first moment tensor, used for tracking gradient momentum.
-            This tensor is modified in-place.
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
             If False, use orthogonal iteration to compute the eigenbasis.
         power_iter_steps: Number of power iteration steps to perform before QR decomposition.
@@ -506,8 +500,8 @@ def update_eigenbasis_and_exp_avgs(
             kronecker_factor_list,
         )
     else:
-        # Orthogonal iteration is column-order sensitive, so first permute the eigenbases (and the
-        # matching exp_avg_sq slots) by descending approximate eigenvalues of the updated factors.
+        # Permute the eigenbases (and the matching exp_avg_sq slots) by descending approximate eigenvalues
+        # before power iteration
         eigenbasis_list, exp_avg_sq = soap_utils.permute_eigenbasis_and_exp_avg_sq(
             kronecker_factor_list,
             eigenbasis_list,

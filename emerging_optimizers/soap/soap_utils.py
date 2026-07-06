@@ -117,12 +117,6 @@ def get_eigenbasis_qr(
 ) -> tuple[TensorList, TensorList]:
     """Updates the eigenbases of the preconditioner using power iteration and QR.
 
-    Computes using multiple rounds of power iteration followed by QR decomposition (orthogonal
-    iteration). ``eigenbasis_list`` is expected to be already sorted by descending approximate
-    eigenvalues (see :func:`permute_eigenbasis_and_exp_avg_sq`). The returned approximate eigenvalues
-    (the Rayleigh quotients :math:`\\mathrm{diag}(Q^{\\top} K Q)`) are aligned with the updated
-    eigenbasis columns.
-
     Args:
         kronecker_factor_list: List of preconditioner matrices (L and R).
         eigenbasis_list: List of current eigenbases (QL and QR).
