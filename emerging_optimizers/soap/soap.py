@@ -243,7 +243,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                                 eigenbasis_list=eigenbasis_list,
                                 exp_avg_sq=state["exp_avg_sq"],
                                 exp_avg=state["exp_avg"],
-                                eps=group["eps"],
                                 use_eigh=use_eigh,
                                 power_iter_steps=self.power_iter_steps,
                             )
@@ -424,7 +423,10 @@ def update_kronecker_factors_kl_shampoo(
     # G@Q_R@λ_R^(−1)@Q_R.T@G.T/dim(GG.T) and G.T@Q_L@λ_L^(−1)@Q_L.T@G/dim(G.TG)
     updates = []
     for idx, (eigenbasis, approx_eigvals) in enumerate(zip(eigenbasis_list, eigvals_list, strict=True)):
-        scale_factor = 1 / grad.shape[idx] * approx_eigvals.clamp_min(eps) ** eigval_exp
+        keep_idx = (approx_eigvals >= eps).nonzero().squeeze(-1)
+        approx_eigvals = approx_eigvals[keep_idx]
+        eigenbasis = eigenbasis[:, keep_idx]
+        scale_factor = 1 / grad.shape[idx] * approx_eigvals**eigval_exp
 
         logging.debug(f"scale_factor[{idx}]: {scale_factor}")
 
@@ -444,7 +446,6 @@ def update_eigenbasis_and_exp_avgs(
     eigenbasis_list: list[torch.Tensor],
     exp_avg_sq: torch.Tensor,
     exp_avg: torch.Tensor,
-    eps: float,
     use_eigh: bool = False,
     power_iter_steps: int = 1,
 ) -> tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor, torch.Tensor]:
@@ -514,11 +515,6 @@ def update_eigenbasis_and_exp_avgs(
             eigenbasis_list,
             power_iter_steps,
         )
-
-    for eigvals, eigenbasis in zip(updated_eigvals_list, updated_eigenbasis_list, strict=True):
-        zero_eigval_mask = eigvals < eps
-        eigvals.masked_fill_(zero_eigval_mask, 0)
-        eigenbasis.masked_fill_(zero_eigval_mask.unsqueeze(0), 0)
 
     # Step 3: Project exp_avg to the new eigenbasis using the updated eigenbases
     exp_avg = precondition(
