@@ -239,6 +239,7 @@ class SoapFunctionsTest(parameterized.TestCase):
                 eigenbasis_list=eigenbasis_list,
                 exp_avg_sq=exp_avg_sq,
                 exp_avg=exp_avg,
+                eps=float("-inf"),
                 use_eigh=use_eigh,
             )
         )

@@ -260,6 +260,7 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         eigenbasis_list=pre_eigenbasis_list,
                         exp_avg_sq=state["exp_avg_sq"],
                         exp_avg=state["exp_avg"],
+                        eps=group["eps"],
                         use_eigh=True,
                     )
 
