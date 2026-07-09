@@ -259,8 +259,9 @@ def newton_schulz(
             else:
                 logging.log_first_n(
                     logging.WARNING,
-                    f"[SYRK-SKIP] non-8-aligned shape {tuple(X.shape)}; using GEMM Newton-Schulz.",
+                    "[SYRK-SKIP] non-8-aligned shape %s; using GEMM Newton-Schulz.",
                     8,
+                    tuple(X.shape),
                 )
         X = X.to(torch.bfloat16)
         logging.log_first_n(logging.INFO, "Using BF16 I/O kernels for Newton-Schulz iteration.", 1)
