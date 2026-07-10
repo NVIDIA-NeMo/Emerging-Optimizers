@@ -249,17 +249,13 @@ def newton_schulz(
         if use_syrk:
             if X.ndim > 2:
                 raise TypeError("use_syrk does not support N-d input.")
-            # The SYRK Triton kernel uses TMA TensorDescriptors, which require 16-byte-aligned row
-            # strides, i.e. both matrix dims must be multiples of 8 for bf16. Unaligned shapes (e.g.
-            # DeepSeek-V4 Hyper-Connections weights with dim=num_residual_streams=4, whose (4, 4)
-            # product has an 8-byte row stride) would raise "strides must be 16-byte aligned"; keep
-            # the plain GEMM Newton-Schulz step instead.
             if X.size(-1) % 8 == 0 and X.size(-2) % 8 == 0:
                 ns_step_fn = newton_schulz_step_tsyrk
             else:
                 logging.log_first_n(
-                    logging.WARNING,
-                    "[SYRK-SKIP] non-8-aligned shape %s; using GEMM Newton-Schulz.",
+                    logging.ERROR,
+                    "[SYRK-SKIP] skipping SYRK for shape %s because GEMM M or N is not 16-byte "
+                    "aligned, which is incompatible with TMA.",
                     8,
                     tuple(X.shape),
                 )
@@ -316,8 +312,7 @@ def newton_schulz_tp(
         use_syrk: Whether to use the Triton SYRK kernel for the Newton-Schulz iteration. Forwarded to the
             underlying ``newton_schulz`` in every path (non-TP fallback, ``duplicated``, ``distributed``); it only
             takes effect when the fp32 matmul precision is ``"medium"`` (see ``newton_schulz``).
-            Requires both matrix dimensions to be multiples of 8 (16-byte stride alignment for bf16/fp32);
-            weights with unaligned shapes will raise an ``AssertionError`` inside ``tsyrk_ex``.
+            Falls back to GEMM when either matrix dimension is not a multiple of 8.
     """
     if partition_dim is None:
         # Fallback path for non TP params.
