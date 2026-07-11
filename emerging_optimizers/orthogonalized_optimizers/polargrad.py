@@ -26,7 +26,7 @@ from emerging_optimizers.utils import FP32MatmulPrecT
 from emerging_optimizers.utils.eig import eigh_with_fallback
 
 
-__all__ = ["PolarGrad", "right_polargrad_orth_fn"]
+__all__ = ["PolarGrad", "left_polargrad_orth_fn", "right_polargrad_orth_fn"]
 
 
 @registry.register_optimizer("polargrad")
@@ -170,6 +170,88 @@ def right_polargrad_orth_fn(
     right_gram_inv_sqrt = (eigvecs * eigvals.rsqrt().unsqueeze(-2)) @ eigvecs.transpose(-1, -2)
 
     u = m @ right_gram_inv_sqrt
+    nuclear_norm = eigvals.sqrt().sum()
+    update = u * nuclear_norm.pow(alpha) * extra_scale_factor
+
+    if center_rows:
+        update = update - update.mean(dim=0, keepdim=True)
+    return update.to(grad.dtype)
+
+
+def left_polargrad_orth_fn(
+    grad: torch.Tensor,
+    *,
+    alpha: float = 1.0,
+    center_rows: bool = False,
+    eps: float = 1e-15,
+    extra_scale_factor: float = 1.0,
+) -> torch.Tensor:
+    r"""Left-spectral (one-sided polar) orthogonalization for wide matrices.
+
+    Orthogonalizes only the left factor of a wide matrix ``G`` (e.g. an MoE router weight,
+    ``num_experts x hidden``):
+
+    .. math::
+        u = (G \, G^\top)^{-1/2} \, G, \qquad \text{update} = \lVert G \rVert_*^{\,\alpha} \, u
+
+    .. code-block:: python
+       :caption: Define a ``LeftPolarGrad`` by partially applying this orthogonalization
+
+       class LeftPolarGrad(OrthogonalizedOptimizer):
+           def __init__(
+               self,
+               params,
+               lr: float = 3e-4,
+               momentum: float = 0.95,
+               weight_decay: float = 0.01,
+               *,
+               ...
+               alpha: float = 1.0,
+               center_rows: bool = False,
+               eps: float = 1e-15,
+               extra_scale_factor: float = 1.0,
+           ) -> None:
+               scaled_orthogonalize_fn = functools.partial(
+                   left_polargrad_orth_fn,
+                   alpha=alpha,
+                   center_rows=center_rows,
+                   eps=eps,
+                   extra_scale_factor=extra_scale_factor,
+               )
+               super().__init__(
+                   ...
+               )
+
+    Note:
+        The inverse square root is computed as a pseudo-inverse: eigendirections of the left Gram that
+        are numerically indistinguishable from its null space contribute nothing to the update instead
+        of being amplified by the ``eps`` floor. This matters because the left Gram is singular whenever
+        ``center_rows=True`` (centering annihilates the all-ones direction) or the matrix has more rows
+        than columns.
+
+    Args:
+        grad: The (momentum) tensor to orthogonalize.
+        alpha: Exponent applied to the nuclear-norm scale factor.
+        center_rows: If True, subtract the per-column mean (the average over the row / expert axis,
+            ``dim=0``) before and after the update, so each column is zero-mean. For MoE routers this
+            respects the logit-shift invariance of the routing softmax.
+        eps: Floor on the left-Gram eigenvalues for the nuclear-norm computation.
+        extra_scale_factor: Extra multiplier on the update.
+
+    Returns:
+        The scaled left-polar update, same shape and dtype as ``grad``.
+    """
+    m = grad.to(torch.float32)
+    if center_rows:
+        m = m - m.mean(dim=0, keepdim=True)
+
+    eigvals, eigvecs = eigh_with_fallback(m @ m.transpose(-1, -2))
+    eigvals.clamp_min_(eps)
+    cutoff = eigvals.amax() * m.shape[-2] * torch.finfo(torch.float32).eps
+    inv_sqrt_eigvals = torch.where(eigvals > cutoff, eigvals.rsqrt(), torch.zeros_like(eigvals))
+    left_gram_inv_sqrt = (eigvecs * inv_sqrt_eigvals.unsqueeze(-2)) @ eigvecs.transpose(-1, -2)
+
+    u = left_gram_inv_sqrt @ m
     nuclear_norm = eigvals.sqrt().sum()
     update = u * nuclear_norm.pow(alpha) * extra_scale_factor
 
