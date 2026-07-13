@@ -93,7 +93,7 @@ class TestSpectralClipping(parameterized.TestCase):
         """Test that spectral hardcap properly clips singular values from above to be less than beta."""
         x = torch.randn(dims, device=self.device, dtype=torch.float32)
 
-        U_orig, original_singular_values, Vt_orig = torch.linalg.svd(x, full_matrices=False)
+        U_orig, original_singular_values, Vt_orig = torch.linalg.svd(x.double(), full_matrices=False)
         original_min_sv = original_singular_values.min().item()
         original_max_sv = original_singular_values.max().item()
         logging.debug(f"Original matrix shape: {x.shape}")
@@ -101,7 +101,7 @@ class TestSpectralClipping(parameterized.TestCase):
 
         hardcapped_x = orthogonalized_optimizers.spectral_hardcap(x, beta=beta)
 
-        U_hard, singular_values, Vt_hard = torch.linalg.svd(hardcapped_x, full_matrices=False)
+        U_hard, singular_values, Vt_hard = torch.linalg.svd(hardcapped_x.double(), full_matrices=False)
 
         tolerance_upper = 1e-1
 
