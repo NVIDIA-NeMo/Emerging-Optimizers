@@ -17,7 +17,7 @@ from functools import partial
 
 import soap_reference
 import torch
-from _comparison import assert_close_to_identity, assert_equal
+from _comparison import align_column_signs, assert_close_to_identity, assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -115,6 +115,34 @@ class SoapFunctionsTest(parameterized.TestCase):
         expected_R = initial_R * shampoo_beta + outer_product_R * (1 - shampoo_beta)
         torch.testing.assert_close(kronecker_factors[1], expected_R, atol=1e-6, rtol=1e-6)
 
+    def test_update_kronecker_factors_batched_matches_loop(self) -> None:
+        shampoo_beta = 0.9
+        batch, m, n = 3, 4, 10
+        grad = torch.randn(batch, m, n, device=self.device)
+        initial_L = torch.randn(batch, m, m, device=self.device)
+        initial_R = torch.randn(batch, n, n, device=self.device)
+        batched_kronecker_factors = [initial_L.clone(), initial_R.clone()]
+
+        soap.update_kronecker_factors(
+            kronecker_factor_list=batched_kronecker_factors,
+            grad=grad,
+            shampoo_beta=shampoo_beta,
+        )
+
+        for b in range(batch):
+            loop_kronecker_factors = [initial_L[b].clone(), initial_R[b].clone()]
+            soap.update_kronecker_factors(
+                kronecker_factor_list=loop_kronecker_factors,
+                grad=grad[b],
+                shampoo_beta=shampoo_beta,
+            )
+            for i in range(2):
+                torch.testing.assert_close(
+                    batched_kronecker_factors[i][b],
+                    loop_kronecker_factors[i],
+                    msg=lambda msg, b=b, i=i: f"kronecker factor {i} mismatch at slice {b}\n\n{msg}",
+                )
+
     @parameterized.parameters(
         (4, 5),
         (3, 3),
@@ -184,6 +212,58 @@ class SoapFunctionsTest(parameterized.TestCase):
             rtol=1e-6,
             msg="Project and project_back did not recover the original tensor.",
         )
+
+    @parameterized.parameters(
+        {"dims": [[0], [0]]},
+        {"dims": [[0], [1]]},
+    )
+    def test_precondition_batched_matches_loop(self, dims: list[list[int]]) -> None:
+        batch, m, n = 3, 8, 4
+        x = torch.randn(batch, m, n, device=self.device)
+        eigenbasis_list = [torch.linalg.qr(torch.randn(batch, k, k, device=self.device)).Q for k in (m, n)]
+
+        batched = soap.precondition(x, eigenbasis_list=eigenbasis_list, dims=dims)
+
+        self.assertEqual(batched.shape, (batch, m, n))
+        for b in range(batch):
+            expected = soap.precondition(
+                x[b],
+                eigenbasis_list=[eigenbasis[b] for eigenbasis in eigenbasis_list],
+                dims=dims,
+            )
+            torch.testing.assert_close(
+                batched[b],
+                expected,
+                msg=lambda msg, b=b: f"batched precondition differs from per-slice reference at slice {b}\n\n{msg}",
+            )
+
+    def test_precondition_batched_project_and_project_back(self) -> None:
+        batch, m, n = 3, 8, 4
+        x = torch.randn(batch, m, n, device=self.device)
+        eigenbasis_list = [torch.linalg.qr(torch.randn(batch, k, k, device=self.device)).Q for k in (m, n)]
+
+        projected = soap.precondition(x, eigenbasis_list=eigenbasis_list, dims=[[0], [0]])
+        recovered = soap.precondition(projected, eigenbasis_list=eigenbasis_list, dims=[[0], [1]])
+
+        torch.testing.assert_close(
+            recovered,
+            x,
+            atol=1e-6,
+            rtol=1e-6,
+            msg=lambda msg: f"Batched project and project_back did not recover the original tensor.\n\n{msg}",
+        )
+
+    def test_precondition_batched_unsupported_dims_raises(self) -> None:
+        x = torch.randn(2, 4, 4, device=self.device)
+        Q = torch.eye(4, device=self.device).expand(2, 4, 4)
+        with self.assertRaises(ValueError):
+            soap.precondition(x, eigenbasis_list=[Q, Q], dims=[[1], [0]])
+
+    def test_precondition_non_2d_or_3d_raises(self) -> None:
+        x = torch.randn(2, 2, 4, 4, device=self.device)
+        Q = torch.eye(4, device=self.device)
+        with self.assertRaises(TypeError):
+            soap.precondition(x, eigenbasis_list=[Q, Q])
 
     @parameterized.parameters(
         (1.0,),
@@ -267,6 +347,81 @@ class SoapFunctionsTest(parameterized.TestCase):
         )
 
     @parameterized.parameters(
+        {"use_eigh": True},
+        {"use_eigh": False},
+    )
+    def test_update_eigenbasis_and_exp_avgs_batched_matches_loop(self, use_eigh: bool) -> None:
+        batch, m, n = 3, 8, 4
+        basis_list = [torch.linalg.qr(torch.randn(batch, k, k, device=self.device)).Q for k in (m, n)]
+        spectrum_list = [torch.arange(1.0, k + 1, device=self.device) for k in (m, n)]
+        kronecker_factor_list = [
+            (basis * spectrum.unsqueeze(-2)) @ basis.mT
+            for basis, spectrum in zip(basis_list, spectrum_list, strict=True)
+        ]
+        eigenbasis_list = [torch.roll(basis, 1, dims=-1) for basis in basis_list]
+        exp_avg = torch.randn(batch, m, n, device=self.device)
+        exp_avg_sq = torch.abs(torch.randn(batch, m, n, device=self.device))
+
+        batched_eigvals_list, batched_eigenbasis_list, batched_exp_avg, batched_exp_avg_sq = (
+            soap.update_eigenbasis_and_exp_avgs(
+                kronecker_factor_list=kronecker_factor_list,
+                eigenbasis_list=eigenbasis_list,
+                exp_avg_sq=exp_avg_sq,
+                exp_avg=exp_avg,
+                use_eigh=use_eigh,
+            )
+        )
+
+        self.assertEqual(batched_eigvals_list[0].shape, (batch, m))
+        self.assertEqual(batched_eigvals_list[1].shape, (batch, n))
+        self.assertEqual(batched_eigenbasis_list[0].shape, (batch, m, m))
+        self.assertEqual(batched_eigenbasis_list[1].shape, (batch, n, n))
+        self.assertEqual(batched_exp_avg.shape, (batch, m, n))
+        self.assertEqual(batched_exp_avg_sq.shape, (batch, m, n))
+
+        for b in range(batch):
+            loop_eigvals_list, loop_eigenbasis_list, loop_exp_avg, loop_exp_avg_sq = (
+                soap.update_eigenbasis_and_exp_avgs(
+                    kronecker_factor_list=[kronecker_factor[b] for kronecker_factor in kronecker_factor_list],
+                    eigenbasis_list=[eigenbasis[b] for eigenbasis in eigenbasis_list],
+                    exp_avg_sq=exp_avg_sq[b],
+                    exp_avg=exp_avg[b],
+                    use_eigh=use_eigh,
+                )
+            )
+            sign_list = []
+            for i in range(2):
+                torch.testing.assert_close(
+                    batched_eigvals_list[i][b],
+                    loop_eigvals_list[i],
+                    atol=1e-4,
+                    rtol=1e-4,
+                    msg=lambda msg, b=b, i=i: f"eigvals {i} differ from per-slice reference at slice {b}\n\n{msg}",
+                )
+                aligned_eigenbasis, signs = align_column_signs(batched_eigenbasis_list[i][b], loop_eigenbasis_list[i])
+                torch.testing.assert_close(
+                    aligned_eigenbasis,
+                    loop_eigenbasis_list[i],
+                    atol=1e-4,
+                    rtol=1e-4,
+                    msg=lambda msg, b=b, i=i: f"eigenbasis {i} differs from per-slice reference at slice {b}\n\n{msg}",
+                )
+                sign_list.append(signs)
+            aligned_exp_avg = sign_list[0].unsqueeze(-1) * batched_exp_avg[b] * sign_list[1].unsqueeze(-2)
+            torch.testing.assert_close(
+                aligned_exp_avg,
+                loop_exp_avg,
+                atol=1e-4,
+                rtol=1e-4,
+                msg=lambda msg, b=b: f"exp_avg differs from per-slice reference at slice {b}\n\n{msg}",
+            )
+            assert_equal(
+                batched_exp_avg_sq[b],
+                loop_exp_avg_sq,
+                msg=lambda msg, b=b: f"exp_avg_sq differs from per-slice reference at slice {b}\n\n{msg}",
+            )
+
+    @parameterized.parameters(
         (4, 5),
         (3, 3),
         (5, 4),
@@ -298,6 +453,50 @@ class SoapFunctionsTest(parameterized.TestCase):
 
         torch.testing.assert_close(kronecker_factor_list[0], kronecker_factor_list_ref[0], atol=1e-6, rtol=1e-6)
         torch.testing.assert_close(kronecker_factor_list[1], kronecker_factor_list_ref[1], atol=1e-6, rtol=1e-6)
+
+    def test_kl_shampoo_update_batched_matches_loop(self) -> None:
+        batch, m, n = 3, 4, 8
+        rand_exp_fn = partial(torch.randint, low=-4, high=-1, dtype=torch.float32, device=self.device)
+        initial_kronecker_factors = [2 ** rand_exp_fn(size=(batch, m, m)), 2 ** rand_exp_fn(size=(batch, n, n))]
+        batched_kronecker_factors = [f.clone() for f in initial_kronecker_factors]
+        grad = 2 ** rand_exp_fn(size=(batch, m, n))
+        eigenbasis_list = [2 ** rand_exp_fn(size=(batch, m, m)), 2 ** rand_exp_fn(size=(batch, n, n))]
+        eigvals_list = [
+            utils.eig.conjugate(kronecker_factor, eigenbasis, diag=True)
+            for kronecker_factor, eigenbasis in zip(initial_kronecker_factors, eigenbasis_list, strict=True)
+        ]
+
+        soap.update_kronecker_factors_kl_shampoo(
+            batched_kronecker_factors,
+            grad=grad,
+            shampoo_beta=0.5,
+            eigenbasis_list=eigenbasis_list,
+            eigvals_list=eigvals_list,
+            eps=1e-8,
+        )
+
+        for b in range(batch):
+            loop_kronecker_factors = [f[b].clone() for f in initial_kronecker_factors]
+            loop_eigvals_list = [
+                utils.eig.conjugate(kronecker_factor[b], eigenbasis[b], diag=True)
+                for kronecker_factor, eigenbasis in zip(initial_kronecker_factors, eigenbasis_list, strict=True)
+            ]
+            soap.update_kronecker_factors_kl_shampoo(
+                loop_kronecker_factors,
+                grad=grad[b],
+                shampoo_beta=0.5,
+                eigenbasis_list=[eigenbasis[b] for eigenbasis in eigenbasis_list],
+                eigvals_list=loop_eigvals_list,
+                eps=1e-8,
+            )
+            for i in range(2):
+                torch.testing.assert_close(
+                    batched_kronecker_factors[i][b],
+                    loop_kronecker_factors[i],
+                    atol=1e-6,
+                    rtol=1e-6,
+                    msg=lambda msg, b=b, i=i: f"kronecker factor {i} mismatch at slice {b}\n\n{msg}",
+                )
 
     def test_init_kronecker_factors_non_2d_raises_type_error(self) -> None:
         """Test that init_kronecker_factors raises TypeError for non-2D shape."""

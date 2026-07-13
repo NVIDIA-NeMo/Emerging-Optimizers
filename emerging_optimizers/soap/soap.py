@@ -370,8 +370,8 @@ def update_kronecker_factors(
 
     """
     # L = G @ G.T, R = G.T @ G
-    kronecker_factor_list[0].lerp_(grad @ grad.T, 1 - shampoo_beta)
-    kronecker_factor_list[1].lerp_(grad.T @ grad, 1 - shampoo_beta)
+    kronecker_factor_list[0].lerp_(grad @ grad.mT, 1 - shampoo_beta)
+    kronecker_factor_list[1].lerp_(grad.mT @ grad, 1 - shampoo_beta)
 
 
 @torch.no_grad()  # type: ignore[misc]
@@ -416,20 +416,20 @@ def update_kronecker_factors_kl_shampoo(
         eps: Small offset for numerical stability.
         eigval_exp: Exponent applied to the (clamped) eigenvalues.
     """
-    if grad.dim() != 2:
-        raise TypeError("KL-Shampoo mathematical correction is only supported for 2D tensors")
+    if grad.dim() not in (2, 3):
+        raise TypeError("KL-Shampoo mathematical correction is only supported for 2D and batched 2D tensors")
 
     # Scale the gradient matrix by the approximate eigenvalues and the eigenbasis
     # G@Q_R@λ_R^(−1)@Q_R.T@G.T/dim(GG.T) and G.T@Q_L@λ_L^(−1)@Q_L.T@G/dim(G.TG)
     updates = []
     for idx, (eigenbasis, approx_eigvals) in enumerate(zip(eigenbasis_list, eigvals_list, strict=True)):
-        scale_factor = 1 / grad.shape[idx] * approx_eigvals.clamp_min(eps) ** eigval_exp
+        scale_factor = 1 / grad.shape[idx - 2] * approx_eigvals.clamp_min(eps) ** eigval_exp
 
         logging.debug(f"scale_factor[{idx}]: {scale_factor}")
 
-        correction = (eigenbasis * scale_factor[None, :]) @ eigenbasis.T
+        correction = (eigenbasis * scale_factor.unsqueeze(-2)) @ eigenbasis.mT
 
-        maybe_transpose_grad = grad.T if idx == 1 else grad
+        maybe_transpose_grad = grad.mT if idx == 1 else grad
         updates.append(utils.eig.conjugate(correction, maybe_transpose_grad))
 
     # Note that updates caculated in previous loop are in reverse order of the kronecker factor list they apply to
@@ -563,7 +563,17 @@ def precondition(
         return x
 
     for Q in eigenbasis_list:
-        x = torch.tensordot(x, Q, dims=dims)
+        if x.ndim == 2:
+            x = torch.tensordot(x, Q, dims=dims)
+        elif x.ndim == 3:
+            if dims == [[0], [0]]:
+                x = x.mT @ Q
+            elif dims == [[0], [1]]:
+                x = x.mT @ Q.mT
+            else:
+                raise ValueError(f"Unsupported dims for batched preconditioning: {dims}")
+        else:
+            raise TypeError("x must be a 2D tensor or 3D batched tensor")
 
     return x
 
