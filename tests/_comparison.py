@@ -28,11 +28,6 @@ from torch import testing as torch_testing
 assert_equal = functools.partial(torch_testing.assert_close, rtol=0, atol=0)
 
 
-def align_column_signs(actual, reference):
-    signs = torch.sign((actual * reference).sum(dim=-2))
-    return actual * signs.unsqueeze(-2), signs
-
-
 def assert_close_to_identity(actual, *, off_diag_atol=0, diag_atol=0):
     r"""Assert that ``actual`` is close to the identity matrix.
 
