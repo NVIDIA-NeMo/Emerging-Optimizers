@@ -47,7 +47,7 @@ class TestSpectralClipping(parameterized.TestCase):
         dims=[(256, 128), (128, 256), (512, 512), (2048, 2048)],
         sigma_range=[(0.2, 0.8), (0.1, 20)],
     )
-    def test_spectral_clipping(self, dims, sigma_range):
+    def test_spectral_clipping_clips_singular_values_to_range(self, dims, sigma_range):
         """Test that spectral clipping properly clips singular values to the specified range."""
 
         sigma_min, sigma_max = sigma_range
@@ -59,7 +59,7 @@ class TestSpectralClipping(parameterized.TestCase):
 
         clipped_x = orthogonalized_optimizers.spectral_clip(x, sigma_min=sigma_min, sigma_max=sigma_max)
 
-        _, singular_values, _ = torch.linalg.svd(clipped_x, full_matrices=False)
+        singular_values = torch.linalg.svdvals(clipped_x.double())
 
         min_sv = singular_values.min().item()
         max_sv = singular_values.max().item()
