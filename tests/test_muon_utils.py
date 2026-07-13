@@ -353,6 +353,49 @@ class TestNewtonSchulz(parameterized.TestCase):
         with utils.fp32_matmul_precision("medium"), self.assertRaisesRegex(TypeError, "use_syrk does not support"):
             muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic", use_syrk=True)
 
+    @parameterized.parameters(
+        (4, 4),
+        (4, 8),
+        (8, 4),
+    )
+    def test_newton_schulz_use_syrk_falls_back_for_non_8_aligned_shape(self, dim1, dim2) -> None:
+        """Test that use_syrk falls back to GEMM for shapes that cannot satisfy bf16 TMA alignment."""
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        gemm_call_count = 0
+        original_gemm_step = muon_utils.newton_schulz_step
+        original_tsyrk_step = muon_utils.newton_schulz_step_tsyrk
+
+        def record_gemm_call(
+            X: torch.Tensor,
+            a: float,
+            b: float,
+            c: float,
+            tp_group: torch.distributed.ProcessGroup | None = None,
+        ) -> torch.Tensor:
+            nonlocal gemm_call_count
+            gemm_call_count += 1
+            return original_gemm_step(X, a, b, c, tp_group=tp_group)
+
+        def fail_if_called(
+            X: torch.Tensor,
+            a: float,
+            b: float,
+            c: float,
+            tp_group: torch.distributed.ProcessGroup | None = None,
+        ) -> torch.Tensor:
+            raise AssertionError("SYRK step should not be called for non-8-aligned shape")
+
+        try:
+            muon_utils.newton_schulz_step = record_gemm_call
+            muon_utils.newton_schulz_step_tsyrk = fail_if_called
+            with utils.fp32_matmul_precision("medium"):
+                muon_utils.newton_schulz(x, steps=1, coefficient_type="simple", use_syrk=True)
+        finally:
+            muon_utils.newton_schulz_step = original_gemm_step
+            muon_utils.newton_schulz_step_tsyrk = original_tsyrk_step
+
+        self.assertEqual(gemm_call_count, 1)
+
 
 class TestMuonUtils(parameterized.TestCase):
     def setUp(self):

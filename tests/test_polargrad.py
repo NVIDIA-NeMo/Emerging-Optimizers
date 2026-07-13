@@ -128,5 +128,73 @@ class RightPolarGradOrthFnTest(parameterized.TestCase):
         self.assertTrue(torch.isfinite(param).all())
 
 
+class LeftPolarGradOrthFnTest(parameterized.TestCase):
+    def setUp(self):
+        self.device = FLAGS.device
+
+    @parameterized.parameters((4, 8), (8, 32))
+    def test_left_orthogonal_equivariance(self, num_rows, num_cols) -> None:
+        """f(Q G) == Q f(G) for an orthogonal Q acting on the row (left) dimension."""
+        grad = torch.randn((num_rows, num_cols), device=self.device)
+        q, _ = torch.linalg.qr(torch.randn(num_rows, num_rows, device=self.device))
+
+        rotated = polargrad.left_polargrad_orth_fn(q @ grad)
+        expected = q @ polargrad.left_polargrad_orth_fn(grad)
+        torch.testing.assert_close(
+            rotated,
+            expected,
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+    @parameterized.product(shape=[(4, 8), (8, 32)], center_rows=[False, True])
+    def test_row_permutation_equivariance(self, shape, center_rows) -> None:
+        """f(P G) == P f(G) for a permutation P of the rows (e.g. MoE expert permutation)."""
+        grad = torch.randn(shape, device=self.device)
+        perm = torch.randperm(shape[0], device=self.device)
+
+        permuted = polargrad.left_polargrad_orth_fn(grad[perm], center_rows=center_rows)
+        expected = polargrad.left_polargrad_orth_fn(grad, center_rows=center_rows)[perm]
+        atol, rtol = (1e-2, 1e-3) if center_rows else (1e-4, 1e-4)
+        torch.testing.assert_close(
+            permuted,
+            expected,
+            atol=atol,
+            rtol=rtol,
+        )
+
+    @parameterized.parameters((4, 8), (8, 32))
+    def test_center_rows_output_is_centered(self, num_rows, num_cols) -> None:
+        """With center_rows=True the update stays in the zero-column-mean quotient subspace."""
+        grad = torch.randn((num_rows, num_cols), device=self.device)
+        update = polargrad.left_polargrad_orth_fn(grad, center_rows=True)
+        torch.testing.assert_close(
+            update.mean(dim=0),
+            torch.zeros(num_cols, device=self.device),
+            atol=1e-5,
+            rtol=1e-5,
+        )
+
+    def test_usable_as_scaled_orthogonalize_fn(self) -> None:
+        param = nn.Parameter(torch.randn((8, 32), device=self.device))
+        scaled_orthogonalize_fn = functools.partial(
+            polargrad.left_polargrad_orth_fn, alpha=1.0, center_rows=True, extra_scale_factor=0.2
+        )
+        opt = OrthogonalizedOptimizer(
+            [param],
+            lr=1e-2,
+            momentum=0.95,
+            weight_decay=0.01,
+            nesterov=False,
+            weight_decay_method="decoupled",
+            fp32_matmul_prec="highest",
+            scaled_orthogonalize_fn=scaled_orthogonalize_fn,
+        )
+        for _ in range(3):
+            param.grad = torch.randn_like(param)
+            opt.step()
+        self.assertTrue(torch.isfinite(param).all())
+
+
 if __name__ == "__main__":
     absltest.main()
