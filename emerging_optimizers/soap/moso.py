@@ -234,17 +234,17 @@ def _update_eigenbasis_and_adam_exp_avgs(
         left_preconditioned=left_preconditioned,
     )
 
-    eigenbasis, exp_avg_sq = _sort_one_sided_eigenbasis_and_exp_avg_sq(
-        momentum_factor=momentum_factor,
-        eigenbasis=eigenbasis,
-        exp_avg_sq=exp_avg_sq,
-        left_preconditioned=left_preconditioned,
-    )
-
     if use_eigh:
-        (updated_eigenbasis,) = soap_utils.get_eigenbasis_eigh([momentum_factor])
+        _, (updated_eigenbasis,) = soap_utils.get_eigenbasis_eigh([momentum_factor])
     else:
-        (updated_eigenbasis,) = soap_utils.get_eigenbasis_qr(
+        x = exp_avg_sq if left_preconditioned else exp_avg_sq.mT
+        (eigenbasis,), x = soap_utils.permute_eigenbasis_and_exp_avg_sq(
+            [momentum_factor],
+            [eigenbasis],
+            x,
+        )
+        exp_avg_sq = x if left_preconditioned else x.mT
+        _, (updated_eigenbasis,) = soap_utils.get_eigenbasis_qr(
             [momentum_factor],
             [eigenbasis],
             power_iter_steps=power_iter_steps,
@@ -256,21 +256,6 @@ def _update_eigenbasis_and_adam_exp_avgs(
         left_preconditioned=left_preconditioned,
     )
     return updated_eigenbasis, exp_avg, exp_avg_sq
-
-
-@torch.no_grad()  # type: ignore[misc]
-def _sort_one_sided_eigenbasis_and_exp_avg_sq(
-    momentum_factor: torch.Tensor,
-    eigenbasis: torch.Tensor,
-    exp_avg_sq: torch.Tensor,
-    left_preconditioned: bool,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Sort eigenbasis slots by approximate eigenvalue and permute Adam second moments."""
-    approx_eigvals = utils.eig.conjugate(momentum_factor, eigenbasis, diag=True)
-    sort_idx = torch.argsort(approx_eigvals, descending=True, stable=True)
-    sorted_eigenbasis = eigenbasis[:, sort_idx]
-    exp_avg_sq_dim = 0 if left_preconditioned else 1
-    return sorted_eigenbasis, exp_avg_sq.index_select(exp_avg_sq_dim, sort_idx)
 
 
 @torch.no_grad()  # type: ignore[misc]

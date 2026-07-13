@@ -61,8 +61,7 @@ class SoapUtilsTest(BaseTestCase):
             torch.randn(M, M, device=self.device),
             torch.randn(N, N, device=self.device),
         ]
-
-        Q_new_list = soap_utils.get_eigenbasis_qr(
+        eigvals_list, Q_new_list = soap_utils.get_eigenbasis_qr(
             kronecker_factor_list=kronecker_factor_list,
             eigenbasis_list=eigenbasis_list,
             power_iter_steps=1,
@@ -80,12 +79,23 @@ class SoapUtilsTest(BaseTestCase):
         assert_close_to_identity(Q_new_L.t() @ Q_new_L, diag_atol=1e-5, off_diag_atol=1e-5)
         assert_close_to_identity(Q_new_R.t() @ Q_new_R, diag_atol=1e-5, off_diag_atol=1e-5)
 
+        self.assertEqual(len(eigvals_list), 2)
+        for eigvals, kronecker_factor, Q_new in zip(eigvals_list, kronecker_factor_list, Q_new_list, strict=True):
+            self.assertEqual(eigvals.shape, (kronecker_factor.shape[0],))
+            torch.testing.assert_close(
+                eigvals,
+                torch.diag(Q_new.t() @ kronecker_factor @ Q_new),
+                atol=1e-5,
+                rtol=1e-5,
+                msg=lambda msg: f"eigvals do not match the Rayleigh quotients diag(Q^T K Q)\n\n{msg}",
+            )
+
     @parameterized.parameters(  # type: ignore[misc]
         {"N": 4, "M": 8},
         {"N": 16, "M": 8},
     )
-    def test_sort_eigenbasis_by_approx_eigvals(self, N: int, M: int) -> None:
-        """Sort function permutes eigenbasis columns and exp_avg_sq slots consistently."""
+    def test_permute_eigenbasis_and_exp_avg_sq(self, N: int, M: int) -> None:
+        """Permutes eigenbasis columns and exp_avg_sq slots consistently, in descending eigval order."""
         g = torch.randint(-5, 6, (M, N), device=self.device) / 16.0
         # Add a small ridge so K is full-rank (g @ g.t() is rank-deficient when M > N, etc.),
         # which keeps the approximate eigenvalues away from numerical zero where ordering becomes
@@ -95,7 +105,7 @@ class SoapUtilsTest(BaseTestCase):
         eigenbasis_list = [torch.linalg.qr(Q).Q for Q in kronecker_factor_list]
         exp_avg_sq = torch.abs(torch.randint(-5, 6, (M, N), device=self.device) / 16.0)
 
-        sorted_eigenbasis_list, sorted_exp_avg_sq = soap_utils.sort_eigenbasis_by_approx_eigvals(
+        permuted_eigenbasis_list, permuted_exp_avg_sq = soap_utils.permute_eigenbasis_and_exp_avg_sq(
             kronecker_factor_list,
             eigenbasis_list,
             exp_avg_sq,
@@ -107,9 +117,9 @@ class SoapUtilsTest(BaseTestCase):
             sort_idx_list.append(torch.argsort(torch.diag(Q.t() @ K @ Q), descending=True))
 
         # Each eigenbasis is column-permuted by its own sort_idx.
-        for i, (Q_old, Q_sorted) in enumerate(zip(eigenbasis_list, sorted_eigenbasis_list, strict=True)):
+        for i, (Q_old, Q_permuted) in enumerate(zip(eigenbasis_list, permuted_eigenbasis_list, strict=True)):
             assert_equal(
-                Q_sorted,
+                Q_permuted,
                 Q_old[:, sort_idx_list[i]],
                 msg=lambda m, i=i: f"eigenbasis i={i} not permuted by sort_idx\n\n{m}",
             )
@@ -119,15 +129,15 @@ class SoapUtilsTest(BaseTestCase):
         for i, sort_idx in enumerate(sort_idx_list):
             expected_sq = expected_sq.index_select(i, sort_idx)
         assert_equal(
-            sorted_exp_avg_sq,
+            permuted_exp_avg_sq,
             expected_sq,
-            msg=lambda m: f"exp_avg_sq not permuted to match sorted eigenbases\n\n{m}",
+            msg=lambda m: f"exp_avg_sq not permuted to match permuted eigenbases\n\n{m}",
         )
 
-        # Sorted eigenbases yield descending approximate eigenvalues.
-        for K, Q in zip(kronecker_factor_list, sorted_eigenbasis_list, strict=True):
-            sorted_eigvals = torch.diag(Q.t() @ K @ Q)
-            self.assertTrue(torch.all(sorted_eigvals[:-1] >= sorted_eigvals[1:]))
+        # Permuted eigenbases yield descending approximate eigenvalues.
+        for K, Q in zip(kronecker_factor_list, permuted_eigenbasis_list, strict=True):
+            permuted_eigvals = torch.diag(Q.t() @ K @ Q)
+            self.assertTrue(torch.all(permuted_eigvals[:-1] >= permuted_eigvals[1:]))
 
     @parameterized.parameters(  # type: ignore[misc]
         {"dims": [128, 512]},
@@ -141,13 +151,18 @@ class SoapUtilsTest(BaseTestCase):
             k_factor = k_factor @ k_factor.T + torch.eye(dim, device=self.device) * 1e-5
             kronecker_factor_list.append(k_factor)
 
-        Q_list = soap_utils.get_eigenbasis_eigh(kronecker_factor_list)
+        eigvals_list, Q_list = soap_utils.get_eigenbasis_eigh(kronecker_factor_list)
 
         self.assertEqual(len(Q_list), len(kronecker_factor_list))
+        self.assertEqual(len(eigvals_list), len(kronecker_factor_list))
 
-        for i, Q in enumerate(Q_list):
+        for i, (eigvals, Q) in enumerate(zip(eigvals_list, Q_list, strict=True)):
             orig_dim = dims[i]
             self.assertEqual(Q.shape, (orig_dim, orig_dim))
+            self.assertEqual(eigvals.shape, (orig_dim,))
+
+            # Eigenvalues are returned in descending order
+            self.assertTrue(torch.all(eigvals[:-1] >= eigvals[1:]))
 
             # Check orthogonality: Q.T @ Q should be close to identity due to orthonormal matrix property
             with utils.fp32_matmul_precision("highest"):

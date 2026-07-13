@@ -237,14 +237,13 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 shampoo_beta = group["shampoo_beta"]
                 shampoo_beta = 1 - (1 - shampoo_beta) / (1 - shampoo_beta**curr_iter_1_based)
 
-                # KL-Shampoo correction needs the eigenbasis of the *pre-update* L, R; recompute it
-                # via eigh since we do not persist eigenbases across steps.
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    pre_eigenbasis_list = soap_utils.get_eigenbasis_eigh(kronecker_factor_list)
+                    pre_eigvals_list, pre_eigenbasis_list = soap_utils.get_eigenbasis_eigh(kronecker_factor_list)
                     soap.update_kronecker_factors_kl_shampoo(
                         kronecker_factor_list,
                         full_grad,
                         shampoo_beta=shampoo_beta,
+                        eigvals_list=pre_eigvals_list,
                         eigenbasis_list=pre_eigenbasis_list,
                         eps=group["eps"],
                     )
@@ -256,9 +255,7 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     state["R"].copy_(kronecker_factor_list[1].chunk(self.tp_size, dim=0)[self.tp_rank])
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                    # Rotate exp_avg from the pre-update eigenbasis to the post-update eigenbasis,
-                    # and recompute the post-update eigenbasis via eigh.
-                    eigenbasis_list, state["exp_avg"], state["exp_avg_sq"] = soap.update_eigenbasis_and_exp_avgs(
+                    _, eigenbasis_list, state["exp_avg"], state["exp_avg_sq"] = soap.update_eigenbasis_and_exp_avgs(
                         kronecker_factor_list=kronecker_factor_list,
                         eigenbasis_list=pre_eigenbasis_list,
                         exp_avg_sq=state["exp_avg_sq"],
