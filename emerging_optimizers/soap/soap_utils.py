@@ -105,8 +105,9 @@ def permute_eigenbasis_and_exp_avg_sq(
     for ind, (kronecker_factor, eigenbasis) in enumerate(zip(kronecker_factor_list, eigenbasis_list, strict=True)):
         approx_eigvals = eig_utils.conjugate(kronecker_factor, eigenbasis, diag=True)
         sort_idx = torch.argsort(approx_eigvals, descending=True)
-        permuted_eigenbasis_list.append(eigenbasis[:, sort_idx])
-        exp_avg_sq = exp_avg_sq.index_select(ind, sort_idx)
+        permuted_eigenbasis_list.append(torch.take_along_dim(eigenbasis, sort_idx.unsqueeze(-2), dim=-1))
+        exp_avg_sq_index = sort_idx.unsqueeze(-1) if ind == 0 else sort_idx.unsqueeze(-2)
+        exp_avg_sq = torch.take_along_dim(exp_avg_sq, exp_avg_sq_index, dim=ind - 2)
     return permuted_eigenbasis_list, exp_avg_sq
 
 

@@ -139,6 +139,41 @@ class SoapUtilsTest(BaseTestCase):
             permuted_eigvals = torch.diag(Q.t() @ K @ Q)
             self.assertTrue(torch.all(permuted_eigvals[:-1] >= permuted_eigvals[1:]))
 
+    def test_permute_eigenbasis_and_exp_avg_sq_batched_matches_loop(self) -> None:
+        batch, m, n = 3, 8, 4
+        basis_list = [torch.linalg.qr(torch.randn(batch, k, k, device=self.device)).Q for k in (m, n)]
+        spectrum_list = [torch.arange(1.0, k + 1, device=self.device) for k in (m, n)]
+        kronecker_factor_list = [
+            (basis * spectrum.unsqueeze(-2)) @ basis.mT
+            for basis, spectrum in zip(basis_list, spectrum_list, strict=True)
+        ]
+        eigenbasis_list = [torch.roll(basis, 1, dims=-1) for basis in basis_list]
+        exp_avg_sq = torch.abs(torch.randn(batch, m, n, device=self.device))
+
+        permuted_eigenbasis_list, permuted_exp_avg_sq = soap_utils.permute_eigenbasis_and_exp_avg_sq(
+            kronecker_factor_list,
+            eigenbasis_list,
+            exp_avg_sq,
+        )
+
+        for b in range(batch):
+            expected_eigenbasis_list, expected_exp_avg_sq = soap_utils.permute_eigenbasis_and_exp_avg_sq(
+                [kronecker_factor[b] for kronecker_factor in kronecker_factor_list],
+                [eigenbasis[b] for eigenbasis in eigenbasis_list],
+                exp_avg_sq[b],
+            )
+            for i, expected_eigenbasis in enumerate(expected_eigenbasis_list):
+                assert_equal(
+                    permuted_eigenbasis_list[i][b],
+                    expected_eigenbasis,
+                    msg=lambda msg, b=b, i=i: f"eigenbasis {i} differs from per-slice reference at slice {b}\n\n{msg}",
+                )
+            assert_equal(
+                permuted_exp_avg_sq[b],
+                expected_exp_avg_sq,
+                msg=lambda msg, b=b: f"exp_avg_sq differs from per-slice reference at slice {b}\n\n{msg}",
+            )
+
     @parameterized.parameters(  # type: ignore[misc]
         {"dims": [128, 512]},
         {"dims": []},
