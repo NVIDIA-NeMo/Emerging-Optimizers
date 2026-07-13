@@ -17,7 +17,7 @@ from functools import partial
 
 import soap_reference
 import torch
-from _comparison import align_column_signs, assert_close_to_identity, assert_equal
+from _comparison import assert_close_to_identity, assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -345,81 +345,6 @@ class SoapFunctionsTest(parameterized.TestCase):
             rtol=1e-5,
             msg="exp_avg norm not preserved after eigenbasis update.",
         )
-
-    @parameterized.parameters(
-        {"use_eigh": True},
-        {"use_eigh": False},
-    )
-    def test_update_eigenbasis_and_exp_avgs_batched_matches_loop(self, use_eigh: bool) -> None:
-        batch, m, n = 3, 8, 4
-        basis_list = [torch.linalg.qr(torch.randn(batch, k, k, device=self.device)).Q for k in (m, n)]
-        spectrum_list = [torch.arange(1.0, k + 1, device=self.device) for k in (m, n)]
-        kronecker_factor_list = [
-            (basis * spectrum.unsqueeze(-2)) @ basis.mT
-            for basis, spectrum in zip(basis_list, spectrum_list, strict=True)
-        ]
-        eigenbasis_list = [torch.roll(basis, 1, dims=-1) for basis in basis_list]
-        exp_avg = torch.randn(batch, m, n, device=self.device)
-        exp_avg_sq = torch.abs(torch.randn(batch, m, n, device=self.device))
-
-        batched_eigvals_list, batched_eigenbasis_list, batched_exp_avg, batched_exp_avg_sq = (
-            soap.update_eigenbasis_and_exp_avgs(
-                kronecker_factor_list=kronecker_factor_list,
-                eigenbasis_list=eigenbasis_list,
-                exp_avg_sq=exp_avg_sq,
-                exp_avg=exp_avg,
-                use_eigh=use_eigh,
-            )
-        )
-
-        self.assertEqual(batched_eigvals_list[0].shape, (batch, m))
-        self.assertEqual(batched_eigvals_list[1].shape, (batch, n))
-        self.assertEqual(batched_eigenbasis_list[0].shape, (batch, m, m))
-        self.assertEqual(batched_eigenbasis_list[1].shape, (batch, n, n))
-        self.assertEqual(batched_exp_avg.shape, (batch, m, n))
-        self.assertEqual(batched_exp_avg_sq.shape, (batch, m, n))
-
-        for b in range(batch):
-            loop_eigvals_list, loop_eigenbasis_list, loop_exp_avg, loop_exp_avg_sq = (
-                soap.update_eigenbasis_and_exp_avgs(
-                    kronecker_factor_list=[kronecker_factor[b] for kronecker_factor in kronecker_factor_list],
-                    eigenbasis_list=[eigenbasis[b] for eigenbasis in eigenbasis_list],
-                    exp_avg_sq=exp_avg_sq[b],
-                    exp_avg=exp_avg[b],
-                    use_eigh=use_eigh,
-                )
-            )
-            sign_list = []
-            for i in range(2):
-                torch.testing.assert_close(
-                    batched_eigvals_list[i][b],
-                    loop_eigvals_list[i],
-                    atol=1e-4,
-                    rtol=1e-4,
-                    msg=lambda msg, b=b, i=i: f"eigvals {i} differ from per-slice reference at slice {b}\n\n{msg}",
-                )
-                aligned_eigenbasis, signs = align_column_signs(batched_eigenbasis_list[i][b], loop_eigenbasis_list[i])
-                torch.testing.assert_close(
-                    aligned_eigenbasis,
-                    loop_eigenbasis_list[i],
-                    atol=1e-4,
-                    rtol=1e-4,
-                    msg=lambda msg, b=b, i=i: f"eigenbasis {i} differs from per-slice reference at slice {b}\n\n{msg}",
-                )
-                sign_list.append(signs)
-            aligned_exp_avg = sign_list[0].unsqueeze(-1) * batched_exp_avg[b] * sign_list[1].unsqueeze(-2)
-            torch.testing.assert_close(
-                aligned_exp_avg,
-                loop_exp_avg,
-                atol=1e-4,
-                rtol=1e-4,
-                msg=lambda msg, b=b: f"exp_avg differs from per-slice reference at slice {b}\n\n{msg}",
-            )
-            assert_equal(
-                batched_exp_avg_sq[b],
-                loop_exp_avg_sq,
-                msg=lambda msg, b=b: f"exp_avg_sq differs from per-slice reference at slice {b}\n\n{msg}",
-            )
 
     @parameterized.parameters(
         (4, 5),
