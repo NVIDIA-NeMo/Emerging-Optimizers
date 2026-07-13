@@ -129,49 +129,12 @@ def one_sided_polargrad_orth_fn(
     ``side="right"`` suits tall matrices (e.g. an embedding or LM-head weight, ``vocab x hidden``);
     ``side="left"`` suits wide matrices (e.g. an MoE router weight, ``num_experts x hidden``).
 
-    .. code-block:: python
-       :caption: Define a ``LeftPolarGrad`` by partially applying this orthogonalization
-
-       class LeftPolarGrad(OrthogonalizedOptimizer):
-           def __init__(
-               self,
-               params,
-               lr: float = 3e-4,
-               momentum: float = 0.95,
-               weight_decay: float = 0.01,
-               *,
-               ...
-               alpha: float = 1.0,
-               center_rows: bool = False,
-               eps: float = 1e-15,
-               extra_scale_factor: float = 1.0,
-           ) -> None:
-               scaled_orthogonalize_fn = functools.partial(
-                   one_sided_polargrad_orth_fn,
-                   side="left",
-                   alpha=alpha,
-                   center_rows=center_rows,
-                   eps=eps,
-                   extra_scale_factor=extra_scale_factor,
-               )
-               super().__init__(
-                   ...
-               )
-
-    Note:
-        The inverse square root is computed as a pseudo-inverse: eigendirections of the Gram matrix that
-        are numerically indistinguishable from its null space contribute nothing to the update instead
-        of being amplified by the ``eps`` floor. This matters because the Gram is singular whenever
-        ``center_rows=True`` on the ``side="left"`` Gram (centering annihilates the all-ones direction)
-        or the matrix is rank deficient.
-
     Args:
         grad: The (momentum) tensor to orthogonalize.
         side: Which polar factor to orthogonalize, ``"left"`` or ``"right"``.
         alpha: Exponent applied to the nuclear-norm scale factor.
         center_rows: If True, subtract the per-column mean (the average over the row axis, ``dim=0``)
-            before and after the update, so each column is zero-mean. For MoE routers this respects the
-            logit-shift invariance of the routing softmax.
+            before and after the update, so each column is zero-mean.
         eps: Floor on the Gram eigenvalues for the nuclear-norm computation.
         extra_scale_factor: Extra multiplier on the update.
 
@@ -191,7 +154,7 @@ def one_sided_polargrad_orth_fn(
     gram = m @ m.transpose(-1, -2) if side == "left" else m.transpose(-1, -2) @ m
     eigvals, eigvecs = eigh_with_fallback(gram)
     eigvals.clamp_min_(eps)
-    cutoff = eigvals.amax() * gram.shape[-1] * torch.finfo(torch.float32).eps
+    cutoff = eigvals.amax() * gram.shape[-1] * torch.finfo(m.dtype).eps
     inv_sqrt_eigvals = torch.where(eigvals > cutoff, eigvals.rsqrt(), torch.zeros_like(eigvals))
     gram_inv_sqrt = (eigvecs * inv_sqrt_eigvals.unsqueeze(-2)) @ eigvecs.transpose(-1, -2)
 
