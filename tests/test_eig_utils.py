@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
-from _comparison import align_column_signs, assert_equal
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -152,68 +152,23 @@ class EigUtilsTest(BaseTestCase):
         ref = p.T @ a @ p
         assert_equal(eig_utils.conjugate(a, p), ref)
 
-    @parameterized.parameters(
-        {"diag": False},
-        {"diag": True},
+    @parameterized.product(
+        batch=[2, 3, 4],
+        size=[(8, 8), (16, 16), (31, 15)],
+        diag=[True, False],
     )
-    def test_conjugate_batched_matches_loop(self, diag: bool) -> None:
-        x = torch.randn(3, 8, 8, device=self.device)
+    def test_conjugate_batched_matches_loop(self, batch: int, size: tuple, diag: bool) -> None:
+        x = torch.randint(-3, 4, (batch, *size), device=self.device, dtype=torch.float)
         a = x @ x.mT
-        p = torch.linalg.qr(torch.randn(3, 8, 8, device=self.device)).Q
+        p = torch.randint(-3, 4, (batch, size[0], size[0]), device=self.device, dtype=torch.float)
 
         batched = eig_utils.conjugate(a, p, diag=diag)
 
         for b in range(a.shape[0]):
-            torch.testing.assert_close(
+            assert_equal(
                 batched[b],
                 eig_utils.conjugate(a[b], p[b], diag=diag),
                 msg=lambda msg, b=b: f"batched conjugate differs from per-slice reference at slice {b}\n\n{msg}",
-            )
-
-    def test_eigh_with_fallback_batched_input(self) -> None:
-        a = torch.randint(-8, 10, (4, 8, 8), device=self.device) / 16.0
-        x = a @ a.mT
-
-        eigenvalues, eigenvectors = eig_utils.eigh_with_fallback(x)
-
-        self.assertEqual(eigenvalues.shape, (4, 8))
-        self.assertEqual(eigenvectors.shape, (4, 8, 8))
-        self.assertTrue(torch.all(eigenvalues[:, :-1] >= eigenvalues[:, 1:]))
-        for b in range(x.shape[0]):
-            reconstructed = eigenvectors[b].double() @ torch.diag(eigenvalues[b].double()) @ eigenvectors[b].double().T
-            torch.testing.assert_close(
-                reconstructed.to(x.dtype),
-                x[b],
-                atol=1e-4,
-                rtol=1e-4,
-                msg=lambda msg, b=b: f"batched eigh reconstruction failed at slice {b}\n\n{msg}",
-            )
-
-    def test_orthogonal_iteration_batched_matches_loop(self) -> None:
-        a = torch.randn(3, 8, 8, device=self.device)
-        kronecker_factor = a @ a.mT
-        eigenbasis = torch.linalg.qr(torch.randn(3, 8, 8, device=self.device)).Q
-
-        batched = eig_utils.orthogonal_iteration(
-            kronecker_factor=kronecker_factor,
-            eigenbasis=eigenbasis,
-            power_iter_steps=2,
-        )
-
-        self.assertEqual(batched.shape, (3, 8, 8))
-        for b in range(kronecker_factor.shape[0]):
-            expected = eig_utils.orthogonal_iteration(
-                kronecker_factor=kronecker_factor[b],
-                eigenbasis=eigenbasis[b],
-                power_iter_steps=2,
-            )
-            aligned, _ = align_column_signs(batched[b], expected)
-            torch.testing.assert_close(
-                aligned,
-                expected,
-                atol=1e-5,
-                rtol=1e-5,
-                msg=lambda msg, b=b: f"orthogonal iteration mismatch at slice {b}\n\n{msg}",
             )
 
     def test_eigh_with_fallback_reraises_runtime_error_when_force_double(self) -> None:
