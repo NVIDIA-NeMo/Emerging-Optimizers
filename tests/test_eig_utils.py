@@ -146,8 +146,12 @@ class EigUtilsTest(BaseTestCase):
     def test_conjugate_raises_on_dim_mismatch(self):
         a = torch.randn(3, 4, device=self.device)
         b = torch.randn(3, 4, 5, device=self.device)
-        with self.assertRaisesRegex(TypeError, "must have same number of dimensions"):
+        with self.assertRaisesRegex(ValueError, "must have the same number of dimensions"):
             eig_utils.conjugate(a, b)
+
+        c = torch.randn(2, 4, 7, device=self.device)
+        with self.assertRaisesRegex(ValueError, "must have the same batch dimension"):
+            eig_utils.conjugate(b, c)
 
     def test_conjugate_match_reference(self) -> None:
         x = torch.randn(15, 17, device=self.device)

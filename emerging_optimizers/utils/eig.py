@@ -113,10 +113,10 @@ def conjugate(a: Tensor, p: Tensor, diag: bool = False) -> Tensor:
     """
     if a.dim() not in (2, 3) or p.dim() not in (2, 3):
         raise TypeError(f"a and p must be 2D matrices or 3D batched matrices. Got {a.dim()} and {p.dim()}")
-    if a.dim() != p.dim() or a.shape[0] != p.shape[0]:
-        raise TypeError(
-            f"a and p must have same number of dimensions and leading dimension. Got {a.shape} and {p.shape}"
-        )
+    if a.dim() != p.dim():
+        raise ValueError(f"a and p must have the same number of dimensions. Got {a.dim()} and {p.dim()}")
+    if a.dim() == 3 and a.shape[0] != p.shape[0]:
+        raise ValueError(f"a and p must have the same batch dimension. Got {a.shape[0]} and {p.shape[0]}")
     pta = p.mT @ a
     if not diag:
         b = pta @ p
