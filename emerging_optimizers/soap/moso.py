@@ -67,7 +67,7 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
         params: ParamsT,
         lr: float = 3e-4,
         momentum: float = 0.95,
-        betas: tuple[float, float] = (0.9, 0.95),
+        betas: tuple[float, float] = (0.0, 0.95),
         shampoo_beta: float = 0.95,
         eps: float = 1e-8,
         weight_decay: float = 0.01,
