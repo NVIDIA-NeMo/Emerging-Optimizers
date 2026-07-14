@@ -196,5 +196,42 @@ class LeftPolarGradOrthFnTest(parameterized.TestCase):
         self.assertTrue(torch.isfinite(param).all())
 
 
+class OneSidedPolarGradOrthFnTest(parameterized.TestCase):
+    def setUp(self):
+        self.device = FLAGS.device
+
+    def test_invalid_side_raises_value_error(self) -> None:
+        grad = torch.randn((4, 8), device=self.device)
+        with self.assertRaisesRegex(ValueError, "side must be 'left' or 'right'"):
+            polargrad.one_sided_polargrad_orth_fn(grad, side="both")
+
+    @parameterized.parameters(("left",), ("right",))
+    def test_wrapper_output_matches_one_sided(self, side) -> None:
+        """left/right wrappers produce bitwise-identical results to side= selection."""
+        grad = torch.randn((8, 32) if side == "left" else (32, 8), device=self.device)
+        wrapper = polargrad.left_polargrad_orth_fn if side == "left" else polargrad.right_polargrad_orth_fn
+
+        assert_equal(
+            wrapper(grad, alpha=1.0, center_rows=True, extra_scale_factor=0.2),
+            polargrad.one_sided_polargrad_orth_fn(
+                grad, side=side, alpha=1.0, center_rows=True, extra_scale_factor=0.2
+            ),
+        )
+
+    @parameterized.parameters((8, 32), (4, 8))
+    def test_left_close_to_transposed_right(self, num_rows, num_cols) -> None:
+        """f_left(G) == f_right(G^T)^T for the shared one-sided polar map."""
+        grad = torch.randn((num_rows, num_cols), device=self.device)
+
+        left = polargrad.one_sided_polargrad_orth_fn(grad, side="left")
+        right_t = polargrad.one_sided_polargrad_orth_fn(grad.transpose(-1, -2), side="right").transpose(-1, -2)
+        torch.testing.assert_close(
+            left,
+            right_t,
+            atol=1e-4,
+            rtol=1e-4,
+        )
+
+
 if __name__ == "__main__":
     absltest.main()
