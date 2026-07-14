@@ -134,11 +134,24 @@ class EigUtilsTest(BaseTestCase):
         self.assertEqual(eigenvalues.shape, (4,))
         self.assertEqual(eigenvectors.shape, (4, 4))
 
-    def test_conjugate_assert_2d_input(self) -> None:
-        """Tests the conjugate function."""
-        a = torch.randn(2, 3, 4, device=self.device)
-        with self.assertRaises(TypeError):
+    @parameterized.parameters(
+        {"shape": (4,)},
+        {"shape": (2, 2, 3, 4)},
+    )
+    def test_conjugate_raises_on_non_2d_or_3d_input(self, shape: tuple[int, ...]) -> None:
+        a = torch.randn(shape, device=self.device)
+        with self.assertRaisesRegex(TypeError, "must be 2D matrices or 3D batched matrices"):
             eig_utils.conjugate(a, a)
+
+    def test_conjugate_raises_on_dim_mismatch(self):
+        a = torch.randn(3, 4, device=self.device)
+        b = torch.randn(3, 4, 5, device=self.device)
+        with self.assertRaisesRegex(ValueError, "must have the same number of dimensions"):
+            eig_utils.conjugate(a, b)
+
+        c = torch.randn(2, 4, 7, device=self.device)
+        with self.assertRaisesRegex(ValueError, "must have the same batch dimension"):
+            eig_utils.conjugate(b, c)
 
     def test_conjugate_match_reference(self) -> None:
         x = torch.randn(15, 17, device=self.device)
@@ -147,6 +160,25 @@ class EigUtilsTest(BaseTestCase):
 
         ref = p.T @ a @ p
         assert_equal(eig_utils.conjugate(a, p), ref)
+
+    @parameterized.product(
+        batch=[2, 3, 4],
+        size=[(8, 8), (16, 16), (31, 15)],
+        diag=[True, False],
+    )
+    def test_conjugate_batched_matches_loop(self, batch: int, size: tuple, diag: bool) -> None:
+        x = torch.randint(-3, 4, (batch, *size), device=self.device, dtype=torch.float)
+        a = x @ x.mT
+        p = torch.randint(-3, 4, (batch, size[0], size[0]), device=self.device, dtype=torch.float)
+
+        batched = eig_utils.conjugate(a, p, diag=diag)
+
+        for b in range(a.shape[0]):
+            assert_equal(
+                batched[b],
+                eig_utils.conjugate(a[b], p[b], diag=diag),
+                msg=lambda msg, b=b: f"batched conjugate differs from per-slice reference at slice {b}\n\n{msg}",
+            )
 
     def test_eigh_with_fallback_reraises_runtime_error_when_force_double(self) -> None:
         """Test that eigh_with_fallback re-raises when force_double=True and eigh fails."""
