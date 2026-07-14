@@ -139,10 +139,15 @@ class EigUtilsTest(BaseTestCase):
         {"shape": (2, 2, 3, 4)},
     )
     def test_conjugate_raises_on_non_2d_or_3d_input(self, shape: tuple[int, ...]) -> None:
-        """Tests the conjugate function."""
         a = torch.randn(shape, device=self.device)
-        with self.assertRaises(TypeError):
+        with self.assertRaisesRegex(TypeError, "must be 2D matrices or 3D batched matrices"):
             eig_utils.conjugate(a, a)
+
+    def test_conjugate_raises_on_dim_mismatch(self):
+        a = torch.randn(3, 4, device=self.device)
+        b = torch.randn(3, 4, 5, device=self.device)
+        with self.assertRaisesRegex(TypeError, "must have same number of dimensions"):
+            eig_utils.conjugate(a, b)
 
     def test_conjugate_match_reference(self) -> None:
         x = torch.randn(15, 17, device=self.device)
