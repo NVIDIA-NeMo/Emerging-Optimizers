@@ -111,12 +111,16 @@ def conjugate(a: Tensor, p: Tensor, diag: bool = False) -> Tensor:
     Returns:
         b
     """
-    if a.dim() != 2 or p.dim() != 2:
-        raise TypeError("a and p must be 2D matrices")
-    pta = p.T @ a
+    if a.dim() not in (2, 3) or p.dim() not in (2, 3):
+        raise TypeError(f"a and p must be 2D matrices or 3D batched matrices. Got {a.dim()} and {p.dim()}")
+    if a.dim() != p.dim():
+        raise ValueError(f"a and p must have the same number of dimensions. Got {a.dim()} and {p.dim()}")
+    if a.dim() == 3 and a.shape[0] != p.shape[0]:
+        raise ValueError(f"a and p must have the same batch dimension. Got {a.shape[0]} and {p.shape[0]}")
+    pta = p.mT @ a
     if not diag:
         b = pta @ p
     else:
         # return the diagonal of the similarity transformation
-        b = (pta * p.T).sum(dim=1)
+        b = (pta * p.mT).sum(dim=-1)
     return b
