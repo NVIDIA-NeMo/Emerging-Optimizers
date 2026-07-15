@@ -37,19 +37,19 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
     r"""Momentum One-Sided SOAP.
 
     MOSO tracks EMA momentum like Muon, accumulates a SOAP/Shampoo-style covariance of that momentum on the
-    smaller matrix side, and applies an Adam update in the covariance eigenbasis.
+    smaller matrix side, and applies an RMSProp update in the covariance eigenbasis.
     Conceptually, this is one-sided SOAP where ``G_t G_t^T`` is replaced by ``M_t M_t^T`` (or ``M_t^T M_t`` for the
-    right side), and the update is computed by projecting the momentum into the eigenbasis, applying Adam there, and
-    projecting back:
+    right side), and the update is computed by projecting the momentum into the eigenbasis, applying RMSProp there,
+    and projecting back:
 
     .. math::
 
         C_t = \beta_s C_{t-1} + (1 - \beta_s) M_t M_t^T,\quad C_t = Q_M \Lambda_M Q_M^T
 
-        U_t = Q_M \operatorname{Adam}(Q_M^T M_t)
+        U_t = Q_M \operatorname{RMSprop}(Q_M^T M_t)
 
     for the left-preconditioned case where ``M_t.shape[0] <= M_t.shape[1]``; the right-preconditioned case uses
-    ``C_t = M_t^T M_t`` and computes ``U_t = \operatorname{Adam}(M_t Q_M) Q_M^T``.
+    ``C_t = M_t^T M_t`` and computes ``U_t = \operatorname{RMSprop}(M_t Q_M) Q_M^T``.
 
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups.
@@ -57,7 +57,7 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
         momentum: EMA coefficient for the Muon-style momentum.
         rms_beta: EMA coefficient for the second-moment (RMS) normalization in the eigenbasis.
         shampoo_beta: EMA coefficient for the one-sided momentum covariance.
-        eps: Inner Adam epsilon for numerical stability.
+        eps: RMSProp epsilon for numerical stability.
         weight_decay: Weight decay coefficient.
         max_update_rms: Clip the update RMS to this value (0 means no clipping).
     """
@@ -107,7 +107,6 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 preconditioner_size = min(rows, cols)
                 state["step"] = 0
                 state["momentum_buffer"] = torch.zeros_like(p.data, dtype=torch.float32)
-                state["exp_avg"] = torch.zeros_like(p.data, dtype=torch.float32)
                 state["exp_avg_sq"] = torch.zeros_like(p.data, dtype=torch.float32)
                 state["M"] = torch.zeros(
                     preconditioner_size,
@@ -164,10 +163,9 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 left_preconditioned = momentum.shape[0] <= momentum.shape[1]
                 with utils.fp32_matmul_precision("highest"):
-                    state["Q_M"], state["exp_avg"], state["exp_avg_sq"] = _update_eigenbasis_and_adam_exp_avgs(
+                    state["Q_M"], state["exp_avg_sq"] = _update_eigenbasis_and_exp_avg_sq(
                         momentum_factor=state["M"],
                         eigenbasis=state["Q_M"],
-                        exp_avg=state["exp_avg"],
                         exp_avg_sq=state["exp_avg_sq"],
                         left_preconditioned=left_preconditioned,
                         use_eigh=state["step"] == 0,
@@ -180,18 +178,14 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         eigenbasis=state["Q_M"],
                         left_preconditioned=left_preconditioned,
                     )
-                    adam_update = update_functions.calculate_adam_update(
+                    rmsprop_update = update_functions.calculate_rmsprop_update(
                         momentum_projected,
-                        state["exp_avg"],
                         state["exp_avg_sq"],
-                        betas=(0.0, group["rms_beta"]),
+                        alpha=group["rms_beta"],
                         eps=group["eps"],
-                        correct_bias=True,
-                        nesterov=False,
-                        step=curr_iter_1_based,
                     )
                     update = _project_from_one_sided_eigenbasis(
-                        x=adam_update,
+                        x=rmsprop_update,
                         eigenbasis=state["Q_M"],
                         left_preconditioned=left_preconditioned,
                     )
@@ -217,23 +211,16 @@ def _update_one_sided_momentum_factor(
 
 
 @torch.no_grad()  # type: ignore[misc]
-def _update_eigenbasis_and_adam_exp_avgs(
+def _update_eigenbasis_and_exp_avg_sq(
     momentum_factor: torch.Tensor,
     eigenbasis: torch.Tensor,
-    exp_avg: torch.Tensor,
     exp_avg_sq: torch.Tensor,
     left_preconditioned: bool,
     *,
     use_eigh: bool,
     power_iter_steps: int,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Update one eigenbasis and keep Adam state aligned with that basis."""
-    exp_avg = _project_from_one_sided_eigenbasis(
-        x=exp_avg,
-        eigenbasis=eigenbasis,
-        left_preconditioned=left_preconditioned,
-    )
-
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Update one eigenbasis and keep the RMSProp second moment aligned with that basis."""
     if use_eigh:
         _, (updated_eigenbasis,) = soap_utils.get_eigenbasis_eigh([momentum_factor])
     else:
@@ -250,12 +237,7 @@ def _update_eigenbasis_and_adam_exp_avgs(
             power_iter_steps=power_iter_steps,
         )
 
-    exp_avg = _project_to_one_sided_eigenbasis(
-        x=exp_avg,
-        eigenbasis=updated_eigenbasis,
-        left_preconditioned=left_preconditioned,
-    )
-    return updated_eigenbasis, exp_avg, exp_avg_sq
+    return updated_eigenbasis, exp_avg_sq
 
 
 @torch.no_grad()  # type: ignore[misc]

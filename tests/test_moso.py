@@ -137,9 +137,8 @@ class MOSOTest(parameterized.TestCase):
         with self.assertRaisesRegex(TypeError, "only supported for 2D"):
             optimizer.step()
 
-    def test_no_inner_first_moment_momentum(self) -> None:
+    def test_betas_raise_type_error(self) -> None:
         param = torch.randn((4, 4), requires_grad=True, device=FLAGS.device)
-        MOSO([param], lr=0.001, rms_beta=0.9)
         with self.assertRaises(TypeError):
             MOSO([param], lr=0.001, betas=(0.9, 0.95))
 
