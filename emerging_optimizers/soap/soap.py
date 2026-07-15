@@ -78,6 +78,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             stream from this list in round-robin fashion.
     """
 
+    _supports_batched_params = False
+
     def __init__(
         self,
         params: ParamsT,
@@ -142,8 +144,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
             if skip_non_grad_params and p.grad is None:
                 continue
 
-            if p.dim() != 2:
-                raise TypeError("SOAP is only supported for 2D tensors")
+            if p.dim() != 2 and not (self._supports_batched_params and p.dim() == 3):
+                raise TypeError(f"SOAP is only supported for 2D tensors. Got {p.dim()}D")
 
             state = self.state[p]
 
@@ -155,10 +157,17 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 # Use shape of p instead of grad for initialization because of the introduction of skip_non_grad_params
                 # for megatron-lm distributed checkpointing use. _init_group can be called without grad.
                 state["L"], state["R"] = init_kronecker_factors(p.shape, device=p.device)
-                state["Q_L"] = torch.eye(p.shape[0], device=p.device)
-                state["Q_R"] = torch.eye(p.shape[1], device=p.device)
-                state["eigvals_L"] = torch.zeros(p.shape[0], device=p.device)
-                state["eigvals_R"] = torch.zeros(p.shape[1], device=p.device)
+                if p.dim() == 2:
+                    state["Q_L"] = torch.eye(p.shape[0], device=p.device)
+                    state["Q_R"] = torch.eye(p.shape[1], device=p.device)
+                    state["eigvals_L"] = torch.zeros(p.shape[0], device=p.device)
+                    state["eigvals_R"] = torch.zeros(p.shape[1], device=p.device)
+                else:
+                    num_blocks = p.shape[0]
+                    state["Q_L"] = torch.eye(p.shape[-2], device=p.device).repeat(num_blocks, 1, 1)
+                    state["Q_R"] = torch.eye(p.shape[-1], device=p.device).repeat(num_blocks, 1, 1)
+                    state["eigvals_L"] = torch.zeros(num_blocks, p.shape[-2], device=p.device)
+                    state["eigvals_R"] = torch.zeros(num_blocks, p.shape[-1], device=p.device)
 
     if TYPE_CHECKING:
 
@@ -335,12 +344,14 @@ def init_kronecker_factors(
         >>> print(precond_2d[1].shape)  # (20, 20)
 
     """
-    if len(grad_shape) != 2:
-        raise TypeError("init_kronecker_factors is only supported for 2D tensors")
+    if len(grad_shape) not in (2, 3):
+        raise TypeError(
+            f"init_kronecker_factors is only supported for 2D and batched 2D tensors. Got {len(grad_shape)}D"
+        )
 
     # Create a square kronecker factor matrix for each dimension
-    L = torch.zeros(grad_shape[0], grad_shape[0], device=device)
-    R = torch.zeros(grad_shape[1], grad_shape[1], device=device)
+    L = torch.zeros(*grad_shape[:-2], grad_shape[-2], grad_shape[-2], device=device)
+    R = torch.zeros(*grad_shape[:-2], grad_shape[-1], grad_shape[-1], device=device)
     return L, R
 
 
