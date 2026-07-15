@@ -28,7 +28,7 @@ def row_norm_fn(
 ) -> torch.Tensor:
     r"""Row-wise normalization of the update.
 
-    Scales each row of ``G`` to unit norm:
+    Scales each row of ``G`` by the inverse of its norm:
 
     .. math::
         u_i = G_i \, / \max(\lVert G_i \rVert_2, \epsilon)
