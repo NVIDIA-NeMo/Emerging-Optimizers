@@ -101,7 +101,7 @@ class MOSOTest(parameterized.TestCase):
             [param],
             lr=lr,
             momentum=0.0,
-            betas=(0.0, 0.0),
+            rms_beta=0.0,
             shampoo_beta=0.0,
             eps=1e-12,
             weight_decay=0.0,
@@ -136,6 +136,11 @@ class MOSOTest(parameterized.TestCase):
 
         with self.assertRaisesRegex(TypeError, "only supported for 2D"):
             optimizer.step()
+
+    def test_betas_raise_type_error(self) -> None:
+        param = torch.randn((4, 4), requires_grad=True, device=FLAGS.device)
+        with self.assertRaises(TypeError):
+            MOSO([param], lr=0.001, betas=(0.9, 0.95))
 
 
 if __name__ == "__main__":
