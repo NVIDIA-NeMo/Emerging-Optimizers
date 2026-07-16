@@ -52,8 +52,6 @@ emerging_optimizers.orthogonalized_optimizers
 
 .. autofunction:: right_polargrad_orth_fn
 
-.. autofunction:: row_norm_fn
-
 
 :hidden:`AdaptiveMuon`
 ~~~~~~~~~~~~~~~~~~~~~~~

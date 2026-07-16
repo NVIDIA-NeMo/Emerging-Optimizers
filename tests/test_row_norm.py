@@ -19,7 +19,7 @@ import torch.nn as nn
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.orthogonalized_optimizers import row_norm
+from emerging_optimizers.contrib import row_norm
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
 
