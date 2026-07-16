@@ -37,15 +37,22 @@ def row_norm_fn(
     :class:`~emerging_optimizers.orthogonalized_optimizers.OrthogonalizedOptimizer`.
 
     Args:
-        grad: The (momentum) tensor to normalize.
+        grad: The (momentum) tensor to normalize, must be 2D.
         center_rows: If True, subtract the per-column mean (the average over the row axis, ``dim=0``)
-            before and after the update, so each column is zero-mean.
+            before and after the update, so each column is zero-mean. The final re-centering changes
+            the row norms, so output rows have unit norm only when ``center_rows=False``.
         eps: Floor on the row norms.
         extra_scale_factor: Extra multiplier on the update.
 
     Returns:
         The row-normalized update, same shape and dtype as ``grad``.
+
+    Raises:
+        ValueError: If ``grad`` is not 2D.
     """
+    if grad.ndim != 2:
+        raise ValueError(f"Only 2D tensors are supported, got {grad.ndim}D")
+
     m = grad.to(torch.float32)
     if center_rows:
         m = m - m.mean(dim=0, keepdim=True)

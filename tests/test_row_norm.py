@@ -50,15 +50,21 @@ class RowNormFnTest(parameterized.TestCase):
         )
 
     @parameterized.parameters((8, 4), (8, 32))
-    def test_row_scale_invariance(self, num_rows, num_cols) -> None:
-        """f(D G) == f(G) for a positive per-row scaling D."""
+    def test_row_scale_invariance_matches(self, num_rows, num_cols) -> None:
+        """f(D G) == f(G) exactly for a positive power-of-two per-row scaling D."""
         grad = torch.randn((num_rows, num_cols), device=self.device)
-        scales = torch.rand((num_rows, 1), device=self.device) + 0.5
+        scales = torch.pow(2.0, torch.randint(-2, 3, (num_rows, 1), device=self.device))
 
         torch.testing.assert_close(
             row_norm.row_norm_fn(scales * grad),
             row_norm.row_norm_fn(grad),
+            atol=0.0,
+            rtol=0.0,
         )
+
+    def test_non_2d_raises_value_error(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Only 2D tensors are supported"):
+            row_norm.row_norm_fn(torch.randn((2, 4, 8), device=self.device))
 
     @parameterized.product(shape=[(8, 4), (8, 32)], center_rows=[False, True])
     def test_row_permutation_equivariance(self, shape, center_rows) -> None:
