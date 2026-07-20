@@ -46,6 +46,8 @@ class BlockedSoapTest(parameterized.TestCase):
         {"shape": (8, 4), "num_blocks": 2, "block_size": 4},
         {"shape": (4, 8), "num_blocks": 2, "block_size": 4},
         {"shape": (6, 6), "num_blocks": 1, "block_size": 6},
+        {"shape": (10, 4), "num_blocks": 3, "block_size": 4},
+        {"shape": (4, 10), "num_blocks": 3, "block_size": 4},
     )
     def test_10steps_smoke_and_state_shapes(self, shape: tuple[int, int], num_blocks: int, block_size: int) -> None:
         param = torch.nn.Parameter(torch.randn(shape, device=self.device))
@@ -63,23 +65,28 @@ class BlockedSoapTest(parameterized.TestCase):
         for key in ("eigvals_L", "eigvals_R"):
             self.assertEqual(state[key].shape, (num_blocks, block_size))
 
-    def test_tall_param_close_to_per_block_soap(self) -> None:
+    @parameterized.parameters(
+        {"m": 8},
+        {"m": 10},
+    )
+    def test_tall_param_close_to_per_block_soap(self, m: int) -> None:
         torch.manual_seed(0)
-        m, n, num_steps = 8, 4, 5
+        n, num_steps = 4, 5
         weight = torch.randn(m, n, device=self.device)
         grad_list = [torch.randn(m, n, device=self.device) for _ in range(num_steps)]
 
         blocked_param = torch.nn.Parameter(weight.clone())
         blocked_optimizer = BlockedSoap([blocked_param], lr=1e-2)
 
-        block_param_list = [torch.nn.Parameter(weight[i * n : (i + 1) * n].clone()) for i in range(m // n)]
+        row_slices = [slice(i * n, min((i + 1) * n, m)) for i in range((m + n - 1) // n)]
+        block_param_list = [torch.nn.Parameter(weight[s].clone()) for s in row_slices]
         soap_optimizer = SOAP(block_param_list, lr=1e-2)
 
         for grad in grad_list:
             blocked_param.grad = grad.clone()
             blocked_optimizer.step()
-            for i, block_param in enumerate(block_param_list):
-                block_param.grad = grad[i * n : (i + 1) * n].clone()
+            for s, block_param in zip(row_slices, block_param_list, strict=True):
+                block_param.grad = grad[s].clone()
             soap_optimizer.step()
 
         torch.testing.assert_close(
@@ -90,23 +97,28 @@ class BlockedSoapTest(parameterized.TestCase):
             msg=lambda msg: f"BlockedSoap diverged from per-block SOAP on a tall parameter\n\n{msg}",
         )
 
-    def test_wide_param_close_to_per_block_soap(self) -> None:
+    @parameterized.parameters(
+        {"n": 8},
+        {"n": 10},
+    )
+    def test_wide_param_close_to_per_block_soap(self, n: int) -> None:
         torch.manual_seed(0)
-        m, n, num_steps = 4, 8, 5
+        m, num_steps = 4, 5
         weight = torch.randn(m, n, device=self.device)
         grad_list = [torch.randn(m, n, device=self.device) for _ in range(num_steps)]
 
         blocked_param = torch.nn.Parameter(weight.clone())
         blocked_optimizer = BlockedSoap([blocked_param], lr=1e-2)
 
-        block_param_list = [torch.nn.Parameter(weight[:, i * m : (i + 1) * m].clone()) for i in range(n // m)]
+        col_slices = [slice(i * m, min((i + 1) * m, n)) for i in range((n + m - 1) // m)]
+        block_param_list = [torch.nn.Parameter(weight[:, s].clone()) for s in col_slices]
         soap_optimizer = SOAP(block_param_list, lr=1e-2)
 
         for grad in grad_list:
             blocked_param.grad = grad.clone()
             blocked_optimizer.step()
-            for i, block_param in enumerate(block_param_list):
-                block_param.grad = grad[:, i * m : (i + 1) * m].clone()
+            for s, block_param in zip(col_slices, block_param_list, strict=True):
+                block_param.grad = grad[:, s].clone()
             soap_optimizer.step()
 
         torch.testing.assert_close(
@@ -141,13 +153,6 @@ class BlockedSoapTest(parameterized.TestCase):
             rtol=1e-4,
             msg=lambda msg: f"BlockedSoap diverged from SOAP on a square parameter\n\n{msg}",
         )
-
-    def test_non_divisible_shape_raises(self) -> None:
-        param = torch.nn.Parameter(torch.randn(6, 4, device=self.device))
-        param.grad = torch.randn(6, 4, device=self.device)
-        optimizer = BlockedSoap([param], lr=1e-3)
-        with self.assertRaisesRegex(ValueError, "divisible"):
-            optimizer.step()
 
     def test_non_2d_param_raises(self) -> None:
         param = torch.nn.Parameter(torch.randn(8, device=self.device))
