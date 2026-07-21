@@ -500,17 +500,15 @@ def update_eigenbasis_and_exp_avgs(
             kronecker_factor_list,
         )
     else:
-        # Permute the eigenbases (and the matching exp_avg_sq slots) by descending approximate eigenvalues
-        # before power iteration
-        eigenbasis_list, exp_avg_sq = soap_utils.permute_eigenbasis_and_exp_avg_sq(
-            kronecker_factor_list,
-            eigenbasis_list,
-            exp_avg_sq,
-        )
         updated_eigvals_list, updated_eigenbasis_list = soap_utils.get_eigenbasis_qr(
             kronecker_factor_list,
             eigenbasis_list,
             power_iter_steps,
+        )
+        updated_eigvals_list, updated_eigenbasis_list, exp_avg_sq = soap_utils.sort_eigenbasis_and_exp_avg_sq(
+            updated_eigvals_list,
+            updated_eigenbasis_list,
+            exp_avg_sq,
         )
 
     # Step 3: Project exp_avg to the new eigenbasis using the updated eigenbases

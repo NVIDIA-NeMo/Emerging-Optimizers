@@ -27,7 +27,7 @@ __all__ = [
     "get_eigenbasis_eigh",
     "get_eigenbasis_qr",
     "get_eigenbasis_svd",
-    "permute_eigenbasis_and_exp_avg_sq",
+    "sort_eigenbasis_and_exp_avg_sq",
 ]
 
 
@@ -79,35 +79,36 @@ def get_eigenbasis_svd(
     return updated_eigenbasis_list
 
 
-def permute_eigenbasis_and_exp_avg_sq(
-    kronecker_factor_list: TensorList,
+def sort_eigenbasis_and_exp_avg_sq(
+    eigvals_list: TensorList,
     eigenbasis_list: TensorList,
     exp_avg_sq: torch.Tensor,
-) -> tuple[TensorList, torch.Tensor]:
-    """Permute each eigenbasis and the matching ``exp_avg_sq`` axis by descending approximate eigenvalues.
+) -> tuple[TensorList, TensorList, torch.Tensor]:
+    """Sort each eigenbasis, its eigenvalues, and the matching ``exp_avg_sq`` axis by descending eigenvalue.
 
-    Computes the approximate eigenvalues of each eigenbasis against its kronecker factor (the Rayleigh
-    quotients :math:`\\mathrm{diag}(Q^{\\top} K Q)`) and permutes the eigenbasis columns into descending
-    order, permuting ``exp_avg_sq`` along the corresponding axis so its per-slot statistics stay
-    aligned. Used before :func:`get_eigenbasis_qr`, whose orthogonal iteration is column-order
-    sensitive; the eigh path does not need it since it rebuilds the eigenbasis from scratch.
+    Reuses the eigenvalues already computed for the updated eigenbasis (see :func:`get_eigenbasis_qr`) as
+    the sort key, so no Rayleigh quotient is recomputed. ``exp_avg_sq`` is permuted along the
+    corresponding axis so its per-slot statistics stay aligned with the sorted columns. Applied after
+    :func:`get_eigenbasis_qr`; the eigh path does not need it since ``eigh`` already returns eigenvalues
+    and eigenvectors in descending order.
 
     Args:
-        kronecker_factor_list: List of preconditioner matrices (L and R).
-        eigenbasis_list: List of current eigenbases (QL and QR).
+        eigvals_list: List of eigenvalues of each kronecker factor in its updated eigenbasis.
+        eigenbasis_list: List of updated eigenbases (QL and QR).
         exp_avg_sq: Inner Adam second moment tensor, permuted along each kronecker-factor axis to
             match the new descending-eigenvalue column ordering.
 
     Returns:
-        ``(permuted_eigenbasis_list, permuted_exp_avg_sq)``.
+        ``(sorted_eigvals_list, sorted_eigenbasis_list, sorted_exp_avg_sq)``.
     """
-    permuted_eigenbasis_list: TensorList = []
-    for ind, (kronecker_factor, eigenbasis) in enumerate(zip(kronecker_factor_list, eigenbasis_list, strict=True)):
-        approx_eigvals = eig_utils.conjugate(kronecker_factor, eigenbasis, diag=True)
-        sort_idx = torch.argsort(approx_eigvals, descending=True)
-        permuted_eigenbasis_list.append(eigenbasis[:, sort_idx])
+    sorted_eigvals_list: TensorList = []
+    sorted_eigenbasis_list: TensorList = []
+    for ind, (eigvals, eigenbasis) in enumerate(zip(eigvals_list, eigenbasis_list, strict=True)):
+        sort_idx = torch.argsort(eigvals, descending=True)
+        sorted_eigvals_list.append(eigvals[sort_idx])
+        sorted_eigenbasis_list.append(eigenbasis[:, sort_idx])
         exp_avg_sq = exp_avg_sq.index_select(ind, sort_idx)
-    return permuted_eigenbasis_list, exp_avg_sq
+    return sorted_eigvals_list, sorted_eigenbasis_list, exp_avg_sq
 
 
 def get_eigenbasis_qr(
