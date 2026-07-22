@@ -136,8 +136,8 @@ select = [
     "F821",  # undefined name
     "E266",  # too many leading '#' for block comment
     "I",     # isort
-    "D101",  # docstring
-    "D103",
+    "D101",  # missing docstring in public class
+    "D103",  # missing docstring in public function
     "G004",  # logging statement uses f-string
 ]
 
