@@ -82,8 +82,11 @@ class PolarGrad(OrthogonalizedOptimizer):
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
-                f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, "
-                f"multiplied with the nuclear norm of grad, extra_scale_factor={extra_scale_factor}"
+                "Orthogonalizing grad with %s steps, %s coefficient, "
+                "multiplied with the nuclear norm of grad, extra_scale_factor=%s",
+                num_ns_steps,
+                coefficient_type,
+                extra_scale_factor,
             )
             orth_grad = muon_utils.newton_schulz(
                 grad,

@@ -111,8 +111,8 @@ def get_coefficient_iterator(
         ValueError: If coefficient_sets is empty.
         ValueError: If an invalid mode is provided.
     """
-    logging.debug(f"Iterating through {steps} steps with {mode} mode.")
-    logging.debug(f"Coefficient sets: {coefficient_sets}")
+    logging.debug("Iterating through %s steps with %s mode.", steps, mode)
+    logging.debug("Coefficient sets: %s", coefficient_sets)
 
     if not coefficient_sets:
         raise ValueError("coefficient_sets must be non-empty.")

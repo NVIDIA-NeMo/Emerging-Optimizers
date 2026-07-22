@@ -52,7 +52,7 @@ def eigh_with_fallback(
         eigenvalues, eigenvectors = torch.linalg.eigh(x)
     except (torch.linalg.LinAlgError, RuntimeError) as e:
         if not force_double:
-            logging.warning(f"Falling back to double precision: {e}")
+            logging.warning("Falling back to double precision: %s", e)
             # Fallback to double precision if the default precision fails
             x = x.to(torch.float64)
             eigenvalues, eigenvectors = torch.linalg.eigh(x)
