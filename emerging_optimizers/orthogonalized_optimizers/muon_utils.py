@@ -215,7 +215,9 @@ def newton_schulz(
         if not normalize_in_double:
             X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)  # type: ignore[arg-type]
         else:
-            # eps is ignored when normalize in double.
+            # eps is ignored when normalize in double so that zero division can happen if norm is exact 0.
+            # However, if norm is 0 in double precision, it means the entire input is 0, which usually
+            # suggests something wrong has happened in training. So we don't guard it here.
             norm = torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True, dtype=torch.float64).to(x.dtype)
             X = x / norm
 
