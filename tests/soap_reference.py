@@ -278,8 +278,6 @@ class ReferenceSoap(optim.Optimizer):
                 state["exp_avg"], state, merge_dims=merge_dims, max_precond_dim=max_precond_dim
             )
 
-        # print("wtf1", state["exp_avg"])
-
     def project_back(self, grad, state, merge_dims=False, max_precond_dim=10000):
         """
         Projects the gradient back to the original space.
