@@ -64,7 +64,7 @@ def get_optimizer_cls(name: str) -> type[optim.Optimizer]:
         >>> opt_cls
         <class 'emerging_optimizers.orthogonalized_optimizers.muon.Muon'>
     """
-    logging.debug(f"Available optimizers: {list(_OPTIMIZERS.keys())}")
+    logging.debug("Available optimizers: %s", list(_OPTIMIZERS.keys()))
     optimizer = _OPTIMIZERS.get(name.lower())
     if optimizer is None:
         raise ValueError(f"Optimizer {name} not found in the registry.")
