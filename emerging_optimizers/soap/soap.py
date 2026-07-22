@@ -399,7 +399,7 @@ def update_kronecker_factors_kl_shampoo(
         approx_eigvals = utils.eig.conjugate(kronecker_factor, eigenbasis, diag=True)
         scale_factor = 1 / grad.shape[idx] * approx_eigvals.clamp_min(eps) ** eigval_exp
 
-        logging.debug(f"scale_factor[{idx}]: {scale_factor}")
+        logging.debug("scale_factor[%s]: %s", idx, scale_factor)
 
         correction = (eigenbasis * scale_factor[None, :]) @ eigenbasis.T
 

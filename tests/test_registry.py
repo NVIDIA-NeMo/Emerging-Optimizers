@@ -78,7 +78,7 @@ class TestRegistry(parameterized.TestCase):
 
     def test_get_optimizer_name_list_all_names_registered(self):
         epot_name_list = registry.get_optimizer_name_list()
-        logging.debug(f"Available optimizers: {epot_name_list}")
+        logging.debug("Available optimizers: %s", epot_name_list)
 
         self.assertNotEmpty(epot_name_list)
 

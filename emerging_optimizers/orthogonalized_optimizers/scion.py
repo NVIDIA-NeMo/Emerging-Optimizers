@@ -83,7 +83,10 @@ class Scion(OrthogonalizedOptimizer):
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
-                f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, spectral_radius={spectral_radius}"
+                "Orthogonalizing grad with %s steps, %s coefficient, spectral_radius=%s",
+                num_ns_steps,
+                coefficient_type,
+                spectral_radius,
             )
             orth_grad = muon_utils.newton_schulz(
                 grad, steps=num_ns_steps, coefficient_type=coefficient_type, use_syrk=False

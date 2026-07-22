@@ -194,8 +194,8 @@ class TestNewtonSchulz(parameterized.TestCase):
         l2_norm_diff_polar = torch.norm(out_polar_express.float() - out_svd.float(), p=2)
         l2_norm_diff_quintic = torch.norm(out_quintic.float() - out_svd.float(), p=2)
 
-        logging.info(f"{coefficient_type} norm difference: {l2_norm_diff_polar:.6f}")
-        logging.info(f"Quintic norm difference: {l2_norm_diff_quintic:.6f}")
+        logging.info("%s norm difference: %.6f", coefficient_type, l2_norm_diff_polar)
+        logging.info("Quintic norm difference: %.6f", l2_norm_diff_quintic)
 
         self.assertLess(
             l2_norm_diff_polar,
