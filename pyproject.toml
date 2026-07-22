@@ -138,12 +138,16 @@ select = [
     "I",     # isort
     "D101",  # docstring
     "D103",
+    "G004",  # logging statement uses f-string
 ]
 
 # Additional rules can be added here
 ignore = [
     "E501",  # Line too long - handled by formatter
 ]
+
+logger-objects = ["absl.logging"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["emerging_optimizers"]
 known-third-party = ["examples", "scripts"]
