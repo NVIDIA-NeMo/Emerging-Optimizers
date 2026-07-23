@@ -61,8 +61,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay: Weight decay coefficient
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
             for more details.
-        nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf,
-            https://openreview.net/forum?id=OM0jvwB8jIp57ZJjtNEZ)
+        nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf)
         correct_bias: Whether to use bias correction in Inner Adam and Kronecker factor matrices EMA
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
