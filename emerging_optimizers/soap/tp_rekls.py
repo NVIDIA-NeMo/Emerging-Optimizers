@@ -187,7 +187,7 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 state["step"] = 0
                 state["exp_avg"] = torch.zeros((m, n), dtype=torch.float32, device=p.device)
                 state["exp_avg_sq"] = torch.zeros((m, n), dtype=torch.float32, device=p.device)
-                # Match the L/R init in soap.py's _init_group: default dtype (typically float32).
+
                 # L, R are sharded along dim 0 only when the param is tensor-parallel.
                 shard = self.tp_size if partition_dim is not None else 1
                 state["L"] = torch.zeros((m // shard, m), device=p.device)
