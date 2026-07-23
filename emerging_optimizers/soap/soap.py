@@ -35,7 +35,8 @@ from emerging_optimizers.utils import FP32MatmulPrecT
 __all__ = [
     "SOAP",
     "StackedSoap",
-    "precondition",
+    "project_in",
+    "project_out",
     "init_kronecker_factors",
     "update_kronecker_factors",
     "update_eigenbasis_and_exp_avgs",
@@ -249,7 +250,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         state["Q_L"], state["Q_R"] = updated_eigenbasis_list
                         state["eigvals_L"], state["eigvals_R"] = updated_eigvals_list
 
-                        # rebind local ref so precondition() below uses the updated Q
+                        # rebind local ref so project_in() below uses the updated Q
                         eigenbasis_list = updated_eigenbasis_list
 
                         state["exp_avg"] = exp_avg
@@ -264,11 +265,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                     # Project gradients to the eigenbases of Shampoo's preconditioner
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                        grad_projected = precondition(
-                            grad,
-                            eigenbasis_list=eigenbasis_list,
-                            dims=[[0], [0]],
-                        )
+                        grad_projected = project_in(grad, eigenbasis_list)
 
                     # Calculate the Adam update for the projected gradient tensor
                     adam_update = update_functions.calculate_adam_update(
@@ -284,11 +281,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                     # Projecting back the preconditioned (by ADAM) exponential moving average of gradients
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                        precond_update = precondition(
-                            adam_update,
-                            eigenbasis_list=eigenbasis_list,
-                            dims=[[0], [1]],
-                        )
+                        precond_update = project_out(adam_update, eigenbasis_list)
 
                     _clip_update_rms_in_place(precond_update, self.max_update_rms)
                     p.add_(precond_update, alpha=-group["lr"])
@@ -487,11 +480,7 @@ def update_eigenbasis_and_exp_avgs(
 
     """
     # Step 1: Project exp_avg back to the original basis
-    exp_avg = precondition(
-        exp_avg,
-        eigenbasis_list,
-        dims=[[0], [1]],
-    )
+    exp_avg = project_out(exp_avg, eigenbasis_list)
 
     # Step 2: Update eigenbases
     if use_eigh:
@@ -513,25 +502,17 @@ def update_eigenbasis_and_exp_avgs(
         )
 
     # Step 3: Project exp_avg to the new eigenbasis using the updated eigenbases
-    exp_avg = precondition(
-        exp_avg,
-        updated_eigenbasis_list,
-        dims=[[0], [0]],
-    )
+    exp_avg = project_in(exp_avg, updated_eigenbasis_list)
 
     return updated_eigvals_list, updated_eigenbasis_list, exp_avg, exp_avg_sq
 
 
 @torch.no_grad()  # type: ignore[misc]
-def precondition(
+def project_in(
     x: torch.Tensor,
-    eigenbasis_list: list[torch.Tensor] | None = None,
-    dims: list[list[int]] | None = None,
+    eigenbasis_list: list[torch.Tensor],
 ) -> torch.Tensor:
-    """Projects the gradient to and from the eigenbases of the kronecker factor matrices.
-
-    This function performs tensor contractions between the input gradient
-    and kronecker factor eigenbases.
+    """Projects a tensor into the eigenbases
 
     Note:
         For 2D tensors, we can use matmul instead of tensordot for code legibility. However, the code has
@@ -539,31 +520,32 @@ def precondition(
         matmul and tensordot outputs exactly because of underlying floating point arithmetic differences.
         Therefore, we decided to keep using tensordot for consistency.
 
+    Args:
+        x: Input tensor to project into the eigenbasis.
+        eigenbasis_list: List of eigenbases for preconditioning.
+    """
+    for Q in eigenbasis_list:
+        x = torch.tensordot(x, Q, dims=[[0], [0]])
+    return x
+
+
+@torch.no_grad()  # type: ignore[misc]
+def project_out(
+    x: torch.Tensor,
+    eigenbasis_list: list[torch.Tensor],
+) -> torch.Tensor:
+    """Projects a tensor out of the eigenbases
+
+    Note:
+        Uses ``tensordot`` rather than ``matmul`` for the same numerical-consistency reason described in
+        :func:`project_in`.
 
     Args:
-        x: Input tensor to be preconditioned
+        x: Input tensor to project back to the original space.
         eigenbasis_list: List of eigenbases for preconditioning.
-            Each matrix should be a square matrix of eigenvectors.
-        dims: Dimensions for tensor contraction. Default is [[0], [0]] which contracts
-            the first dimension of grad with the first dimension of each eigenbasis matrix,
-            for projecting into the eigenbasis. Use [[0], [1]] for projecting back to original space.
-
-    Example:
-        >>> x = torch.randn(10, 20)
-        >>> Q = torch.randn(10, 10)
-        >>> precondition(x, [Q], dims=[[0], [0]])
     """
-    if dims is None:
-        # Pick contraction dims to project to the eigenbasis
-        dims = [[0], [0]]
-
-    if eigenbasis_list is None:
-        # If eigenbases are not provided, return the gradient without any preconditioning
-        return x
-
     for Q in eigenbasis_list:
-        x = torch.tensordot(x, Q, dims=dims)
-
+        x = torch.tensordot(x, Q, dims=[[0], [1]])
     return x
 
 

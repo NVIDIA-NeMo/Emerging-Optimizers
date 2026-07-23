@@ -263,7 +263,7 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         use_eigh=True,
                     )
 
-                    full_grad_projected = soap.precondition(full_grad, eigenbasis_list, dims=[[0], [0]])
+                    full_grad_projected = soap.project_in(full_grad, eigenbasis_list)
 
                     # No matmul inside adam update. Put it under fp32_matmul_precision for code simplicity.
                     full_adam_update = update_functions.calculate_adam_update(
@@ -277,7 +277,7 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         step=curr_iter_1_based,
                     )
 
-                    full_precond_update = soap.precondition(full_adam_update, eigenbasis_list, dims=[[0], [1]])
+                    full_precond_update = soap.project_out(full_adam_update, eigenbasis_list)
 
                 if partition_dim is None:
                     p.add_(full_precond_update, alpha=-group["lr"])

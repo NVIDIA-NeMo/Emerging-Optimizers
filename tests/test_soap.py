@@ -166,16 +166,8 @@ class SoapFunctionsTest(parameterized.TestCase):
         Q_R = torch.linalg.qr(torch.randn(N, N))[0]
         orthonormal_matrix_list = [Q_L, Q_R]
 
-        projected = soap.precondition(
-            grad,
-            eigenbasis_list=orthonormal_matrix_list,
-            dims=[[0], [0]],
-        )
-        recov = soap.precondition(
-            projected,
-            eigenbasis_list=orthonormal_matrix_list,
-            dims=[[0], [1]],
-        )
+        projected = soap.project_in(grad, orthonormal_matrix_list)
+        recov = soap.project_out(projected, orthonormal_matrix_list)
         # Check that the recovered tensor is close to the original.
         torch.testing.assert_close(
             grad,
