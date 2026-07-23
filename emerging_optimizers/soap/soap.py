@@ -37,7 +37,6 @@ __all__ = [
     "StackedSoap",
     "project_in",
     "project_out",
-    "init_kronecker_factors",
     "update_kronecker_factors",
     "update_eigenbasis_and_exp_avgs",
 ]
@@ -154,7 +153,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 # Use shape of p instead of grad for initialization because of the introduction of skip_non_grad_params
                 # for megatron-lm distributed checkpointing use. _init_group can be called without grad.
-                state["L"], state["R"] = init_kronecker_factors(p.shape, device=p.device)
+                state["L"] = torch.zeros(p.shape[0], p.shape[0], device=p.device)
+                state["R"] = torch.zeros(p.shape[1], p.shape[1], device=p.device)
                 state["Q_L"] = torch.eye(p.shape[0], device=p.device)
                 state["Q_R"] = torch.eye(p.shape[1], device=p.device)
                 state["eigvals_L"] = torch.zeros(p.shape[0], device=p.device)
@@ -293,47 +293,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 current_stream.wait_stream(stream)
 
         return None
-
-
-@torch.no_grad()  # type: ignore[misc]
-def init_kronecker_factors(
-    grad_shape: torch.Size,
-    device: torch.device | None = None,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Initializes the kronecker factor matrices for the SOAP optimizer.
-
-    This function creates the initial Kronecker factor matrices (L and R) used for
-    preconditioning. It creates a square kronecker factor matrix for each dimension
-    of the 2D gradient shape.
-
-    Note:
-        The Kronecker factors are always initialized to float32 (unless default precision is set otherwise) as its
-        accumulation and decomposition are not safe in lower precisions.
-
-    Args:
-        grad_shape: Shape of the gradient tensor. Must be 2D.
-            Determines the size of the kronecker factor matrices.
-        device: Device on which to create the kronecker factor matrices.
-
-    Returns:
-        Tuple of kronecker factor matrices (L and R in paper).
-
-    Example:
-        >>> # For a 2D tensor (weight matrix)
-        >>> grad_shape = torch.Size([10, 20])
-        >>> precond_2d = init_kronecker_factors(grad_shape)
-        >>> print(len(precond_2d))  # 2
-        >>> print(precond_2d[0].shape)  # (10, 10)
-        >>> print(precond_2d[1].shape)  # (20, 20)
-
-    """
-    if len(grad_shape) != 2:
-        raise TypeError("init_kronecker_factors is only supported for 2D tensors")
-
-    # Create a square kronecker factor matrix for each dimension
-    L = torch.zeros(grad_shape[0], grad_shape[0], device=device)
-    R = torch.zeros(grad_shape[1], grad_shape[1], device=device)
-    return L, R
 
 
 @torch.no_grad()  # type: ignore[misc]

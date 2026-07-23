@@ -81,20 +81,14 @@ class SoapFunctionsTest(parameterized.TestCase):
         torch.manual_seed(13)
         cls.device = FLAGS.device
 
-    def test_init_kronecker_factors_2d_tensor_shapes(self) -> None:
-        """Tests init_kronecker_factors with a 2D tensor."""
-        grad = torch.randn(3, 4)
-        L, R = soap.init_kronecker_factors(grad.shape)
-        self.assertEqual(L.shape, (3, 3))
-        self.assertEqual(R.shape, (4, 4))
-
     def test_update_kronecker_factors(self) -> None:
         shampoo_beta = 0.9
         dim0, dim1 = 3, 10
         grad = torch.randn(dim0, dim1)
 
         # Initialize factors
-        initial_L, initial_R = soap.init_kronecker_factors(grad.shape)
+        initial_L = torch.zeros(dim0, dim0)
+        initial_R = torch.zeros(dim1, dim1)
         kronecker_factors = [initial_L.clone(), initial_R.clone()]
 
         soap.update_kronecker_factors(
@@ -290,11 +284,6 @@ class SoapFunctionsTest(parameterized.TestCase):
 
         torch.testing.assert_close(kronecker_factor_list[0], kronecker_factor_list_ref[0], atol=1e-6, rtol=1e-6)
         torch.testing.assert_close(kronecker_factor_list[1], kronecker_factor_list_ref[1], atol=1e-6, rtol=1e-6)
-
-    def test_init_kronecker_factors_non_2d_raises_type_error(self) -> None:
-        """Test that init_kronecker_factors raises TypeError for non-2D shape."""
-        with self.assertRaisesRegex(TypeError, "only supported for 2D"):
-            soap.init_kronecker_factors((3,))
 
     def test_kl_shampoo_correction_non_2d_raises_type_error(self) -> None:
         """Test that update_kronecker_factors_kl_shampoo raises TypeError for non-2D grad."""

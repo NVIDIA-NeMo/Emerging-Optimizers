@@ -18,8 +18,6 @@ emerging_optimizers.soap
 
 .. autofunction:: project_out
 
-.. autofunction:: init_kronecker_factors
-
 .. autofunction:: update_kronecker_factors
 
 .. autofunction:: update_kronecker_factors_kl_shampoo
