@@ -23,7 +23,7 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
 from emerging_optimizers.soap import REKLS, SOAP, soap
-from emerging_optimizers.soap.soap import StackedSoap, _clip_update_rms_in_place, _stack_2d, _unstack
+from emerging_optimizers.soap.soap import _clip_update_rms_in_place
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -81,20 +81,14 @@ class SoapFunctionsTest(parameterized.TestCase):
         torch.manual_seed(13)
         cls.device = FLAGS.device
 
-    def test_init_kronecker_factors_2d_tensor_shapes(self) -> None:
-        """Tests init_kronecker_factors with a 2D tensor."""
-        grad = torch.randn(3, 4)
-        L, R = soap.init_kronecker_factors(grad.shape)
-        self.assertEqual(L.shape, (3, 3))
-        self.assertEqual(R.shape, (4, 4))
-
     def test_update_kronecker_factors(self) -> None:
         shampoo_beta = 0.9
         dim0, dim1 = 3, 10
         grad = torch.randn(dim0, dim1)
 
         # Initialize factors
-        initial_L, initial_R = soap.init_kronecker_factors(grad.shape)
+        initial_L = torch.zeros(dim0, dim0)
+        initial_R = torch.zeros(dim1, dim1)
         kronecker_factors = [initial_L.clone(), initial_R.clone()]
 
         soap.update_kronecker_factors(
@@ -166,16 +160,8 @@ class SoapFunctionsTest(parameterized.TestCase):
         Q_R = torch.linalg.qr(torch.randn(N, N))[0]
         orthonormal_matrix_list = [Q_L, Q_R]
 
-        projected = soap.precondition(
-            grad,
-            eigenbasis_list=orthonormal_matrix_list,
-            dims=[[0], [0]],
-        )
-        recov = soap.precondition(
-            projected,
-            eigenbasis_list=orthonormal_matrix_list,
-            dims=[[0], [1]],
-        )
+        projected = soap.project_in(grad, orthonormal_matrix_list)
+        recov = soap.project_out(projected, orthonormal_matrix_list)
         # Check that the recovered tensor is close to the original.
         torch.testing.assert_close(
             grad,
@@ -298,11 +284,6 @@ class SoapFunctionsTest(parameterized.TestCase):
 
         torch.testing.assert_close(kronecker_factor_list[0], kronecker_factor_list_ref[0], atol=1e-6, rtol=1e-6)
         torch.testing.assert_close(kronecker_factor_list[1], kronecker_factor_list_ref[1], atol=1e-6, rtol=1e-6)
-
-    def test_init_kronecker_factors_non_2d_raises_type_error(self) -> None:
-        """Test that init_kronecker_factors raises TypeError for non-2D shape."""
-        with self.assertRaisesRegex(TypeError, "only supported for 2D"):
-            soap.init_kronecker_factors((3,))
 
     def test_kl_shampoo_correction_non_2d_raises_type_error(self) -> None:
         """Test that update_kronecker_factors_kl_shampoo raises TypeError for non-2D grad."""
@@ -602,101 +583,6 @@ class SoapVsReferenceTest(parameterized.TestCase):
                 )
 
             self.assertEqual(test_state["step"], ref_state["step"])
-
-
-class StackedSoapTest(parameterized.TestCase):
-    def setUp(self):
-        self.device = FLAGS.device
-
-    @parameterized.product(shape=[(8, 5), (4, 6, 3), (4, 3, 6)])
-    def test_smoke(self, shape) -> None:
-        p = torch.nn.Parameter(torch.randn(shape, device=self.device))
-        opt = StackedSoap([p], lr=1e-2, weight_decay=0.01)
-        for _ in range(3):
-            p.grad = torch.randn_like(p)
-            opt.step()
-        self.assertTrue(torch.isfinite(p).all())
-
-    @parameterized.product(shape=[(8, 5), (4, 6, 3), (4, 3, 6), (4, 5, 5)])
-    def test_stack_unstack_shapes_and_roundtrip(self, shape) -> None:
-        x = torch.randn(shape, device=self.device)
-
-        if x.ndim == 2:
-            expected_2d = shape
-        else:
-            b, m, n = shape
-            expected_2d = (m, b * n) if n <= m else (b * m, n)
-
-        stacked = _stack_2d(x)
-        self.assertEqual(stacked.shape, torch.Size(expected_2d))
-
-        restored = _unstack(stacked, x.shape)
-        self.assertEqual(restored.shape, x.shape)
-        assert_equal(restored, x)
-
-    @parameterized.product(shape=[(8, 5), (16, 16), (5, 7)])
-    def test_2d_input_7steps_matches_vanilla_soap(self, shape) -> None:
-        x = torch.randn(shape, device=self.device)
-        p_stacked = torch.nn.Parameter(x.clone())
-        p_ref = torch.nn.Parameter(x.clone())
-
-        opt_stacked = StackedSoap([p_stacked], lr=1e-2, weight_decay=0.01)
-        opt_ref = SOAP(
-            [p_ref],
-            1e-2,
-            weight_decay=0.01,
-            weight_decay_method="decoupled",
-            nesterov=False,
-            correct_bias=True,
-            use_eigh=False,
-            power_iter_steps=1,
-            use_kl_shampoo=True,
-        )
-
-        for _ in range(7):
-            grad = torch.randn(shape, device=self.device)
-            p_stacked.grad = grad.clone()
-            p_ref.grad = grad.clone()
-            opt_stacked.step()
-            opt_ref.step()
-            assert_equal(
-                p_stacked.detach(),
-                p_ref.detach(),
-                msg=lambda m: f"StackedSoap must match stock SOAP exactly on 2D params.\n\n{m}",
-            )
-
-    @parameterized.product(shape=[(4, 6, 3), (4, 3, 6)])
-    def test_3d_input_5steps_matches_vanilla_soap(self, shape) -> None:
-        """StackedSoap on a 3D param must match vanilla SOAP run on the manually stacked 2D param."""
-        x = torch.randn(shape, device=self.device)
-        p_stacked = torch.nn.Parameter(x.clone())
-        # Reference is vanilla SOAP on the 2D stacking of the same parameter.
-        p_ref = torch.nn.Parameter(_stack_2d(x).clone())
-
-        opt_stacked = StackedSoap([p_stacked], lr=1e-2, weight_decay=0.01)
-        opt_ref = SOAP(
-            [p_ref],
-            1e-2,
-            weight_decay=0.01,
-            weight_decay_method="decoupled",
-            nesterov=False,
-            correct_bias=True,
-            use_eigh=False,
-            power_iter_steps=1,
-            use_kl_shampoo=True,
-        )
-
-        for _ in range(5):
-            grad = torch.randn(shape, device=self.device)
-            p_stacked.grad = grad.clone()
-            p_ref.grad = _stack_2d(grad)
-            opt_stacked.step()
-            opt_ref.step()
-            assert_equal(
-                _stack_2d(p_stacked.detach()),
-                p_ref.detach(),
-                msg=lambda m: f"StackedSoap on a 3D param must match vanilla SOAP on its 2D stacking.\n\n{m}",
-            )
 
 
 if __name__ == "__main__":

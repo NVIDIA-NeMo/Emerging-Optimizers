@@ -21,7 +21,7 @@ import torch
 import transformer_engine.pytorch as te
 from absl import app, flags
 
-from emerging_optimizers.soap.soap import StackedSoap
+from emerging_optimizers.soap.stacked_soap import StackedSoap
 
 
 FLAGS = flags.FLAGS

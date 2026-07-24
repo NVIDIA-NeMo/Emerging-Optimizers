@@ -34,9 +34,8 @@ from emerging_optimizers.utils import FP32MatmulPrecT
 
 __all__ = [
     "SOAP",
-    "StackedSoap",
-    "precondition",
-    "init_kronecker_factors",
+    "project_in",
+    "project_out",
     "update_kronecker_factors",
     "update_eigenbasis_and_exp_avgs",
 ]
@@ -153,7 +152,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 # Use shape of p instead of grad for initialization because of the introduction of skip_non_grad_params
                 # for megatron-lm distributed checkpointing use. _init_group can be called without grad.
-                state["L"], state["R"] = init_kronecker_factors(p.shape, device=p.device)
+                state["L"] = torch.zeros(p.shape[0], p.shape[0], device=p.device)
+                state["R"] = torch.zeros(p.shape[1], p.shape[1], device=p.device)
                 state["Q_L"] = torch.eye(p.shape[0], device=p.device)
                 state["Q_R"] = torch.eye(p.shape[1], device=p.device)
                 state["eigvals_L"] = torch.zeros(p.shape[0], device=p.device)
@@ -249,7 +249,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         state["Q_L"], state["Q_R"] = updated_eigenbasis_list
                         state["eigvals_L"], state["eigvals_R"] = updated_eigvals_list
 
-                        # rebind local ref so precondition() below uses the updated Q
+                        # rebind local ref so project_in() below uses the updated Q
                         eigenbasis_list = updated_eigenbasis_list
 
                         state["exp_avg"] = exp_avg
@@ -264,11 +264,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                     # Project gradients to the eigenbases of Shampoo's preconditioner
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                        grad_projected = precondition(
-                            grad,
-                            eigenbasis_list=eigenbasis_list,
-                            dims=[[0], [0]],
-                        )
+                        grad_projected = project_in(grad, eigenbasis_list)
 
                     # Calculate the Adam update for the projected gradient tensor
                     adam_update = update_functions.calculate_adam_update(
@@ -284,11 +280,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                     # Projecting back the preconditioned (by ADAM) exponential moving average of gradients
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                        precond_update = precondition(
-                            adam_update,
-                            eigenbasis_list=eigenbasis_list,
-                            dims=[[0], [1]],
-                        )
+                        precond_update = project_out(adam_update, eigenbasis_list)
 
                     _clip_update_rms_in_place(precond_update, self.max_update_rms)
                     p.add_(precond_update, alpha=-group["lr"])
@@ -300,47 +292,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 current_stream.wait_stream(stream)
 
         return None
-
-
-@torch.no_grad()  # type: ignore[misc]
-def init_kronecker_factors(
-    grad_shape: torch.Size,
-    device: torch.device | None = None,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Initializes the kronecker factor matrices for the SOAP optimizer.
-
-    This function creates the initial Kronecker factor matrices (L and R) used for
-    preconditioning. It creates a square kronecker factor matrix for each dimension
-    of the 2D gradient shape.
-
-    Note:
-        The Kronecker factors are always initialized to float32 (unless default precision is set otherwise) as its
-        accumulation and decomposition are not safe in lower precisions.
-
-    Args:
-        grad_shape: Shape of the gradient tensor. Must be 2D.
-            Determines the size of the kronecker factor matrices.
-        device: Device on which to create the kronecker factor matrices.
-
-    Returns:
-        Tuple of kronecker factor matrices (L and R in paper).
-
-    Example:
-        >>> # For a 2D tensor (weight matrix)
-        >>> grad_shape = torch.Size([10, 20])
-        >>> precond_2d = init_kronecker_factors(grad_shape)
-        >>> print(len(precond_2d))  # 2
-        >>> print(precond_2d[0].shape)  # (10, 10)
-        >>> print(precond_2d[1].shape)  # (20, 20)
-
-    """
-    if len(grad_shape) != 2:
-        raise TypeError("init_kronecker_factors is only supported for 2D tensors")
-
-    # Create a square kronecker factor matrix for each dimension
-    L = torch.zeros(grad_shape[0], grad_shape[0], device=device)
-    R = torch.zeros(grad_shape[1], grad_shape[1], device=device)
-    return L, R
 
 
 @torch.no_grad()  # type: ignore[misc]
@@ -487,11 +438,7 @@ def update_eigenbasis_and_exp_avgs(
 
     """
     # Step 1: Project exp_avg back to the original basis
-    exp_avg = precondition(
-        exp_avg,
-        eigenbasis_list,
-        dims=[[0], [1]],
-    )
+    exp_avg = project_out(exp_avg, eigenbasis_list)
 
     # Step 2: Update eigenbases
     if use_eigh:
@@ -513,25 +460,17 @@ def update_eigenbasis_and_exp_avgs(
         )
 
     # Step 3: Project exp_avg to the new eigenbasis using the updated eigenbases
-    exp_avg = precondition(
-        exp_avg,
-        updated_eigenbasis_list,
-        dims=[[0], [0]],
-    )
+    exp_avg = project_in(exp_avg, updated_eigenbasis_list)
 
     return updated_eigvals_list, updated_eigenbasis_list, exp_avg, exp_avg_sq
 
 
 @torch.no_grad()  # type: ignore[misc]
-def precondition(
+def project_in(
     x: torch.Tensor,
-    eigenbasis_list: list[torch.Tensor] | None = None,
-    dims: list[list[int]] | None = None,
+    eigenbasis_list: list[torch.Tensor],
 ) -> torch.Tensor:
-    """Projects the gradient to and from the eigenbases of the kronecker factor matrices.
-
-    This function performs tensor contractions between the input gradient
-    and kronecker factor eigenbases.
+    """Projects a tensor into the eigenbases
 
     Note:
         For 2D tensors, we can use matmul instead of tensordot for code legibility. However, the code has
@@ -539,31 +478,32 @@ def precondition(
         matmul and tensordot outputs exactly because of underlying floating point arithmetic differences.
         Therefore, we decided to keep using tensordot for consistency.
 
+    Args:
+        x: Input tensor to project into the eigenbasis.
+        eigenbasis_list: List of eigenbases for preconditioning.
+    """
+    for Q in eigenbasis_list:
+        x = torch.tensordot(x, Q, dims=[[0], [0]])
+    return x
+
+
+@torch.no_grad()  # type: ignore[misc]
+def project_out(
+    x: torch.Tensor,
+    eigenbasis_list: list[torch.Tensor],
+) -> torch.Tensor:
+    """Projects a tensor out of the eigenbases
+
+    Note:
+        Uses ``tensordot`` rather than ``matmul`` for the same numerical-consistency reason described in
+        :func:`project_in`.
 
     Args:
-        x: Input tensor to be preconditioned
+        x: Input tensor to project back to the original space.
         eigenbasis_list: List of eigenbases for preconditioning.
-            Each matrix should be a square matrix of eigenvectors.
-        dims: Dimensions for tensor contraction. Default is [[0], [0]] which contracts
-            the first dimension of grad with the first dimension of each eigenbasis matrix,
-            for projecting into the eigenbasis. Use [[0], [1]] for projecting back to original space.
-
-    Example:
-        >>> x = torch.randn(10, 20)
-        >>> Q = torch.randn(10, 10)
-        >>> precondition(x, [Q], dims=[[0], [0]])
     """
-    if dims is None:
-        # Pick contraction dims to project to the eigenbasis
-        dims = [[0], [0]]
-
-    if eigenbasis_list is None:
-        # If eigenbases are not provided, return the gradient without any preconditioning
-        return x
-
     for Q in eigenbasis_list:
-        x = torch.tensordot(x, Q, dims=dims)
-
+        x = torch.tensordot(x, Q, dims=[[0], [1]])
     return x
 
 
@@ -587,133 +527,3 @@ def _clip_update_rms_in_place(u: torch.Tensor, max_rms: float, eps: float = 1e-7
     scale = (max_rms / (rms + eps)).clamp(max=1.0)
     # in‐place scale
     u.mul_(scale)
-
-
-def _stack_2d(x: torch.Tensor) -> torch.Tensor:
-    """Flattens a 2D or 3D tensor to 2D, merging the batch dim into the smaller matrix edge.
-
-    A 2D tensor is returned unchanged. A 3D tensor ``(b, m, n)`` is merged into the smaller of its two
-    matrix edges: ``(m, b * n)`` when ``n <= m``, otherwise ``(b * m, n)``.
-
-    Args:
-        x: A 2D matrix ``(m, n)`` or a 3D batched matrix ``(b, m, n)``.
-
-    Returns:
-        The 2D stacking of ``x``.
-    """
-    if x.ndim == 2:
-        return x
-    b, m, n = x.shape
-    if n <= m:
-        # -> (m, b*n): move the batch next to the smaller edge, then merge.
-        out = x.permute(1, 0, 2).reshape(m, b * n)
-    else:
-        # -> (b*m, n): contiguous merge into rows.
-        out = x.reshape(b * m, n)
-    return out.contiguous()
-
-
-def _unstack(u: torch.Tensor, shape: torch.Size) -> torch.Tensor:
-    """Inverse of :func:`_stack_2d`, restoring the original ``shape``."""
-    if len(shape) == 2:
-        return u
-    b, m, n = shape
-    if n <= m:
-        return u.reshape(m, b, n).permute(1, 0, 2).reshape(shape)
-    return u.reshape(shape)
-
-
-@registry.register_optimizer("stacked_soap")
-class StackedSoap(SOAP):
-    """Limited-memory SOAP for batched / 3D parameters via transient 2D stacking.
-
-    Optimizes the real parameters directly: ``self.param_groups``, ``self.state``, and gradients are all
-    keyed by the user's parameters, so learning-rate schedulers, gradient clipping, and ``state_dict``
-    behave exactly as for plain :class:`SOAP`. Each 3D parameter is flattened to 2D by merging its batch
-    dim into the smaller matrix edge (see :func:`_stack_2d`) only for the duration of :meth:`step`: the
-    parameter's ``data`` and ``grad`` are swapped to their 2D views, the inherited SOAP step runs, and the
-    2D update is unstacked back into the original storage. Because the swap happens before the inherited
-    step, its lazy state initialization sizes the optimizer state to the stacked 2D shape automatically.
-
-    Stacking on the smaller edge keeps both Kronecker factors small (the larger edge becomes a single
-    shared factor) while reusing the full, unmodified SOAP machinery (KL-Shampoo + QR eigenbasis). The
-    stacking is a storage-sharing view except for the permute branch (``q <= p``), which allocates one
-    transient 2D buffer per step. A plain 2D parameter is stacked as itself, so this is exactly stock SOAP.
-
-    SOAP is configured with the fixed settings appropriate for this use: decoupled weight decay, no
-    Nesterov, bias correction on, the QR eigenbasis path with 1 power-iteration step, KL-Shampoo on, and
-    the default matmul precision.
-
-    Args:
-        params: Iterable of 2D or 3D parameters to optimize or dicts defining parameter groups.
-        lr: The learning rate.
-        betas: Inner Adam betas ``(b1, b2)``.
-        shampoo_beta: Beta for the kronecker factor moving average.
-        eps: Inner Adam epsilon.
-        weight_decay: Decoupled weight decay coefficient.
-    """
-
-    def __init__(
-        self,
-        params: ParamsT,
-        lr: float,
-        betas: tuple[float, float] = (0.9, 0.95),
-        shampoo_beta: float = 0.95,
-        eps: float = 1e-8,
-        weight_decay: float = 0.01,
-    ) -> None:
-        super().__init__(
-            params,
-            lr,
-            betas=betas,
-            shampoo_beta=shampoo_beta,
-            eps=eps,
-            weight_decay=weight_decay,
-            weight_decay_method="decoupled",
-            nesterov=False,
-            correct_bias=True,
-            use_eigh=False,
-            power_iter_steps=1,
-            use_kl_shampoo=True,
-        )
-
-    if TYPE_CHECKING:
-
-        @overload
-        def step(self, closure: None = ...) -> None: ...
-
-        @overload
-        def step(self, closure: Callable[[], float]) -> float: ...
-
-    @torch.no_grad()  # type: ignore[misc]
-    @override
-    def step(self, closure: Callable[[], float] | None = None) -> float | None:
-        if closure is not None:
-            raise ValueError("closure is not supported")
-
-        # Swap each parameter's data/grad to their 2D stacking, run the inherited SOAP step on the 2D
-        # views (state is keyed by the real parameter and sized for the stacked shape), then unstack the
-        # update back into the original storage. The restore runs in a finally so that an exception inside
-        # super().step() (e.g. OOM, a NaN check) cannot leave parameters stuck in their 2D stacked shape.
-        saved: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
-        try:
-            for group in self.param_groups:
-                for p in group["params"]:
-                    if p.grad is None:
-                        continue  # pragma: no cover
-                    data, grad = p.data, p.grad
-                    saved.append((p, data, grad))
-                    p.data = _stack_2d(data)
-                    p.grad = _stack_2d(grad)
-
-            super().step()
-        finally:
-            for p, data, grad in saved:
-                stacked = p.data
-                p.data = data
-                p.grad = grad
-                # Copy back only when stacking allocated an independent buffer (permute branch); the view
-                # branches already wrote the update through to the original storage.
-                if stacked.data_ptr() != data.data_ptr():
-                    data.copy_(_unstack(stacked, data.shape))
-        return None

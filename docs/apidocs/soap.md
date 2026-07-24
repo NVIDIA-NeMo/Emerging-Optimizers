@@ -14,9 +14,9 @@ emerging_optimizers.soap
 .. autoclass:: SOAP
     :members:
 
-.. autofunction:: precondition
+.. autofunction:: project_in
 
-.. autofunction:: init_kronecker_factors
+.. autofunction:: project_out
 
 .. autofunction:: update_kronecker_factors
 

@@ -15,10 +15,12 @@
 from emerging_optimizers.soap.moso import MOSO
 from emerging_optimizers.soap.rekls import REKLS
 from emerging_optimizers.soap.soap import SOAP
+from emerging_optimizers.soap.stacked_soap import StackedSoap
 
 
 __all__ = [
     "MOSO",
     "REKLS",
     "SOAP",
+    "StackedSoap",
 ]
