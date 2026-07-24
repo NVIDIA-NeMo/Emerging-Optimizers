@@ -93,10 +93,7 @@ def calculate_ademamix_update(
         bias_correction2 = 1
 
     # Decay the fast first moment, slow first moment and second moment with an exponential moving average
-    if beta_fast != 0.0:
-        exp_avg_fast.lerp_(grad, 1 - beta_fast)
-    else:
-        exp_avg_fast = grad
+    exp_avg_fast.lerp_(grad, 1 - beta_fast)
     exp_avg_slow.lerp_(grad, 1 - beta_slow)
     exp_avg_sq.lerp_(grad.square(), 1 - beta2)
 
