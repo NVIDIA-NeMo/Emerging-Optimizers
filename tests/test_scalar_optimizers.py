@@ -210,6 +210,31 @@ class UpdateFunctionTest(parameterized.TestCase):
 
         torch.testing.assert_close(ademamix_update, adam_update, atol=1e-6, rtol=1e-6)
 
+    def test_calculate_ademamix_update_mutates_exp_avg_fast_when_beta_fast_zero(self) -> None:
+        # When beta_fast == 0.0, exp_avg_fast must be updated in place to the
+        # current grad. Previously the else branch reassigned a local variable
+        # and left the caller's buffer unchanged.
+        exp_avg_fast = torch.tensor([[1.0]], device=self.device)
+        exp_avg_slow = torch.tensor([[1.0]], device=self.device)
+        exp_avg_sq = torch.tensor([[2.0]], device=self.device)
+        grad = torch.tensor([[0.5]], device=self.device)
+
+        _ = update_functions.calculate_ademamix_update(
+            grad,
+            exp_avg_fast,
+            exp_avg_slow,
+            exp_avg_sq,
+            betas=(0.0, 0.99, 0.999),
+            eps=1e-8,
+            correct_bias=False,
+            step=1,
+            num_beta_slow_warmup_steps=None,
+            num_alpha_warmup_steps=None,
+            alpha=0.0,
+        )
+
+        torch.testing.assert_close(exp_avg_fast, grad, atol=1e-6, rtol=1e-6)
+
     def test_calculate_sim_ademamix_update_with_zero_momentum_and_alpha_equals_rmsprop(self) -> None:
         # sim_ademamix with momentum (beta_fast) = 0 and alpha = 0 should be equivalent to RMSProp.
         exp_avg_initial = torch.tensor([[0.0]], device=self.device)  # Momentum is 0, so exp_avg starts at 0
