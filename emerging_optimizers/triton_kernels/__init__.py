@@ -12,4 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from .syrk import *
+try:
+    from .syrk import *
+except ModuleNotFoundError as exc:
+    if exc.name != "triton":
+        raise
+
+    HAS_TRITON_340 = False
