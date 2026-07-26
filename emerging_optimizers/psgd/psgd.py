@@ -160,6 +160,8 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
                 # Apply weight update
                 p.add_(update, alpha=-group["lr"])
 
+                state["step"] += 1
+
         return None
 
 
