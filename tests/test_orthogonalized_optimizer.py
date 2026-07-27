@@ -227,6 +227,57 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         with self.assertRaisesRegex(ValueError, "Only 2D"):
             opt.step()
 
+    def test_split_qkv_per_head_defaults_to_projection_split(self) -> None:
+        """Test projection-level and opt-in batched per-head QKV splitting."""
+        test_param = nn.Parameter(torch.randn(16, 3, dtype=torch.float32, device=self.device))
+        common_kwargs = dict(
+            params=[test_param],
+            lr=1.0,
+            momentum=0.0,
+            weight_decay=0.0,
+            nesterov=False,
+            weight_decay_method="l2",
+            fp32_matmul_prec="highest",
+        )
+
+        default_opt = OrthogonalizedOptimizer(**common_kwargs)
+        per_head_opt = OrthogonalizedOptimizer(**common_kwargs, split_qkv_per_head=True)
+
+        self.assertFalse(default_opt.split_qkv_per_head)
+        self.assertTrue(per_head_opt.split_qkv_per_head)
+
+        grad = torch.arange(48, dtype=torch.float32, device=self.device).view(16, 3)
+        call_shapes = []
+
+        def center_rows(x: torch.Tensor) -> torch.Tensor:
+            call_shapes.append(tuple(x.shape))
+            return x - x.mean(dim=-2, keepdim=True)
+
+        projection_out = default_opt.orthogonalize_qkv(
+            grad,
+            split_shapes=[4, 2, 2],
+            orthogonalize_fn=center_rows,
+        )
+        self.assertEqual(call_shapes, [(8, 3), (4, 3), (4, 3)])
+
+        call_shapes.clear()
+        per_head_out = per_head_opt.orthogonalize_qkv(
+            grad,
+            split_shapes=[2] * 8,
+            orthogonalize_fn=center_rows,
+        )
+        self.assertEqual(call_shapes, [(8, 2, 3)])
+
+        expected_per_head = torch.cat(
+            [
+                head - head.mean(dim=-2, keepdim=True)
+                for head in torch.split(grad, [2] * 8, dim=0)
+            ],
+            dim=0,
+        )
+        torch.testing.assert_close(per_head_out, expected_per_head)
+        self.assertFalse(torch.equal(projection_out, per_head_out))
+
 
 class MuonTest(parameterized.TestCase):
     def setUp(self):

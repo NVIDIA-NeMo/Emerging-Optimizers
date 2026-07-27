@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import TYPE_CHECKING, Any, Callable, override
+from typing import TYPE_CHECKING, Any, Callable, Sequence, override
 
 
 if TYPE_CHECKING:
@@ -86,6 +86,8 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
     Args:
         {_args_doc}
         scaled_orthogonalize_fn: Function to orthogonalize and scale the updates.
+        split_qkv_per_head: Whether subclasses should split fused QKV parameters into individual
+            attention heads instead of the default Q, K, and V projection matrices.
         **kwargs: Arguments passed through to the base optimizer.
 
     Note:
@@ -103,6 +105,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay_method: opt_mixin.WeightDecayT,
         fp32_matmul_prec: FP32MatmulPrecT,
         scaled_orthogonalize_fn: Callable | None = None,
+        split_qkv_per_head: bool = False,
         **kwargs: Any,
     ):
         if scaled_orthogonalize_fn is None:
@@ -112,6 +115,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self.fp32_matmul_prec = fp32_matmul_prec
         self.nesterov = nesterov
         self.weight_decay_method = weight_decay_method
+        self.split_qkv_per_head = split_qkv_per_head
 
         default_args_dict = dict(
             lr=lr,
@@ -227,6 +231,70 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
             raise ValueError("Only 2D parameters are supported.")
         grad = self.scaled_orthogonalize_fn(grad)
         return grad
+
+    def orthogonalize_qkv(
+        self,
+        grad: torch.Tensor,
+        split_shapes: Sequence[int],
+        *,
+        orthogonalize_fn: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    ) -> torch.Tensor:
+        """Split, orthogonalize, and reconstruct a fused QKV update.
+
+        By default, ``split_shapes`` describes the Q, optional gate, K, and V widths
+        within one query-group block. Corresponding projections from all query groups
+        are concatenated and orthogonalized together.
+
+        When ``split_qkv_per_head`` is enabled, ``split_shapes`` instead describes the
+        physical sequence of individual heads in ``grad``. Equal-sized heads are stacked
+        into a 3D tensor so the orthogonalization function can use a batched implementation.
+
+        Args:
+            grad: Fused two-dimensional QKV update.
+            split_shapes: Projection widths for one query group, or individual physical
+                head widths when ``split_qkv_per_head`` is enabled.
+            orthogonalize_fn: Optional operation to use instead of ``scaled_orthogonalize_fn``.
+
+        Returns:
+            The reconstructed fused QKV update.
+        """
+        if grad.ndim != 2:
+            raise ValueError(f"Fused QKV gradient must be 2D, got {grad.ndim}D")
+        if not split_shapes or any(size <= 0 for size in split_shapes):
+            raise ValueError(f"QKV split shapes must be positive: {split_shapes}")
+
+        orthogonalize_fn = orthogonalize_fn or self.scaled_orthogonalize_fn
+        split_width = sum(split_shapes)
+
+        if self.split_qkv_per_head:
+            if grad.shape[0] != split_width:
+                raise ValueError(
+                    f"Per-head QKV split shape mismatch: grad_shape={tuple(grad.shape)}, "
+                    f"split_shapes={tuple(split_shapes)}"
+                )
+            if len(set(split_shapes)) == 1:
+                head_rows = split_shapes[0]
+                batched_grad = grad.view(len(split_shapes), head_rows, -1)
+                return orthogonalize_fn(batched_grad).view_as(grad)
+            return torch.cat(
+                [orthogonalize_fn(head_grad) for head_grad in torch.split(grad, split_shapes, dim=0)],
+                dim=0,
+            )
+
+        if grad.shape[0] % split_width != 0:
+            raise ValueError(
+                f"QKV split shape mismatch: grad_shape={tuple(grad.shape)}, "
+                f"split_shapes={tuple(split_shapes)}"
+            )
+        num_query_groups = grad.shape[0] // split_width
+        grouped_grad = grad.view(num_query_groups, split_width, -1)
+        projection_grads = torch.split(grouped_grad, split_shapes, dim=1)
+        projection_grads = [projection.reshape(-1, grad.shape[-1]) for projection in projection_grads]
+        projection_grads = [
+            orthogonalize_fn(projection).view(num_query_groups, -1, grad.shape[-1])
+            for projection in projection_grads
+        ]
+        return torch.cat(projection_grads, dim=1).view_as(grad)
 
     def pre_weight_update_fn_inplace(self, p: torch.Tensor, update: torch.Tensor) -> None:
         """Function called before the final weight update.
