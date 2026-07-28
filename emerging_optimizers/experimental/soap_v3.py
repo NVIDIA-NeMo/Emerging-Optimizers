@@ -33,6 +33,7 @@ from emerging_optimizers.utils import eig as eig_utils
 
 
 __all__ = [
+    "KlMSoap",
     "KlSoapPreconditioner",
     "KlSoapV3",
     "PreconditionerProtocol",
@@ -321,14 +322,17 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
     - :attr:`PreconditionerCls` -- how the covariance factors and eigenbases are maintained.
     - :meth:`_scalar_update` -- which scalar optimizer runs inside the eigenbasis.
 
-    Hyperparameters consumed only by the inner update (Adam's ``betas``, for instance) belong to the
-    subclass that uses them, not here.
+    ``betas`` lives here because every inner update in the family takes a pair of EMA coefficients.
+    Constants specific to one inner update (MAdam's ``scale_log2``, for instance) belong on the subclass
+    as class attributes, so that variants do not have to redefine ``__init__`` at all.
 
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate to use
+        betas: Inner scalar optimizer's betas parameters (b1, b2)
         shampoo_beta: Beta for the kronecker factor matrices (L and R in paper) moving average
-        eps: Epsilon for the Kronecker factor update, passed to the preconditioner
+        eps: Epsilon for the Kronecker factor update, passed to the preconditioner. Whether the inner
+            update also uses it is up to the subclass.
         weight_decay: Weight decay coefficient
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
             If False, use orthogonal iteration to compute the eigenbasis. The first step uses eigh
@@ -350,6 +354,7 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         self,
         params: ParamsT,
         lr: float,
+        betas: tuple[float, float] = (0.9, 0.95),
         shampoo_beta: float = 0.95,
         eps: float = 1e-8,
         weight_decay: float = 0.01,
@@ -360,6 +365,7 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
     ) -> None:
         self.weight_decay_method = "decoupled"
         self.use_eigh = use_eigh
+        self.betas = betas
         self.eps = eps
         self.max_update_rms = max_update_rms
         self.stream_list = stream_list
@@ -528,52 +534,12 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
 class KlSoapV3(SoapBase):
     """Implements a variant of SOAP algorithm.
 
-    Pairs the KL-Shampoo Kronecker factor update with Adam as the inner scalar optimizer. See
-    :class:`SoapBase` for the step loop and for the arguments not listed here.
-
-    Args:
-        params: Iterable of parameters to optimize or dicts defining parameter groups
-        lr: The learning rate to use
-        betas: Inner Adam's betas parameters (b1, b2)
-        shampoo_beta: Beta for the kronecker factor matrices (L and R in paper) moving average
-            instead of betas[1] if >= 0
-        eps: Inner Adam's epsilon for numerical stability, also used as the KL-Shampoo Kronecker factor
-            epsilon
-        weight_decay: Weight decay coefficient
-        use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
-            If False, use orthogonal iteration to compute the eigenbasis. The first step uses eigh
-            regardless, since there is no eigenbasis to refine yet.
-        max_update_rms: Clip the update RMS to this value (0 means no clipping).
-        stream_list: Optional list of CUDA streams. When provided, each parameter in the inner loop uses a
-            stream from this list in round-robin fashion.
+    Pairs the KL-Shampoo kronecker factor update with Adam as the inner scalar optimizer. Takes
+    :class:`SoapBase`'s constructor unchanged, where ``betas`` are inner Adam's and ``eps`` serves both
+    inner Adam's denominator and the kronecker factor update.
     """
 
     PreconditionerCls: ClassVar[SoapPreconditionerFactory] = KlSoapPreconditioner
-
-    def __init__(
-        self,
-        params: ParamsT,
-        lr: float,
-        betas: tuple[float, float] = (0.9, 0.95),
-        shampoo_beta: float = 0.95,
-        eps: float = 1e-8,
-        weight_decay: float = 0.01,
-        *,
-        use_eigh: bool = False,
-        max_update_rms: float = 0.0,
-        stream_list: list[torch.cuda.Stream] | None = None,
-    ) -> None:
-        self.betas = betas
-        super().__init__(
-            params,
-            lr,
-            shampoo_beta,
-            eps,
-            weight_decay,
-            use_eigh=use_eigh,
-            max_update_rms=max_update_rms,
-            stream_list=stream_list,
-        )
 
     @override
     def _scalar_update(
@@ -604,6 +570,43 @@ class KlSoapV3(SoapBase):
             correct_bias=True,
             nesterov=False,
             step=step,
+        )
+
+
+@registry.register_optimizer("kl_m_soap")
+class KlMSoap(SoapBase):
+    """SOAP with the KL-Shampoo kronecker factor update and MAdam as the inner scalar optimizer."""
+
+    PreconditionerCls: ClassVar[SoapPreconditionerFactory] = KlSoapPreconditioner
+
+    @override
+    def _scalar_update(
+        self,
+        grad: torch.Tensor,
+        exp_avg: torch.Tensor,
+        exp_avg_sq: torch.Tensor,
+        *,
+        step: int,
+    ) -> torch.Tensor:
+        """Applies MAdam to the projected gradient, in the eigenbasis.
+
+        Args:
+            grad: Gradient projected into the eigenbasis.
+            exp_avg: Inner MAdam's first moment, in the eigenbasis and updated in place.
+            exp_avg_sq: Inner MAdam's scaled second moment, in the eigenbasis and updated in place.
+            step: Current optimizer step (1-based), used for bias correction.
+
+        Returns:
+            The MAdam update, in the eigenbasis.
+        """
+        return update_functions.calculate_madam_update(
+            grad,
+            exp_avg,
+            exp_avg_sq,
+            betas=self.betas,
+            correct_bias=True,
+            step=step,
+            scale_log2=16.0,
         )
 
 
