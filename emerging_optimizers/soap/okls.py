@@ -25,7 +25,7 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry
-from emerging_optimizers.soap.matrix_root_inverse_utils import scaled_cans_coupled_ns
+from emerging_optimizers.soap.matrix_root_inverse_utils import mat_root_inv_via_scaled_cans
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
@@ -40,7 +40,7 @@ def _update_inverse_roots(
 ) -> None:
     for kronecker_factor, inverse_root in zip(kronecker_factor_list, inverse_root_list, strict=True):
         inverse_root.copy_(
-            scaled_cans_coupled_ns(
+            mat_root_inv_via_scaled_cans(
                 kronecker_factor,
                 eps=ridge_eps,
                 fp32_matmul_prec=cans_fp32_matmul_prec,
