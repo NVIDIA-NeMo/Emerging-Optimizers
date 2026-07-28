@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
+from _comparison import assert_close_to_identity
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -53,25 +54,30 @@ class MatrixRootInverseUtilsTest(parameterized.TestCase):
         self.assertEqual(inverse_root.dtype, torch.float32)
         self.assertEqual(torch.get_float32_matmul_precision(), previous_precision)
 
-    @parameterized.parameters((2, 2), (2, 2, 2))  # type: ignore[misc]
+    @parameterized.parameters((8, 8), (16, 16), (2, 8, 8), (3, 16, 16))  # type: ignore[misc]
     def test_scaled_cans_inverse_root_accuracy(self, shape: tuple[int, ...]) -> None:
-        base_matrix = torch.tensor(
-            [[2.0, 0.5], [0.5, 1.5]],
-            device=FLAGS.device,
-        )
+        matrix_size = shape[-1]
+        base_matrix = 2.0 * torch.eye(matrix_size, device=FLAGS.device)
+        base_matrix.diagonal(offset=1).fill_(0.25)
+        base_matrix.diagonal(offset=-1).fill_(0.25)
         if len(shape) == 2:
             matrix = base_matrix
         else:
-            batch_scale = torch.arange(1, shape[0] + 1, device=FLAGS.device).view(-1, 1, 1)
+            batch_scale = torch.arange(
+                1,
+                shape[0] + 1,
+                device=FLAGS.device,
+                dtype=base_matrix.dtype,
+            ).view(-1, 1, 1)
             matrix = base_matrix.unsqueeze(0) * batch_scale
 
         inverse_root = scaled_cans_coupled_ns(matrix)
-        identity = torch.eye(matrix.shape[-1], device=FLAGS.device).expand_as(matrix)
         whitened_matrix = inverse_root @ matrix @ inverse_root
         matrix_root = torch.linalg.inv(inverse_root)
         reconstructed_matrix = matrix_root @ matrix_root
 
-        torch.testing.assert_close(whitened_matrix, identity, atol=2e-4, rtol=2e-4)
+        for whitened_matrix_slice in whitened_matrix.reshape(-1, matrix_size, matrix_size):
+            assert_close_to_identity(whitened_matrix_slice, off_diag_atol=2e-4, diag_atol=2e-4)
         torch.testing.assert_close(reconstructed_matrix, matrix, atol=2e-4, rtol=2e-4)
 
     def test_scaled_cans_rejects_non_fp32_tensor(self) -> None:
