@@ -98,4 +98,4 @@ def scaled_cans_coupled_ns(
 
         z = z.to(torch.float32)
         z.mul_(torch.rsqrt(inf_norm))
-        return (z + z.mT) / 2.0
+        return (z + z.mT) * 0.5
