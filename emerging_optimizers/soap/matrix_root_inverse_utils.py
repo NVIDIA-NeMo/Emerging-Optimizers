@@ -19,7 +19,7 @@ from emerging_optimizers import utils
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
-__all__ = ["scaled_cans_coupled_ns"]
+__all__ = ["mat_root_inv_via_scaled_cans"]
 
 # All constant arithmetic, including the 1.01 safety factor, is folded into these coefficients.
 _CANS_COEFFS = (
@@ -36,7 +36,7 @@ _CANS_COEFFS = (
 )
 
 
-def scaled_cans_coupled_ns(
+def mat_root_inv_via_scaled_cans(
     x: Tensor,
     eps: float = 1e-12,
     fp32_matmul_prec: FP32MatmulPrecT = "highest",
