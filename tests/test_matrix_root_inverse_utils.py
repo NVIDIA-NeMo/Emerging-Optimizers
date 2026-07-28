@@ -53,14 +53,20 @@ class MatrixRootInverseUtilsTest(parameterized.TestCase):
         self.assertEqual(inverse_root.dtype, torch.float32)
         self.assertEqual(torch.get_float32_matmul_precision(), previous_precision)
 
-    def test_scaled_cans_inverse_root_accuracy(self) -> None:
-        matrix = torch.tensor(
+    @parameterized.parameters((2, 2), (2, 2, 2))  # type: ignore[misc]
+    def test_scaled_cans_inverse_root_accuracy(self, shape: tuple[int, ...]) -> None:
+        base_matrix = torch.tensor(
             [[2.0, 0.5], [0.5, 1.5]],
             device=FLAGS.device,
         )
+        if len(shape) == 2:
+            matrix = base_matrix
+        else:
+            batch_scale = torch.arange(1, shape[0] + 1, device=FLAGS.device).view(-1, 1, 1)
+            matrix = base_matrix.unsqueeze(0) * batch_scale
 
         inverse_root = scaled_cans_coupled_ns(matrix)
-        identity = torch.eye(matrix.shape[-1], device=FLAGS.device)
+        identity = torch.eye(matrix.shape[-1], device=FLAGS.device).expand_as(matrix)
         whitened_matrix = inverse_root @ matrix @ inverse_root
         matrix_root = torch.linalg.inv(inverse_root)
         reconstructed_matrix = matrix_root @ matrix_root
