@@ -15,8 +15,7 @@
 from collections.abc import Iterator
 from contextlib import nullcontext
 from dataclasses import dataclass
-from functools import partial
-from typing import TYPE_CHECKING, Callable, Protocol, override
+from typing import TYPE_CHECKING, Callable, ClassVar, Protocol, override
 
 
 if TYPE_CHECKING:
@@ -37,6 +36,8 @@ __all__ = [
     "KlSoapPreconditioner",
     "KlSoapV3",
     "PreconditionerProtocol",
+    "SoapBase",
+    "SoapPreconditionerFactory",
     "TensorPair",
 ]
 
@@ -56,15 +57,18 @@ class TensorPair:
 class PreconditionerProtocol(Protocol):
     """Interface a preconditioner must provide to drive one optimizer step for one parameter.
 
-    A preconditioner owns the covariance factors and eigenbases of a single parameter, exposes the second
-    moment consumed by the inner scalar optimizer, and maps tensors between the parameter basis and the
+    A preconditioner owns the covariance factors and eigenbases of a single parameter, exposes the moments
+    consumed by the inner scalar optimizer, and maps tensors between the parameter basis and the
     eigenbasis. Implementations are constructed from the per-parameter state dict and must write their
     tensors back with :meth:`rebind_state`, since the basis updates are partly out-of-place.
 
-    Positional-only parameters let implementations name the driving tensor after what it actually is
-    (a gradient for :class:`KlSoapPreconditioner`, a momentum for the MOSO variant).
+    The moments live in the eigenbasis and are re-projected whenever the eigenbasis rotates, which is why
+    they belong to the preconditioner rather than to the optimizer. Positional-only parameters let
+    implementations name the driving tensor after what it actually is -- a gradient for
+    :class:`KlSoapPreconditioner`, a momentum for a Muon-style variant.
     """
 
+    exp_avg: torch.Tensor
     exp_avg_sq: torch.Tensor
 
     @staticmethod
@@ -117,6 +121,48 @@ class PreconditionerProtocol(Protocol):
 
         Args:
             state: Per-parameter optimizer state, updated in place.
+        """
+
+
+class SoapPreconditionerFactory(Protocol):
+    """Constructs a preconditioner for one parameter from ``(state, eps, use_eigh)``.
+
+    A preconditioner class satisfies this by having a matching ``__init__``. Typing
+    :attr:`SoapBase.PreconditionerCls` with this rather than ``type[PreconditionerProtocol]`` is
+    deliberate: mypy checks constructors against a callable type but excludes ``__init__`` from protocol
+    member checks, so only this form catches a preconditioner whose constructor has drifted.
+    """
+
+    def __call__(self, state: dict, eps: float, use_eigh: bool, /) -> PreconditionerProtocol:
+        """Builds the preconditioner.
+
+        Args:
+            state: Per-parameter optimizer state to bind to.
+            eps: Epsilon for the Kronecker factor update.
+            use_eigh: Whether to use eigh instead of orthogonal iteration for the eigenbases.
+
+        Returns:
+            The preconditioner bound to ``state``.
+        """
+
+    @staticmethod
+    def init_state(
+        shape: tuple[int, ...],
+        device: torch.device,
+        dtype: torch.dtype = torch.float32,
+    ) -> dict[str, torch.Tensor]:
+        """Creates the state entries the preconditioner owns, as :meth:`PreconditionerProtocol.init_state`.
+
+        Declared here as well so that :meth:`SoapBase._init_group` can allocate state through
+        ``PreconditionerCls`` and stay in sync with whichever preconditioner a subclass selects.
+
+        Args:
+            shape: Shape of the 2D parameter the preconditioner will be attached to.
+            device: Device to allocate the state tensors on.
+            dtype: Dtype of the state tensors.
+
+        Returns:
+            The state entries owned by the preconditioner.
         """
 
 
@@ -265,23 +311,24 @@ class KlSoapPreconditioner:
         return self.eigenbasis_pair.L @ x @ self.eigenbasis_pair.R.mT
 
 
-if TYPE_CHECKING:
-    # Static assertion only: mypy rejects the assignment if KlSoapPreconditioner stops satisfying the protocol.
-    _kl_soap_preconditioner_implements_protocol: type[PreconditionerProtocol] = KlSoapPreconditioner
+class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
+    """Canonical SOAP step loop, shared by the SOAP-family optimizers.
 
+    :meth:`step` is the whole algorithm: update the preconditioner from the gradient, project the gradient
+    into the eigenbasis, run an inner scalar optimizer there, and project the update back out. Subclasses
+    customize the two pieces that actually vary between SOAP variants and leave the loop alone:
 
-@registry.register_optimizer("kl_soap_v3")
-class KlSoapV3(optim.Optimizer, opt_mixin.WeightDecayMixin):
-    """Implements a variant of SOAP algorithm.
+    - :attr:`PreconditionerCls` -- how the covariance factors and eigenbases are maintained.
+    - :meth:`_scalar_update` -- which scalar optimizer runs inside the eigenbasis.
+
+    Hyperparameters consumed only by the inner update (Adam's ``betas``, for instance) belong to the
+    subclass that uses them, not here.
 
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups
         lr: The learning rate to use
-        betas: Inner Adam's betas parameters (b1, b2)
         shampoo_beta: Beta for the kronecker factor matrices (L and R in paper) moving average
-            instead of betas[1] if >= 0
-        eps: Inner Adam's epsilon for numerical stability, also used as the KL-Shampoo Kronecker factor
-            epsilon
+        eps: Epsilon for the Kronecker factor update, passed to the preconditioner
         weight_decay: Weight decay coefficient
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
             If False, use orthogonal iteration to compute the eigenbasis. The first step uses eigh
@@ -289,13 +336,20 @@ class KlSoapV3(optim.Optimizer, opt_mixin.WeightDecayMixin):
         max_update_rms: Clip the update RMS to this value (0 means no clipping).
         stream_list: Optional list of CUDA streams. When provided, each parameter in the inner loop uses a
             stream from this list in round-robin fashion.
+
+    Attributes:
+        PreconditionerCls: Preconditioner used for every parameter. Subclasses set it to change how the
+            covariance factors and eigenbases are maintained; it must satisfy
+            :class:`SoapPreconditionerFactory`. It is also what :meth:`_init_group` allocates state from,
+            so a subclass that swaps it gets that preconditioner's state layout.
     """
+
+    PreconditionerCls: ClassVar[SoapPreconditionerFactory]
 
     def __init__(
         self,
         params: ParamsT,
         lr: float,
-        betas: tuple[float, float] = (0.9, 0.95),
         shampoo_beta: float = 0.95,
         eps: float = 1e-8,
         weight_decay: float = 0.01,
@@ -306,6 +360,7 @@ class KlSoapV3(optim.Optimizer, opt_mixin.WeightDecayMixin):
     ) -> None:
         self.weight_decay_method = "decoupled"
         self.use_eigh = use_eigh
+        self.eps = eps
         self.max_update_rms = max_update_rms
         self.stream_list = stream_list
 
@@ -314,15 +369,37 @@ class KlSoapV3(optim.Optimizer, opt_mixin.WeightDecayMixin):
             "shampoo_beta": shampoo_beta,
             "weight_decay": weight_decay,
         }
-        self.update_fn = partial(
-            update_functions.calculate_adam_update,
-            betas=betas,
-            eps=eps,
-            correct_bias=True,
-            nesterov=False,
-        )
-        self.PreconditionerCls = partial(KlSoapPreconditioner, eps=eps)
         super().__init__(params, defaults)
+
+    def _scalar_update(
+        self,
+        grad: torch.Tensor,
+        exp_avg: torch.Tensor,
+        exp_avg_sq: torch.Tensor,
+        *,
+        step: int,
+    ) -> torch.Tensor:
+        """Applies the inner scalar optimizer to the projected gradient, in the eigenbasis.
+
+        Override this to run a different scalar update inside the eigenbasis. The moment buffers are owned
+        by the preconditioner, so an override may only use the buffers that ``PreconditionerCls.init_state``
+        allocates -- an update needing a different set of buffers (the slow EMA of AdEMAMix, say) is a
+        preconditioner change too, since every buffer living in the eigenbasis has to be re-projected when
+        the eigenbasis rotates.
+
+        Args:
+            grad: Gradient projected into the eigenbasis.
+            exp_avg: Inner optimizer's first moment, in the eigenbasis and updated in place.
+            exp_avg_sq: Inner optimizer's second moment, in the eigenbasis and updated in place.
+            step: Current optimizer step (1-based), used for bias correction.
+
+        Returns:
+            The scalar update, in the eigenbasis.
+
+        Raises:
+            NotImplementedError: Always; subclasses must provide the inner update.
+        """
+        raise NotImplementedError
 
     @torch.no_grad()  # type: ignore[misc]
     def _init_group(
@@ -344,7 +421,7 @@ class KlSoapV3(optim.Optimizer, opt_mixin.WeightDecayMixin):
                 continue
 
             if p.dim() != 2:
-                raise TypeError("KlSoapV3 is only supported for 2D tensors")
+                raise TypeError(f"{type(self).__name__} is only supported for 2D tensors")
 
             state = self.state[p]
 
@@ -353,7 +430,7 @@ class KlSoapV3(optim.Optimizer, opt_mixin.WeightDecayMixin):
 
                 # Use shape of p instead of grad for initialization because of the introduction of skip_non_grad_params
                 # for megatron-lm distributed checkpointing use. _init_group can be called without grad.
-                state.update(KlSoapPreconditioner.init_state(p.shape, p.device))
+                state.update(self.PreconditionerCls.init_state(p.shape, p.device))
 
     if TYPE_CHECKING:
 
@@ -406,7 +483,7 @@ class KlSoapV3(optim.Optimizer, opt_mixin.WeightDecayMixin):
                     shampoo_beta = group["shampoo_beta"]
                     shampoo_beta = 1 - (1 - shampoo_beta) / (1 - shampoo_beta**curr_iter_1_based)
 
-                    preconditioner = self.PreconditionerCls(state, use_eigh=use_eigh)
+                    preconditioner = self.PreconditionerCls(state, self.eps, use_eigh)
                     preconditioner.step(grad, shampoo_beta)
 
                     self._apply_weight_decay_inplace(
@@ -421,16 +498,16 @@ class KlSoapV3(optim.Optimizer, opt_mixin.WeightDecayMixin):
                         # Project gradients to the eigenbases of Shampoo's preconditioner
                         grad_projected = preconditioner.project_in(grad)
 
-                        # Calculate the Adam update for the projected gradient tensor
-                        adam_update = self.update_fn(
+                        # Calculate the inner scalar update for the projected gradient tensor
+                        scalar_update = self._scalar_update(
                             grad_projected,
                             preconditioner.exp_avg,
                             preconditioner.exp_avg_sq,
                             step=curr_iter_1_based,  # 1-based iteration index is used for bias correction
                         )
 
-                        # Projecting back the preconditioned (by ADAM) exponential moving average of gradients
-                        precond_update = preconditioner.project_out(adam_update)
+                        # Projecting back the preconditioned exponential moving average of gradients
+                        precond_update = preconditioner.project_out(scalar_update)
 
                     _clip_update_rms_in_place(precond_update, self.max_update_rms)
                     p.add_(precond_update, alpha=-group["lr"])
@@ -445,6 +522,89 @@ class KlSoapV3(optim.Optimizer, opt_mixin.WeightDecayMixin):
                 current_stream.wait_stream(stream)
 
         return None
+
+
+@registry.register_optimizer("kl_soap_v3")
+class KlSoapV3(SoapBase):
+    """Implements a variant of SOAP algorithm.
+
+    Pairs the KL-Shampoo Kronecker factor update with Adam as the inner scalar optimizer. See
+    :class:`SoapBase` for the step loop and for the arguments not listed here.
+
+    Args:
+        params: Iterable of parameters to optimize or dicts defining parameter groups
+        lr: The learning rate to use
+        betas: Inner Adam's betas parameters (b1, b2)
+        shampoo_beta: Beta for the kronecker factor matrices (L and R in paper) moving average
+            instead of betas[1] if >= 0
+        eps: Inner Adam's epsilon for numerical stability, also used as the KL-Shampoo Kronecker factor
+            epsilon
+        weight_decay: Weight decay coefficient
+        use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
+            If False, use orthogonal iteration to compute the eigenbasis. The first step uses eigh
+            regardless, since there is no eigenbasis to refine yet.
+        max_update_rms: Clip the update RMS to this value (0 means no clipping).
+        stream_list: Optional list of CUDA streams. When provided, each parameter in the inner loop uses a
+            stream from this list in round-robin fashion.
+    """
+
+    PreconditionerCls: ClassVar[SoapPreconditionerFactory] = KlSoapPreconditioner
+
+    def __init__(
+        self,
+        params: ParamsT,
+        lr: float,
+        betas: tuple[float, float] = (0.9, 0.95),
+        shampoo_beta: float = 0.95,
+        eps: float = 1e-8,
+        weight_decay: float = 0.01,
+        *,
+        use_eigh: bool = False,
+        max_update_rms: float = 0.0,
+        stream_list: list[torch.cuda.Stream] | None = None,
+    ) -> None:
+        self.betas = betas
+        super().__init__(
+            params,
+            lr,
+            shampoo_beta,
+            eps,
+            weight_decay,
+            use_eigh=use_eigh,
+            max_update_rms=max_update_rms,
+            stream_list=stream_list,
+        )
+
+    @override
+    def _scalar_update(
+        self,
+        grad: torch.Tensor,
+        exp_avg: torch.Tensor,
+        exp_avg_sq: torch.Tensor,
+        *,
+        step: int,
+    ) -> torch.Tensor:
+        """Applies Adam to the projected gradient, in the eigenbasis.
+
+        Args:
+            grad: Gradient projected into the eigenbasis.
+            exp_avg: Inner Adam's first moment, in the eigenbasis and updated in place.
+            exp_avg_sq: Inner Adam's second moment, in the eigenbasis and updated in place.
+            step: Current optimizer step (1-based), used for bias correction.
+
+        Returns:
+            The Adam update, in the eigenbasis.
+        """
+        return update_functions.calculate_adam_update(
+            grad,
+            exp_avg,
+            exp_avg_sq,
+            betas=self.betas,
+            eps=self.eps,
+            correct_bias=True,
+            nesterov=False,
+            step=step,
+        )
 
 
 @torch.compile  # type: ignore[misc]
