@@ -89,12 +89,14 @@ def scaled_cans_coupled_ns(
         if torch.get_float32_matmul_precision() == "medium":
             y = y.to(torch.bfloat16)
 
-        z = torch.eye(x.shape[-1], device=x.device, dtype=y.dtype).expand_as(y)
-        cans_addmm = torch.addmm if x.dim() == 2 else torch.baddbmm
+        z = torch.eye(x.shape[-1], device=x.device, dtype=y.dtype)
+        if x.dim() == 3:
+            z = z.unsqueeze(0)
+
         for beta, alpha in _CANS_COEFFS:
             p = z @ y
-            z = cans_addmm(z, p, z, beta=beta, alpha=alpha)
-            y = cans_addmm(y, y, p, beta=beta, alpha=alpha)
+            z = torch.add(z * beta, p @ z, alpha=alpha)
+            y = torch.add(y * beta, y @ p, alpha=alpha)
 
         z = z.to(torch.float32)
         z.mul_(torch.rsqrt(inf_norm))
