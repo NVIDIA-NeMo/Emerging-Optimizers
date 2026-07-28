@@ -315,6 +315,7 @@ class MosoV3(optim.Optimizer, opt_mixin.WeightDecayMixin):
                     rmsprop_update = self.update_fun(
                         momentum_projected,
                         preconditioner.exp_avg_sq,
+                        step=curr_iter_1_based,
                     )
 
                     # Projecting back the preconditioned (by RMSProp) momentum
