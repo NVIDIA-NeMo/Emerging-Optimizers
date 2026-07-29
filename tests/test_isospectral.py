@@ -70,6 +70,26 @@ class IsospectralTest(parameterized.TestCase):
         torch.testing.assert_close(state["u"].mT @ state["u"], identity, atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(state["v"].mT @ state["v"], identity, atol=1e-5, rtol=1e-5)
 
+    @parameterized.named_parameters(
+        ("float16", torch.float16),
+        ("bfloat16", torch.bfloat16),
+    )
+    def test_cpu_low_precision_uses_fp32_factor_state(self, dtype: torch.dtype) -> None:
+        param = torch.nn.Parameter(torch.randn((6, 4), dtype=dtype, device="cpu"))
+        optimizer = ISO([param], lr=1e-2)
+        param.grad = torch.randn_like(param)
+
+        optimizer.step()
+
+        state = optimizer.state[param]
+        self.assertEqual(param.dtype, dtype)
+        self.assertEqual(state["u"].dtype, torch.float32)
+        self.assertEqual(state["sigma"].dtype, torch.float32)
+        self.assertEqual(state["v"].dtype, torch.float32)
+        self.assertEqual(state["momentum_u"].dtype, torch.float32)
+        self.assertEqual(state["momentum_v"].dtype, torch.float32)
+        self.assertTrue(torch.isfinite(param).all())
+
     def test_rejects_non_matrix_parameter(self) -> None:
         param = torch.nn.Parameter(torch.randn(4, device=FLAGS.device))
         optimizer = ISO([param])

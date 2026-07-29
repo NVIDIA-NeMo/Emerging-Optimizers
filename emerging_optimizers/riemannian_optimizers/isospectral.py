@@ -141,7 +141,10 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
         if param.ndim != 2:
             raise ValueError("ISO only supports 2D parameters")
 
-        u, sigma, vh = torch.linalg.svd(param, full_matrices=False)
+        factor_param = (
+            param.float() if param.dtype in (torch.float16, torch.bfloat16) else param
+        )
+        u, sigma, vh = torch.linalg.svd(factor_param, full_matrices=False)
         state["step"] = 0
         state["u"] = u
         state["sigma"] = sigma
@@ -189,7 +192,7 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
                 momentum_u = state["momentum_u"]
                 momentum_v = state["momentum_v"]
 
-                grad = param.grad
+                grad = param.grad.to(dtype=u.dtype)
                 self._apply_weight_decay_inplace(param, grad, lr, weight_decay)
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
