@@ -103,7 +103,8 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
     """Isospectral optimizer for two-dimensional parameters.
 
     The optimizer factorizes each parameter as ``U @ diag(Sigma) @ V.T`` and
-    updates the two Stiefel factors while keeping ``Sigma`` fixed.
+    updates the two Stiefel factors while keeping ``Sigma`` fixed. Direct weight
+    decay methods scale ``Sigma`` so their effect persists across reconstructions.
 
     References:
         - *ISO: An RLVR-Native Optimization Stack.* arXiv:2607.19331 (2026).
@@ -213,7 +214,8 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
 
                 # Match the gradient to the factor-state dtype used for low-precision CPU offload.
                 grad = param.grad.to(dtype=u.dtype)
-                self._apply_weight_decay_inplace(param, grad, lr, weight_decay)
+                if self.weight_decay_method == "l2":
+                    self._apply_weight_decay_inplace(param, grad, lr, weight_decay)
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     grad_u = (grad @ v) * sigma.unsqueeze(0)
@@ -229,6 +231,10 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
                         lr,
                         retraction,
                     )
+                    if self.weight_decay_method != "l2":
+                        # Direct decay on param would be overwritten by the fixed-factor
+                        # reconstruction. Apply it to Sigma so the decayed spectrum persists.
+                        self._apply_weight_decay_inplace(sigma, sigma, lr, weight_decay)
                     updated_param = (u * sigma.unsqueeze(0)) @ v.mT
 
                 state["u"] = u

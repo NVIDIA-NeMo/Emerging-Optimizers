@@ -90,6 +90,37 @@ class IsospectralTest(parameterized.TestCase):
         self.assertEqual(state["momentum_v"].dtype, torch.float32)
         self.assertTrue(torch.isfinite(param).all())
 
+    @parameterized.named_parameters(
+        ("decoupled", "decoupled", 1.0 - 0.2 * 0.1),
+        ("independent", "independent", 1.0 - 0.1),
+        ("palm", "palm", 1.0 - 0.2**2 * 0.1),
+    )
+    def test_direct_weight_decay_scales_singular_values(
+        self,
+        weight_decay_method: str,
+        expected_scale: float,
+    ) -> None:
+        param = torch.nn.Parameter(torch.randn((6, 4), device=FLAGS.device))
+        initial_singular_values = torch.linalg.svdvals(param).clone()
+        optimizer = ISO(
+            [param],
+            lr=0.2,
+            momentum=0.0,
+            weight_decay=0.1,
+            weight_decay_method=weight_decay_method,
+        )
+        param.grad = torch.zeros_like(param)
+
+        optimizer.step()
+        optimizer.step()
+
+        torch.testing.assert_close(
+            torch.linalg.svdvals(param),
+            initial_singular_values * expected_scale**2,
+            atol=1e-5,
+            rtol=1e-5,
+        )
+
     def test_rejects_non_matrix_parameter(self) -> None:
         param = torch.nn.Parameter(torch.randn(4, device=FLAGS.device))
         optimizer = ISO([param])
