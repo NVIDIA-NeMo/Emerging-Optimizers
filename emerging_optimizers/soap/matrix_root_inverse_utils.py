@@ -39,10 +39,7 @@ def mat_root_inv_via_scaled_cans(
     use ``alpha / 1.01``. The final pair additionally absorbs the output normalization and is
     computed as ``(beta / sqrt(1.01), alpha / 1.01**1.5)``. This is algebraically equivalent
     in exact arithmetic to normalizing by ``1.01 * inf_norm`` and applying the original
-    coefficients. The literals were generated with Python IEEE-754 binary64 arithmetic and
-    rounded to the nearest representable single precision value. All constant arithmetic is
-    folded into these literals. At runtime they are applied to FP32 tensors, except that ``"medium"``
-    explicitly casts the iteration to BF16, matching Muon's Newton-Schulz implementation.
+    coefficients.
 
     Args:
         x: A 2D symmetric positive-definite FP32 matrix or 3D batch of matrices.
