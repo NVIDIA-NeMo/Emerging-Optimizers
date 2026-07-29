@@ -26,7 +26,7 @@ from emerging_optimizers import registry
 from emerging_optimizers import utils
 
 
-__all__ = ["ISO"]
+__all__ = ["Iso"]
 
 RetractionT = Literal["qr", "polar", "cayley"]
 
@@ -99,7 +99,7 @@ def _retract_factors(
 
 
 @registry.register_optimizer("iso")
-class ISO(opt_mixin.WeightDecayMixin, Optimizer):
+class Iso(opt_mixin.WeightDecayMixin, Optimizer):
     """Isospectral optimizer for two-dimensional parameters.
 
     The optimizer factorizes each parameter as ``U @ diag(Sigma) @ V.T`` and
@@ -156,7 +156,7 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
         if len(state) != 0:
             return
         if param.ndim != 2:
-            raise ValueError("ISO only supports 2D parameters")
+            raise ValueError("Iso only supports 2D parameters")
 
         # RL optimizer offload can place low-precision parameters on CPU, where
         # linalg decompositions and retractions do not support float16 or bfloat16.
@@ -199,9 +199,9 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
                 if param.grad is None:
                     continue
                 if param.ndim != 2:
-                    raise ValueError("ISO only supports 2D parameters")
+                    raise ValueError("Iso only supports 2D parameters")
                 if param.grad.is_sparse:
-                    raise ValueError("ISO does not support sparse gradients")
+                    raise ValueError("Iso does not support sparse gradients")
 
                 state = self.state[param]
                 self._init_state(param)

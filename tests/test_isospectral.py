@@ -18,7 +18,7 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import registry
-from emerging_optimizers.rl_optimizers.isospectral import ISO
+from emerging_optimizers.rl_optimizers.isospectral import Iso
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -46,7 +46,7 @@ class IsospectralTest(parameterized.TestCase):
     def test_preserves_singular_values(self, retraction: str, shape: tuple[int, int]) -> None:
         param = torch.nn.Parameter(torch.randn(shape, device=FLAGS.device))
         initial_singular_values = torch.linalg.svdvals(param).clone()
-        optimizer = ISO([param], lr=1e-2, momentum=0.9, retraction=retraction)
+        optimizer = Iso([param], lr=1e-2, momentum=0.9, retraction=retraction)
 
         for _ in range(5):
             param.grad = torch.randn_like(param)
@@ -61,7 +61,7 @@ class IsospectralTest(parameterized.TestCase):
 
     def test_factor_state_is_orthonormal(self) -> None:
         param = torch.nn.Parameter(torch.randn((7, 4), device=FLAGS.device))
-        optimizer = ISO([param], lr=1e-2)
+        optimizer = Iso([param], lr=1e-2)
         param.grad = torch.randn_like(param)
         optimizer.step()
 
@@ -76,7 +76,7 @@ class IsospectralTest(parameterized.TestCase):
     )
     def test_cpu_low_precision_uses_fp32_factor_state(self, dtype: torch.dtype) -> None:
         param = torch.nn.Parameter(torch.randn((6, 4), dtype=dtype, device="cpu"))
-        optimizer = ISO([param], lr=1e-2)
+        optimizer = Iso([param], lr=1e-2)
         param.grad = torch.randn_like(param)
 
         optimizer.step()
@@ -102,7 +102,7 @@ class IsospectralTest(parameterized.TestCase):
     ) -> None:
         param = torch.nn.Parameter(torch.randn((6, 4), device=FLAGS.device))
         initial_singular_values = torch.linalg.svdvals(param).clone()
-        optimizer = ISO(
+        optimizer = Iso(
             [param],
             lr=0.2,
             momentum=0.0,
@@ -123,7 +123,7 @@ class IsospectralTest(parameterized.TestCase):
 
     def test_rejects_non_matrix_parameter(self) -> None:
         param = torch.nn.Parameter(torch.randn(4, device=FLAGS.device))
-        optimizer = ISO([param])
+        optimizer = Iso([param])
         param.grad = torch.randn_like(param)
 
         with self.assertRaisesRegex(ValueError, "only supports 2D"):
@@ -139,10 +139,10 @@ class IsospectralTest(parameterized.TestCase):
     def test_rejects_invalid_hyperparameters(self, kwargs: dict[str, object], message: str) -> None:
         param = torch.nn.Parameter(torch.randn((2, 2), device=FLAGS.device))
         with self.assertRaisesRegex(ValueError, message):
-            ISO([param], **kwargs)
+            Iso([param], **kwargs)
 
     def test_registered_as_iso(self) -> None:
-        self.assertIs(registry.get_optimizer_cls("iso"), ISO)
+        self.assertIs(registry.get_optimizer_cls("iso"), Iso)
 
 
 if __name__ == "__main__":
