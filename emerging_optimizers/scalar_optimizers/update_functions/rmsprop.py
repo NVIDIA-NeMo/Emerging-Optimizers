@@ -28,6 +28,7 @@ def calculate_rmsprop_update(
     *,
     alpha: float,
     eps: float,
+    step: int | None = None,
 ) -> torch.Tensor:
     """Performs the RMSProp update.
 
@@ -45,6 +46,8 @@ def calculate_rmsprop_update(
         exp_avg_sq: The accumulated second moment of the gradient (modified in place).
         alpha: The EMA coefficient for the second moment.
         eps: Epsilon for the second-moment denominator.
+        step: Current optimizer step (1-based). Unused, since RMSProp applies no bias correction; accepted
+            so that every scalar update function shares one calling convention.
 
     Returns:
         The RMSProp update.

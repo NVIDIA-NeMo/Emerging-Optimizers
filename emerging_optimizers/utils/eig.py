@@ -16,6 +16,8 @@ import torch
 from absl import logging
 from torch import Tensor
 
+from emerging_optimizers import utils
+
 
 __all__ = [
     "eigh_with_fallback",
@@ -72,13 +74,12 @@ def orthogonal_iteration(
     kronecker_factor: Tensor,
     eigenbasis: Tensor,
     power_iter_steps: int,
-) -> Tensor:
+) -> tuple[Tensor, Tensor]:
     """Refines an eigenbasis via power iteration with QR re-orthogonalization.
 
     Performs ``power_iter_steps`` rounds of ``Q = QR(kronecker_factor @ Q)`` starting from
-    ``eigenbasis``. The columns of ``eigenbasis`` are expected to already be aligned with the
-    intended descending-eigenvalue ordering of ``kronecker_factor`` (see
-    :func:`emerging_optimizers.soap.soap_utils.permute_eigenbasis_and_exp_avg_sq`).
+    ``eigenbasis``, then returns the approximate eigenvalues and the refined eigenbasis, both sorted
+    in descending eigenvalue order.
 
     Args:
         kronecker_factor: Kronecker factor matrix (symmetric, used as the projector).
@@ -86,7 +87,8 @@ def orthogonal_iteration(
         power_iter_steps: Number of power-iteration / QR rounds to perform.
 
     Returns:
-        The refined eigenbasis.
+        Tuple of (approximate eigenvalues in descending order, refined eigenbasis with columns
+        ordered to match).
     """
     Q = eigenbasis
     for _ in range(power_iter_steps):
@@ -94,7 +96,10 @@ def orthogonal_iteration(
         Q = kronecker_factor @ Q
         # Perform QR to maintain orthogonality between iterations
         Q = torch.linalg.qr(Q).Q
-    return Q
+    with utils.fp32_matmul_precision("highest"):
+        eigvals = conjugate(kronecker_factor, Q, diag=True)
+    sort_idx = torch.argsort(eigvals, descending=True)
+    return eigvals[sort_idx], Q[:, sort_idx]
 
 
 def conjugate(a: Tensor, p: Tensor, diag: bool = False) -> Tensor:

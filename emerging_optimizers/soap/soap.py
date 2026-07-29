@@ -14,7 +14,7 @@
 # limitations under the License.
 from contextlib import nullcontext
 from functools import partial
-from typing import TYPE_CHECKING, Callable, override
+from typing import TYPE_CHECKING, Callable, Iterable, override
 
 
 if TYPE_CHECKING:
@@ -326,11 +326,11 @@ def update_kronecker_factors(
 
 @torch.no_grad()  # type: ignore[misc]
 def update_kronecker_factors_kl_shampoo(
-    kronecker_factor_list: list[torch.Tensor],
+    kronecker_factor_list: Iterable[torch.Tensor],
     grad: torch.Tensor,
     shampoo_beta: float,
-    eigenbasis_list: list[torch.Tensor],
-    eigvals_list: list[torch.Tensor],
+    eigenbasis_list: Iterable[torch.Tensor],
+    eigvals_list: Iterable[torch.Tensor],
     eps: float,
     eigval_exp: float = -1.0,
 ) -> None:

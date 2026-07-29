@@ -63,7 +63,7 @@ class EigUtilsTest(BaseTestCase):
         eigenbasis = torch.randn(N, N, device=self.device)
         eigenbasis = torch.linalg.qr(eigenbasis).Q
 
-        Q_new = eig_utils.orthogonal_iteration(
+        _, Q_new = eig_utils.orthogonal_iteration(
             kronecker_factor=kronecker_factor,
             eigenbasis=eigenbasis,
             power_iter_steps=power_iter_steps,

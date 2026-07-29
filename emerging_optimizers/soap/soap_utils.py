@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from collections.abc import Iterable
 from typing import TypeAlias
 
 import torch
@@ -32,7 +33,7 @@ __all__ = [
 
 
 def get_eigenbasis_eigh(
-    kronecker_factor_list: TensorList,
+    kronecker_factor_list: Iterable[torch.Tensor],
 ) -> tuple[TensorList, TensorList]:
     """Computes the eigenvalues and eigenbases of the preconditioner using torch.linalg.eigh decomposition.
 
@@ -55,7 +56,7 @@ def get_eigenbasis_eigh(
 
 
 def get_eigenbasis_svd(
-    kronecker_factor_list: TensorList,
+    kronecker_factor_list: Iterable[torch.Tensor],
 ) -> TensorList:
     """Computes the eigenbases of the preconditioner using torch.linalg.svd decomposition.
 
@@ -111,8 +112,8 @@ def permute_eigenbasis_and_exp_avg_sq(
 
 
 def get_eigenbasis_qr(
-    kronecker_factor_list: TensorList,
-    eigenbasis_list: TensorList,
+    kronecker_factor_list: Iterable[torch.Tensor],
+    eigenbasis_list: Iterable[torch.Tensor],
     power_iter_steps: int = 1,
 ) -> tuple[TensorList, TensorList]:
     """Updates the eigenbases of the preconditioner using power iteration and QR.
@@ -130,11 +131,10 @@ def get_eigenbasis_qr(
     updated_eigenbasis_list: TensorList = []
     updated_eigvals_list: TensorList = []
     for kronecker_factor, eigenbasis in zip(kronecker_factor_list, eigenbasis_list, strict=True):
-        Q = eig_utils.orthogonal_iteration(
-            kronecker_factor=kronecker_factor,
-            eigenbasis=eigenbasis,
-            power_iter_steps=power_iter_steps,
-        )
+        Q = eigenbasis
+        for _ in range(power_iter_steps):
+            Q = kronecker_factor @ Q
+            Q = torch.linalg.qr(Q).Q
         with utils.fp32_matmul_precision("highest"):
             updated_eigvals_list.append(eig_utils.conjugate(kronecker_factor, Q, diag=True))
         updated_eigenbasis_list.append(Q)
