@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 import torch
 from torch.optim.optimizer import Optimizer, ParamsT
 
+from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry
 
 
@@ -54,7 +55,7 @@ def _cayley_retraction(
 
 
 @registry.register_optimizer("iso")
-class ISO(Optimizer):
+class ISO(opt_mixin.WeightDecayMixin, Optimizer):
     """Isospectral optimizer for two-dimensional parameters.
 
     The optimizer factorizes each parameter as ``U @ diag(Sigma) @ V.T`` and
@@ -69,7 +70,8 @@ class ISO(Optimizer):
         lr: Learning rate.
         momentum: Momentum coefficient.
         retraction: Retraction used to restore the Stiefel constraints.
-        weight_decay: L2 penalty added to the parameter gradient.
+        weight_decay: Weight decay coefficient.
+        weight_decay_method: Method used to apply weight decay.
     """
 
     def __init__(
@@ -79,6 +81,8 @@ class ISO(Optimizer):
         momentum: float = 0.9,
         retraction: RetractionT = "qr",
         weight_decay: float = 0.0,
+        *,
+        weight_decay_method: opt_mixin.WeightDecayT = "l2",
     ) -> None:
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
@@ -95,6 +99,7 @@ class ISO(Optimizer):
             "retraction": retraction,
             "weight_decay": weight_decay,
         }
+        self.weight_decay_method = weight_decay_method
         super().__init__(params, defaults)
 
     @torch.no_grad()  # type: ignore[misc]
@@ -154,8 +159,7 @@ class ISO(Optimizer):
                 momentum_v = state["momentum_v"]
 
                 grad = param.grad
-                if weight_decay != 0.0:
-                    grad = grad.add(param, alpha=weight_decay)
+                self._apply_weight_decay_inplace(param, grad, lr, weight_decay)
 
                 grad_u = (grad @ v) * sigma.unsqueeze(0)
                 grad_v = (grad.mT @ u) * sigma.unsqueeze(0)
