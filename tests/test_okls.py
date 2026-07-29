@@ -44,7 +44,7 @@ class OKLSTest(parameterized.TestCase):
 
         optimizer.step()
 
-        self.assertEqual(optimizer.weight_decay_method, "palm")
+        self.assertEqual(optimizer.weight_decay_method, "decoupled")
         self.assertEqual(optimizer.cans_fp32_matmul_prec, "high")
         self.assertNotIn("lr_peak", optimizer.param_groups[0])
         self.assertFalse(torch.equal(param, original))

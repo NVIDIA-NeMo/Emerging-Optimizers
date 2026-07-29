@@ -124,7 +124,7 @@ class OKLS(opt_mixin.WeightDecayMixin, optim.Optimizer):
         beta1: Nesterov momentum EMA coefficient.
         beta2: KL-Shampoo factor EMA coefficient.
         ridge_eps: Numerical stability offset added to the KL-Shampoo factors.
-        weight_decay: PaLM weight-decay coefficient.
+        weight_decay: Decoupled weight-decay coefficient.
         cans_fp32_matmul_prec: Precision used for FP32 matrix multiplications in CANS: ``"medium"`` for BF16,
             ``"high"`` for TF32, or ``"highest"`` for FP32.
     """
@@ -140,7 +140,7 @@ class OKLS(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay: float = 0.0,
         cans_fp32_matmul_prec: FP32MatmulPrecT = "high",
     ) -> None:
-        self.weight_decay_method = "palm"
+        self.weight_decay_method = "decoupled"
         self.cans_fp32_matmul_prec = cans_fp32_matmul_prec
 
         if lr < 0.0:
