@@ -54,7 +54,7 @@ class MatrixRootInverseUtilsTest(parameterized.TestCase):
         self.assertEqual(inverse_root.dtype, torch.float32)
         self.assertEqual(torch.get_float32_matmul_precision(), previous_precision)
 
-    @parameterized.parameters((8, 8), (16, 16), (2, 8, 8), (3, 16, 16))  # type: ignore[misc]
+    @parameterized.product(shape=[(8, 8), (16, 16), (2, 8, 8), (3, 16, 16)])
     def test_mat_root_inv_via_scaled_cans_accuracy(self, shape: tuple[int, ...]) -> None:
         matrix_size = shape[-1]
         base_matrix = 2.0 * torch.eye(matrix_size, device=FLAGS.device)
