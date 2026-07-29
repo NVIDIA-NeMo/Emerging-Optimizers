@@ -63,6 +63,22 @@ def _retract_factors(
     step_size: float,
     retraction: RetractionT,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Update and retract both Stiefel factors.
+
+    Args:
+        u: Left Stiefel factor.
+        v: Right Stiefel factor.
+        momentum_u: Momentum update for the left factor.
+        momentum_v: Momentum update for the right factor.
+        step_size: Optimizer step size.
+        retraction: Retraction method applied to both factors.
+
+    Returns:
+        The updated and retracted ``(u, v)`` factors.
+
+    Raises:
+        ValueError: If the retraction method is unsupported.
+    """
     if retraction == "cayley":
         return (
             _cayley_retraction(u, -momentum_u, step_size),
@@ -141,6 +157,9 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
         if param.ndim != 2:
             raise ValueError("ISO only supports 2D parameters")
 
+        # RL optimizer offload can place low-precision parameters on CPU, where
+        # linalg decompositions and retractions do not support float16 or bfloat16.
+        # Keep the factor and momentum state in FP32 while preserving parameter storage dtype.
         factor_param = (
             param.float() if param.dtype in (torch.float16, torch.bfloat16) else param
         )
@@ -192,6 +211,7 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
                 momentum_u = state["momentum_u"]
                 momentum_v = state["momentum_v"]
 
+                # Match the gradient to the factor-state dtype used for low-precision CPU offload.
                 grad = param.grad.to(dtype=u.dtype)
                 self._apply_weight_decay_inplace(param, grad, lr, weight_decay)
 
