@@ -23,6 +23,7 @@ from torch.optim.optimizer import Optimizer, ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry
+from emerging_optimizers import utils
 
 
 __all__ = ["ISO"]
@@ -54,6 +55,33 @@ def _cayley_retraction(
     return torch.linalg.solve(lhs, rhs)
 
 
+def _retract_factors(
+    u: torch.Tensor,
+    v: torch.Tensor,
+    momentum_u: torch.Tensor,
+    momentum_v: torch.Tensor,
+    step_size: float,
+    retraction: RetractionT,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if retraction == "cayley":
+        return (
+            _cayley_retraction(u, -momentum_u, step_size),
+            _cayley_retraction(v, -momentum_v, step_size),
+        )
+
+    if retraction == "qr":
+        retract = _qr_retraction
+    elif retraction == "polar":
+        retract = _polar_retraction
+    else:
+        raise ValueError(f"Invalid retraction: {retraction}")
+
+    return (
+        retract(u - step_size * momentum_u),
+        retract(v - step_size * momentum_v),
+    )
+
+
 @registry.register_optimizer("iso")
 class ISO(opt_mixin.WeightDecayMixin, Optimizer):
     """Isospectral optimizer for two-dimensional parameters.
@@ -72,6 +100,7 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
         retraction: Retraction used to restore the Stiefel constraints.
         weight_decay: Weight decay coefficient.
         weight_decay_method: Method used to apply weight decay.
+        fp32_matmul_prec: Precision used for FP32 matrix multiplications.
     """
 
     def __init__(
@@ -83,6 +112,7 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
         weight_decay: float = 0.0,
         *,
         weight_decay_method: opt_mixin.WeightDecayT = "l2",
+        fp32_matmul_prec: utils.FP32MatmulPrecT = "highest",
     ) -> None:
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
@@ -100,6 +130,7 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
             "weight_decay": weight_decay,
         }
         self.weight_decay_method = weight_decay_method
+        self.fp32_matmul_prec = fp32_matmul_prec
         super().__init__(params, defaults)
 
     @torch.no_grad()  # type: ignore[misc]
@@ -161,22 +192,25 @@ class ISO(opt_mixin.WeightDecayMixin, Optimizer):
                 grad = param.grad
                 self._apply_weight_decay_inplace(param, grad, lr, weight_decay)
 
-                grad_u = (grad @ v) * sigma.unsqueeze(0)
-                grad_v = (grad.mT @ u) * sigma.unsqueeze(0)
-                momentum_u.mul_(momentum).add_(grad_u)
-                momentum_v.mul_(momentum).add_(grad_v)
+                with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+                    grad_u = (grad @ v) * sigma.unsqueeze(0)
+                    grad_v = (grad.mT @ u) * sigma.unsqueeze(0)
+                    momentum_u.mul_(momentum).add_(grad_u)
+                    momentum_v.mul_(momentum).add_(grad_v)
 
-                if retraction == "cayley":
-                    u = _cayley_retraction(u, -momentum_u, lr)
-                    v = _cayley_retraction(v, -momentum_v, lr)
-                else:
-                    retract = _qr_retraction if retraction == "qr" else _polar_retraction
-                    u = retract(u - lr * momentum_u)
-                    v = retract(v - lr * momentum_v)
+                    u, v = _retract_factors(
+                        u,
+                        v,
+                        momentum_u,
+                        momentum_v,
+                        lr,
+                        retraction,
+                    )
+                    updated_param = (u * sigma.unsqueeze(0)) @ v.mT
 
                 state["u"] = u
                 state["v"] = v
                 state["step"] += 1
-                param.copy_((u * sigma.unsqueeze(0)) @ v.mT)
+                param.copy_(updated_param)
 
         return loss
