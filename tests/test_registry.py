@@ -60,6 +60,7 @@ class TestRegistry(parameterized.TestCase):
         ("psgd_pro", psgd.PSGDPro),
         ("scion", scion.Scion),
         ("soap", soap.SOAP),
+        ("okls", soap.OKLS),
         ("lion", scalar_optimizers.Lion),
         ("laprop", scalar_optimizers.LaProp),
     )

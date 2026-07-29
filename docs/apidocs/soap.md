@@ -25,6 +25,17 @@ emerging_optimizers.soap
 .. autofunction:: update_eigenbasis_and_exp_avgs
 
 
+:hidden:`OKLS`
+~~~~~~~~~~~~~~~
+
+.. currentmodule:: emerging_optimizers.soap.okls
+
+.. autoclass:: OKLS
+    :members:
+
+.. autofunction:: update_kronecker_factors_okls
+
+
 :hidden:`REKLS`
 ~~~~~~~~~~~~~~~
 
@@ -38,5 +49,12 @@ emerging_optimizers.soap.soap_utils
 =====================================
 
 .. automodule:: emerging_optimizers.soap.soap_utils
+    :members:
+
+
+emerging_optimizers.soap.matrix_root_inverse_utils
+=====================================
+
+.. automodule:: emerging_optimizers.soap.matrix_root_inverse_utils
     :members:
 ```
