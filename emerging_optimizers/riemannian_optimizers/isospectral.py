@@ -60,6 +60,10 @@ class ISO(Optimizer):
     The optimizer factorizes each parameter as ``U @ diag(Sigma) @ V.T`` and
     updates the two Stiefel factors while keeping ``Sigma`` fixed.
 
+    References:
+        - *ISO: An RLVR-Native Optimization Stack.* arXiv:2607.19331 (2026).
+          [`arXiv:2607.19331 <https://arxiv.org/abs/2607.19331>`_]
+
     Args:
         params: Parameters to optimize.
         lr: Learning rate.
