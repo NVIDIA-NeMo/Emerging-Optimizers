@@ -56,14 +56,12 @@ class KlSoapPreconditioner:
     def init_state(
         shape: tuple[int, ...],
         device: torch.device,
-        dtype: torch.dtype = torch.float32,
     ) -> dict[str, torch.Tensor]:
         """Creates the Kronecker factors, eigenbases, eigenvalues, and moments for a parameter shape.
 
         Args:
             shape: Shape of the 2D parameter the preconditioner will be attached to.
             device: Device to allocate the state tensors on.
-            dtype: Dtype of the state tensors.
 
         Returns:
             The state entries owned by this preconditioner, keyed as :meth:`rebind_state` expects them.
@@ -75,14 +73,14 @@ class KlSoapPreconditioner:
             raise ValueError(f"KlSoapPreconditioner is only supported for 2D tensors, got shape {tuple(shape)}")
         m, n = shape
         return {
-            "exp_avg": torch.zeros(m, n, device=device, dtype=dtype),
-            "exp_avg_sq": torch.zeros(m, n, device=device, dtype=dtype),
-            "L": torch.zeros(m, m, device=device, dtype=dtype),
-            "R": torch.zeros(n, n, device=device, dtype=dtype),
-            "Q_L": torch.eye(m, device=device, dtype=dtype),
-            "Q_R": torch.eye(n, device=device, dtype=dtype),
-            "eigvals_L": torch.zeros(m, device=device, dtype=dtype),
-            "eigvals_R": torch.zeros(n, device=device, dtype=dtype),
+            "exp_avg": torch.zeros(m, n, device=device),
+            "exp_avg_sq": torch.zeros(m, n, device=device),
+            "L": torch.zeros(m, m, device=device),
+            "R": torch.zeros(n, n, device=device),
+            "Q_L": torch.eye(m, device=device),
+            "Q_R": torch.eye(n, device=device),
+            "eigvals_L": torch.zeros(m, device=device),
+            "eigvals_R": torch.zeros(n, device=device),
         }
 
     def rebind_state(self, state: dict) -> None:

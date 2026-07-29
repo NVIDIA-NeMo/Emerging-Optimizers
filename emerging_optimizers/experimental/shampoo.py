@@ -72,14 +72,12 @@ class PreconditionerProtocol(Protocol):
     def init_state(
         shape: tuple[int, ...],
         device: torch.device,
-        dtype: torch.dtype = torch.float32,
     ) -> dict[str, torch.Tensor]:
         """Creates the state entries this preconditioner owns for a parameter of the given shape.
 
         Args:
             shape: Shape of the 2D parameter the preconditioner will be attached to.
             device: Device to allocate the state tensors on.
-            dtype: Dtype of the state tensors.
 
         Returns:
             The state entries owned by this preconditioner, keyed as :meth:`rebind_state` expects them.
@@ -146,7 +144,6 @@ class SoapPreconditionerFactory(Protocol):
     def init_state(
         shape: tuple[int, ...],
         device: torch.device,
-        dtype: torch.dtype = torch.float32,
     ) -> dict[str, torch.Tensor]:
         """Creates the state entries the preconditioner owns, as :meth:`PreconditionerProtocol.init_state`.
 
@@ -156,7 +153,6 @@ class SoapPreconditionerFactory(Protocol):
         Args:
             shape: Shape of the 2D parameter the preconditioner will be attached to.
             device: Device to allocate the state tensors on.
-            dtype: Dtype of the state tensors.
 
         Returns:
             The state entries owned by the preconditioner.
