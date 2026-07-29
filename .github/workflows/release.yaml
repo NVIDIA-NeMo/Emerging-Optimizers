@@ -88,12 +88,12 @@ jobs:
       validate-only: ${{ github.event_name != 'workflow_dispatch' }}
       dry-run: ${{ inputs.dry-run || false }}
       version-bump-branch: ${{ inputs.version-bump-branch || github.ref_name }}
-      create-gh-release: ${{ inputs.create-gh-release || true }}
+      create-gh-release: ${{ inputs.create-gh-release || false }}
       packaging: uv
-      skip-wheel-build: true
+      skip-wheel-build: false
       app-id: ${{ vars.BOT_ID }}
       gh-release-use-changelog-builder: ${{ inputs.generate-changelog || false }}
-      publish-docs: true
+      publish-docs: ${{ inputs.publish-docs || false }}
       docs-target-path: nemo/emerging-optimizers
       docs-sync-all: true
       gh-release-from-tag: ${{ inputs.gh-release-from-tag || '' }}
