@@ -95,8 +95,8 @@ def mat_root_inv_via_scaled_cans(
     return result if is_batched else result.squeeze(0)
 
 
-def inv_root_via_eigh(x: torch.Tensor) -> torch.Tensor:
+def inv_root_via_eigh(x: Tensor, eps: float = 1e-12) -> Tensor:
     """Compute inverse square roots of symmtric matrix by eigh"""
     w, V = torch.linalg.eigh(x)
 
-    return (V * w.clamp_min(0).rsqrt()) @ V.T
+    return (V * w.clamp_min(eps).rsqrt()) @ V.T
