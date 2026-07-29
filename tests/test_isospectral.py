@@ -18,7 +18,7 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import registry
-from emerging_optimizers.riemannian_optimizers.isospectral import ISO
+from emerging_optimizers.rl_optimizers.isospectral import ISO
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
