@@ -17,8 +17,8 @@ from _comparison import assert_close_to_identity
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.soap.matrix_root_inverse_utils import mat_root_inv_via_scaled_cans
-from emerging_optimizers.utils import FP32MatmulPrecT
+from emerging_optimizers import utils
+from emerging_optimizers.soap.matrix_root_inverse_utils import inv_root_via_eigh, mat_root_inv_via_scaled_cans
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -42,20 +42,23 @@ class MatrixRootInverseUtilsTest(parameterized.TestCase):
     def test_mat_root_inv_via_scaled_cans_smoke(
         self,
         shape: tuple[int, ...],
-        fp32_matmul_prec: FP32MatmulPrecT,
+        fp32_matmul_prec: utils.FP32MatmulPrecT,
     ) -> None:
         x = torch.randn(*shape, device=FLAGS.device)
         matrix = x @ x.mT + 0.1 * torch.eye(shape[-1], device=FLAGS.device)
         previous_precision = torch.get_float32_matmul_precision()
 
-        inverse_root = mat_root_inv_via_scaled_cans(matrix, fp32_matmul_prec=fp32_matmul_prec)
+        with utils.fp32_matmul_precision(fp32_matmul_prec):
+            inverse_root = mat_root_inv_via_scaled_cans(matrix)
 
         self.assertEqual(inverse_root.shape, matrix.shape)
         self.assertEqual(inverse_root.dtype, torch.float32)
         self.assertEqual(torch.get_float32_matmul_precision(), previous_precision)
 
     @parameterized.product(shape=[(8, 8), (16, 16), (2, 8, 8), (3, 16, 16)])
-    def test_mat_root_inv_via_scaled_cans_accuracy(self, shape: tuple[int, ...]) -> None:
+    def test_mat_root_inv_via_scaled_cans_accuracy_tridiag_toeplitz(self, shape: tuple[int, ...]) -> None:
+        # Generate a symmetric positive-definite tridiagonal Toeplitz matrix, then scale each
+        # batched copy by a positive integer to exercise matrices with different norms.
         matrix_size = shape[-1]
         base_matrix = 2.0 * torch.eye(matrix_size, device=FLAGS.device)
         base_matrix.diagonal(offset=1).fill_(0.25)
@@ -83,6 +86,14 @@ class MatrixRootInverseUtilsTest(parameterized.TestCase):
     def test_mat_root_inv_via_scaled_cans_rejects_non_fp32_tensor(self) -> None:
         with self.assertRaisesRegex(TypeError, "must be in float32"):
             mat_root_inv_via_scaled_cans(torch.eye(4, device=FLAGS.device, dtype=torch.bfloat16))
+
+    @parameterized.parameters(8, 16, 32)
+    def test_inv_root_via_eigh_reconstruct_idendity(self, m) -> None:
+        x = torch.randn(m, m)
+        test_matrix = 0.5 * x @ x.mT + torch.eye(m) * 1e-3
+
+        inverse_root = inv_root_via_eigh(test_matrix)
+        assert_close_to_identity(inverse_root @ test_matrix @ inverse_root, off_diag_atol=1e-3, diag_atol=1e-3)
 
 
 if __name__ == "__main__":
