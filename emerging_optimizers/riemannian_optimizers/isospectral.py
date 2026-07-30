@@ -109,7 +109,7 @@ class Iso(opt_mixin.WeightDecayMixin, Optimizer):
     """Isospectral optimizer for two-dimensional parameters.
 
     The optimizer factorizes each parameter as ``U @ diag(Sigma) @ V.T`` and
-    updates the two Stiefel factors while keeping ``Sigma`` fixed. Direct weight
+    updates both Stiefel factors while keeping ``Sigma`` fixed. Direct weight
     decay methods scale ``Sigma`` so their effect persists across reconstructions.
     It is designed for reinforcement learning with verifiable rewards (RLVR),
     particularly for LLM reasoning post-training, but its implementation does
