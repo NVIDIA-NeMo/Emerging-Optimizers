@@ -112,6 +112,9 @@ class Iso(opt_mixin.WeightDecayMixin, Optimizer):
     The optimizer factorizes each parameter as ``U @ diag(Sigma) @ V.T`` and
     updates the two Stiefel factors while keeping ``Sigma`` fixed. Direct weight
     decay methods scale ``Sigma`` so their effect persists across reconstructions.
+    It is commonly used for reinforcement learning with verifiable rewards
+    (RLVR), particularly for LLM reasoning post-training, but its implementation
+    does not depend on an RL-specific training interface.
 
     References:
         - *ISO: An RLVR-Native Optimization Stack.* arXiv:2607.19331 (2026).
