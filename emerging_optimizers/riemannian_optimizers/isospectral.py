@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 import torch
 from torch.optim.optimizer import Optimizer, ParamsT
 
-from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry, utils
 
 
@@ -105,15 +104,14 @@ def _retract_factors(
 
 
 @registry.register_optimizer("iso")
-class Iso(opt_mixin.WeightDecayMixin, Optimizer):
+class Iso(Optimizer):
     """Isospectral optimizer for two-dimensional parameters.
 
     The optimizer factorizes each parameter as ``U @ diag(Sigma) @ V.T`` and
-    updates both Stiefel factors while keeping ``Sigma`` fixed. Direct weight
-    decay methods scale ``Sigma`` so their effect persists across reconstructions.
-    It is designed for reinforcement learning with verifiable rewards (RLVR),
-    particularly for LLM reasoning post-training, but its implementation does
-    not depend on an RL-specific training interface.
+    updates both Stiefel factors while keeping ``Sigma`` fixed. It is designed
+    for reinforcement learning with verifiable rewards (RLVR), particularly for
+    LLM reasoning post-training, but its implementation does not depend on an
+    RL-specific training interface.
 
     References:
         - *ISO: An RLVR-Native Optimization Stack.* arXiv:2607.19331 (2026).
@@ -124,8 +122,6 @@ class Iso(opt_mixin.WeightDecayMixin, Optimizer):
         lr: Learning rate.
         momentum: Momentum coefficient.
         retraction: Retraction used to restore the Stiefel constraints.
-        weight_decay: Weight decay coefficient.
-        weight_decay_method: Method used to apply weight decay.
         fp32_matmul_prec: Precision used for FP32 matrix multiplications.
     """
 
@@ -135,9 +131,7 @@ class Iso(opt_mixin.WeightDecayMixin, Optimizer):
         lr: float = 1e-3,
         momentum: float = 0.9,
         retraction: RetractionT = "qr",
-        weight_decay: float = 0.0,
         *,
-        weight_decay_method: opt_mixin.WeightDecayT = "l2",
         fp32_matmul_prec: utils.FP32MatmulPrecT = "highest",
     ) -> None:
         if lr < 0.0:
@@ -146,16 +140,12 @@ class Iso(opt_mixin.WeightDecayMixin, Optimizer):
             raise ValueError(f"Invalid momentum value: {momentum}")
         if retraction not in ("qr", "polar", "cayley"):
             raise ValueError(f"Invalid retraction: {retraction}")
-        if weight_decay < 0.0:
-            raise ValueError(f"Invalid weight_decay value: {weight_decay}")
 
         defaults = {
             "lr": lr,
             "momentum": momentum,
             "retraction": retraction,
-            "weight_decay": weight_decay,
         }
-        self.weight_decay_method = weight_decay_method
         self.fp32_matmul_prec = fp32_matmul_prec
         super().__init__(params, defaults)
 
@@ -199,7 +189,6 @@ class Iso(opt_mixin.WeightDecayMixin, Optimizer):
             lr = group["lr"]
             momentum = group["momentum"]
             retraction = group["retraction"]
-            weight_decay = group["weight_decay"]
 
             for param in group["params"]:
                 if param.grad is None:
@@ -219,8 +208,6 @@ class Iso(opt_mixin.WeightDecayMixin, Optimizer):
                 momentum_v = state["momentum_v"]
 
                 grad = param.grad.float()
-                if self.weight_decay_method == "l2":
-                    self._apply_weight_decay_inplace(param, grad, lr, weight_decay)
 
                 with utils.fp32_matmul_precision(self.fp32_matmul_prec):
                     grad_u = (grad @ v) * sigma.unsqueeze(0)
@@ -236,10 +223,6 @@ class Iso(opt_mixin.WeightDecayMixin, Optimizer):
                         lr,
                         retraction,
                     )
-                    if self.weight_decay_method != "l2":
-                        # Direct decay on param would be overwritten by the fixed-factor
-                        # reconstruction. Apply it to Sigma so the decayed spectrum persists.
-                        self._apply_weight_decay_inplace(sigma, sigma, lr, weight_decay)
                     scaled_u = u * sigma.unsqueeze(0)
                     if param.dtype == torch.float32:
                         torch.addmm(param, scaled_u, v.mT, beta=0.0, out=param)
