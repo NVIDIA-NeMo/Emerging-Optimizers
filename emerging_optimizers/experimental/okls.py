@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import TYPE_CHECKING, Callable, ClassVar, Protocol, override
+from typing import TYPE_CHECKING, Callable, ClassVar, override
 
 
 if TYPE_CHECKING:
@@ -24,118 +24,15 @@ from torch import optim
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import registry
-from emerging_optimizers.experimental.shampoo import TensorPair
-from emerging_optimizers.soap.matrix_root_inverse_utils import mat_root_inv_via_scaled_cans
-from emerging_optimizers.utils import FP32MatmulPrecT
+from emerging_optimizers import registry, utils
+from emerging_optimizers.experimental import shampoo_base
+from emerging_optimizers.soap import matrix_root_inverse_utils
 
 
 __all__ = [
     "OKLS",
     "OklsPreconditioner",
-    "OklsPreconditionerFactory",
-    "OklsPreconditionerProtocol",
 ]
-
-
-class OklsPreconditionerProtocol(Protocol):
-    """Interface an online KL-Shampoo preconditioner must provide for one parameter.
-
-    Unlike the SOAP-family preconditioners in :mod:`~emerging_optimizers.experimental.shampoo`, this one
-    never forms an eigenbasis. It keeps the covariance factors alongside their inverse square roots and
-    applies them directly, so it exposes a single :meth:`precondition` rather than a ``project_in`` /
-    ``project_out`` pair. It also owns no moments -- the momentum lives in the parameter basis and is
-    never re-projected, so the optimizer keeps it.
-
-    Positional-only parameters let implementations name the driving tensor after what it actually is.
-    """
-
-    @staticmethod
-    def init_state(
-        shape: tuple[int, ...],
-        device: torch.device,
-    ) -> dict[str, torch.Tensor]:
-        """Creates the state entries this preconditioner owns for a parameter of the given shape.
-
-        Args:
-            shape: Shape of the 2D parameter the preconditioner will be attached to.
-            device: Device to allocate the state tensors on.
-
-        Returns:
-            The state entries owned by this preconditioner, keyed as :meth:`rebind_state` expects them.
-        """
-
-    def step(self, grad: torch.Tensor, shampoo_beta: float, /) -> None:
-        """Updates the covariance factors and refreshes their inverse square roots.
-
-        Args:
-            grad: Gradient of the parameter, in the parameter basis.
-            shampoo_beta: EMA coefficient for the covariance factor update.
-        """
-
-    def precondition(self, x: torch.Tensor, /) -> torch.Tensor:
-        """Applies the two-sided preconditioner to a matrix in the parameter basis.
-
-        Args:
-            x: Matrix in the parameter basis.
-
-        Returns:
-            The preconditioned matrix, in the parameter basis.
-        """
-
-    def rebind_state(self, state: dict, /) -> None:
-        """Writes the current preconditioner tensors back into the optimizer state dict.
-
-        Args:
-            state: Per-parameter optimizer state, updated in place.
-        """
-
-
-class OklsPreconditionerFactory(Protocol):
-    """Constructs a preconditioner for one parameter from ``(state, ridge_eps, fp32_matmul_prec)``.
-
-    A preconditioner class satisfies this by having a matching ``__init__``. Typing
-    :attr:`OKLS.PreconditionerCls` with this rather than ``type[OklsPreconditionerProtocol]`` is
-    deliberate: mypy checks constructors against a callable type but excludes ``__init__`` from protocol
-    member checks, so only this form catches a preconditioner whose constructor has drifted.
-    """
-
-    def __call__(
-        self,
-        state: dict,
-        ridge_eps: float,
-        fp32_matmul_prec: FP32MatmulPrecT,
-        /,
-    ) -> OklsPreconditionerProtocol:
-        """Builds the preconditioner.
-
-        Args:
-            state: Per-parameter optimizer state to bind to.
-            ridge_eps: Diagonal stability offset added to the covariance factors.
-            fp32_matmul_prec: Precision used for the FP32 matmuls of the inverse-root iteration.
-
-        Returns:
-            The preconditioner bound to ``state``.
-        """
-
-    @staticmethod
-    def init_state(
-        shape: tuple[int, ...],
-        device: torch.device,
-    ) -> dict[str, torch.Tensor]:
-        """Creates the state entries the preconditioner owns, as
-        :meth:`OklsPreconditionerProtocol.init_state`.
-
-        Declared here as well so that :meth:`OKLS._init_group` can allocate state through
-        ``PreconditionerCls`` and stay in sync with whichever preconditioner a subclass selects.
-
-        Args:
-            shape: Shape of the 2D parameter the preconditioner will be attached to.
-            device: Device to allocate the state tensors on.
-
-        Returns:
-            The state entries owned by the preconditioner.
-        """
 
 
 class OklsPreconditioner:
@@ -155,10 +52,10 @@ class OklsPreconditioner:
         self,
         state: dict,
         ridge_eps: float,
-        fp32_matmul_prec: FP32MatmulPrecT,
+        fp32_matmul_prec: utils.FP32MatmulPrecT,
     ) -> None:
-        self.kronecker_factor_pair = TensorPair(state["L"], state["R"])
-        self.inverse_root_pair = TensorPair(state["P_L"], state["P_R"])
+        self.kronecker_factor_pair = shampoo_base.TensorPair(state["L"], state["R"])
+        self.inverse_root_pair = shampoo_base.TensorPair(state["P_L"], state["P_R"])
         self.ridge_eps = ridge_eps
         self.fp32_matmul_prec = fp32_matmul_prec
 
@@ -216,9 +113,9 @@ class OklsPreconditioner:
 
     def _refresh_inverse_roots(self) -> None:
         """Recomputes both inverse square roots from the current covariance factors."""
-        self.inverse_root_pair = TensorPair(
+        self.inverse_root_pair = shampoo_base.TensorPair(
             *(
-                mat_root_inv_via_scaled_cans(
+                matrix_root_inverse_utils.mat_root_inv_via_scaled_cans(
                     kronecker_factor,
                     eps=self.ridge_eps,
                     fp32_matmul_prec=self.fp32_matmul_prec,
@@ -227,7 +124,7 @@ class OklsPreconditioner:
             )
         )
 
-    def _update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float) -> None:
+    def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float) -> None:
         """Accumulates the cross-preconditioned gradient into both covariance factors.
 
         This is the KL-Shampoo factor update of
@@ -249,7 +146,9 @@ class OklsPreconditioner:
         # ``L`` is the gradient preconditioned on the right and drives the left factor, and vice versa. The
         # right entry is transposed so that both sides are the same ``X X^T`` contraction, which lets the
         # per-side dimensions fall out of ``X.shape`` instead of being spelled out.
-        precond_grad_pair = TensorPair(grad @ self.inverse_root_pair.R, (self.inverse_root_pair.L @ grad).T)
+        precond_grad_pair = shampoo_base.TensorPair(
+            grad @ self.inverse_root_pair.R, (self.inverse_root_pair.L @ grad).T
+        )
 
         updated_factors = []
         for kronecker_factor, precond_grad in zip(self.kronecker_factor_pair, precond_grad_pair, strict=True):
@@ -265,7 +164,7 @@ class OklsPreconditioner:
             kronecker_factor = (kronecker_factor + kronecker_factor.T) * 0.5
             updated_factors.append(kronecker_factor)
 
-        self.kronecker_factor_pair = TensorPair(*updated_factors)
+        self.kronecker_factor_pair = shampoo_base.TensorPair(*updated_factors)
 
     def step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
         """Updates the covariance factors from the cross-preconditioned gradient, then refreshes the roots.
@@ -274,7 +173,7 @@ class OklsPreconditioner:
             grad: Gradient of the parameter, in the parameter basis.
             shampoo_beta: EMA coefficient for the covariance factor update.
         """
-        self._update_kronecker_factors(grad, shampoo_beta)
+        self.update_kronecker_factors(grad, shampoo_beta)
         self._refresh_inverse_roots()
 
     def precondition(self, x: torch.Tensor) -> torch.Tensor:
@@ -311,11 +210,12 @@ class OKLS(optim.Optimizer, opt_mixin.WeightDecayMixin):
     Attributes:
         PreconditionerCls: Preconditioner used for every parameter. Subclasses set it to change how the
             covariance factors and their inverse roots are maintained; it must satisfy
-            :class:`OklsPreconditionerFactory`. It is also what :meth:`_init_group` allocates state from,
-            so a subclass that swaps it gets that preconditioner's state layout.
+            :class:`~emerging_optimizers.experimental.shampoo_base.OklsPreconditionerProtocol`. It is
+            also what :meth:`_init_group` allocates state from, so a subclass that swaps it gets that
+            preconditioner's state layout.
     """
 
-    PreconditionerCls: ClassVar[OklsPreconditionerFactory] = OklsPreconditioner
+    PreconditionerCls: ClassVar[type[shampoo_base.ShampooPreconditionerProtocol]] = OklsPreconditioner
 
     def __init__(
         self,
@@ -326,7 +226,7 @@ class OKLS(optim.Optimizer, opt_mixin.WeightDecayMixin):
         beta2: float = 0.9482,
         ridge_eps: float = 1e-9,
         weight_decay: float = 0.0,
-        cans_fp32_matmul_prec: FP32MatmulPrecT = "high",
+        cans_fp32_matmul_prec: utils.FP32MatmulPrecT = "high",
     ) -> None:
         self.weight_decay_method = "decoupled"
         self.cans_fp32_matmul_prec = cans_fp32_matmul_prec
@@ -350,6 +250,32 @@ class OKLS(optim.Optimizer, opt_mixin.WeightDecayMixin):
             "weight_decay": weight_decay,
         }
         super().__init__(params, defaults)
+
+    @torch.compile
+    def _scalar_update(
+        self,
+        grad: torch.Tensor,
+        exp_avg: torch.Tensor,
+        *,
+        beta1: float,
+    ) -> torch.Tensor:
+        """Applies the inner scalar optimizer to the gradient, in the parameter basis.
+
+        Override this to run a different scalar update ahead of the preconditioner. The result is expected
+        to be normalized to unit RMS -- the Nesterov blend below divides by its own standard deviation --
+        so an override has to supply whatever correction its own update needs rather than inherit this one.
+
+        Args:
+            grad: Gradient of the parameter.
+            exp_avg: Momentum buffer, in the parameter basis and updated in place.
+            beta1: Nesterov momentum EMA coefficient.
+
+        Returns:
+            The scalar update, in the parameter basis.
+        """
+        exp_avg.lerp_(grad, 1 - beta1)
+        nesterov_variance = ((1 - beta1) / (1 + beta1)) * (1 + 2 * beta1 - 2 * beta1**3)
+        return torch.lerp(grad, exp_avg, beta1) * nesterov_variance**-0.5
 
     @torch.no_grad()  # type: ignore[misc]
     def _init_group(
@@ -418,16 +344,14 @@ class OKLS(optim.Optimizer, opt_mixin.WeightDecayMixin):
 
                 preconditioner = self.PreconditionerCls(state, group["ridge_eps"], self.cans_fp32_matmul_prec)
 
-                beta1 = group["beta1"]
-                state["exp_avg"].lerp_(grad, 1 - beta1)
-                nesterov_momentum = torch.lerp(grad, state["exp_avg"], beta1)
+                scalar_update = self._scalar_update(grad, state["exp_avg"], beta1=group["beta1"])
 
                 preconditioner.step(grad, group["beta2"])
-                preconditioned_update = preconditioner.precondition(nesterov_momentum)
+                preconditioned_update = preconditioner.precondition(scalar_update)
 
+                # Aspect-ratio factor, a property of the preconditioned matrix rather than of the inner
+                # scalar optimizer, so it stays out of _scalar_update.
                 m, n = grad.shape
-                nesterov_variance = ((1 - beta1) / (1 + beta1)) * (1 + 2 * beta1 - 2 * beta1**3)
-                momentum_scale = nesterov_variance**-0.5
                 shape_scale = math.sqrt(m / n) / (math.sqrt(m) + math.sqrt(n))
 
                 self._apply_weight_decay_inplace(
@@ -436,10 +360,7 @@ class OKLS(optim.Optimizer, opt_mixin.WeightDecayMixin):
                     group["lr"],
                     group["weight_decay"],
                 )
-                p.add_(
-                    preconditioned_update.to(p.dtype),
-                    alpha=-group["lr"] * momentum_scale * shape_scale,
-                )
+                p.add_(preconditioned_update.to(p.dtype), alpha=-group["lr"] * shape_scale)
 
                 preconditioner.rebind_state(state)
                 state["step"] += 1
