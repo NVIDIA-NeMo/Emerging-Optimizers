@@ -31,23 +31,34 @@ __all__ = ["Iso"]
 RetractionT = Literal["qr", "polar", "cayley"]
 
 
-def _qr_retraction(matrix: torch.Tensor) -> torch.Tensor:
+def _qr_retraction(
+    point: torch.Tensor,
+    momentum: torch.Tensor,
+    step_size: float,
+) -> torch.Tensor:
+    matrix = point - step_size * momentum
     q, r = torch.linalg.qr(matrix, mode="reduced")
     signs = torch.diagonal(r).sign()
     signs.masked_fill_(signs == 0, 1)
     return q * signs
 
 
-def _polar_retraction(matrix: torch.Tensor) -> torch.Tensor:
+def _polar_retraction(
+    point: torch.Tensor,
+    momentum: torch.Tensor,
+    step_size: float,
+) -> torch.Tensor:
+    matrix = point - step_size * momentum
     u, _, vh = torch.linalg.svd(matrix, full_matrices=False)
     return u @ vh
 
 
 def _cayley_retraction(
     point: torch.Tensor,
-    direction: torch.Tensor,
+    momentum: torch.Tensor,
     step_size: float,
 ) -> torch.Tensor:
+    direction = -momentum
     skew = direction @ point.mT - point @ direction.mT
     identity = torch.eye(point.shape[0], dtype=point.dtype, device=point.device)
     lhs = identity - 0.5 * step_size * skew
@@ -79,22 +90,18 @@ def _retract_factors(
     Raises:
         ValueError: If the retraction method is unsupported.
     """
-    if retraction == "cayley":
-        return (
-            _cayley_retraction(u, -momentum_u, step_size),
-            _cayley_retraction(v, -momentum_v, step_size),
-        )
-
     if retraction == "qr":
         retract = _qr_retraction
     elif retraction == "polar":
         retract = _polar_retraction
+    elif retraction == "cayley":
+        retract = _cayley_retraction
     else:
         raise ValueError(f"Invalid retraction: {retraction}")
 
     return (
-        retract(u - step_size * momentum_u),
-        retract(v - step_size * momentum_v),
+        retract(u, momentum_u, step_size),
+        retract(v, momentum_v, step_size),
     )
 
 
@@ -158,12 +165,9 @@ class Iso(opt_mixin.WeightDecayMixin, Optimizer):
         if param.ndim != 2:
             raise ValueError("Iso only supports 2D parameters")
 
-        # RL optimizer offload can place low-precision parameters on CPU, where
-        # linalg decompositions and retractions do not support float16 or bfloat16.
-        # Keep the factor and momentum state in FP32 while preserving parameter storage dtype.
-        factor_param = (
-            param.float() if param.dtype in (torch.float16, torch.bfloat16) else param
-        )
+        # Factor state must be FP32 because the required linalg kernels do not
+        # support every lower-precision device and dtype combination.
+        factor_param = param.float()
         u, sigma, vh = torch.linalg.svd(factor_param, full_matrices=False)
         state["step"] = 0
         state["u"] = u
@@ -212,8 +216,7 @@ class Iso(opt_mixin.WeightDecayMixin, Optimizer):
                 momentum_u = state["momentum_u"]
                 momentum_v = state["momentum_v"]
 
-                # Match the gradient to the factor-state dtype used for low-precision CPU offload.
-                grad = param.grad.to(dtype=u.dtype)
+                grad = param.grad.float()
                 if self.weight_decay_method == "l2":
                     self._apply_weight_decay_inplace(param, grad, lr, weight_decay)
 
@@ -235,11 +238,15 @@ class Iso(opt_mixin.WeightDecayMixin, Optimizer):
                         # Direct decay on param would be overwritten by the fixed-factor
                         # reconstruction. Apply it to Sigma so the decayed spectrum persists.
                         self._apply_weight_decay_inplace(sigma, sigma, lr, weight_decay)
-                    updated_param = (u * sigma.unsqueeze(0)) @ v.mT
+                    scaled_u = u * sigma.unsqueeze(0)
+                    if param.dtype == torch.float32:
+                        torch.addmm(param, scaled_u, v.mT, beta=0.0, out=param)
+                    else:
+                        # Mixed-dtype addmm cannot write an FP32 result directly into param.
+                        param.copy_(torch.mm(scaled_u, v.mT))
 
                 state["u"] = u
                 state["v"] = v
                 state["step"] += 1
-                param.copy_(updated_param)
 
         return loss

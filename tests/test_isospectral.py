@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import torch
+from _comparison import assert_close_to_orthogonal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -66,16 +67,15 @@ class IsospectralTest(parameterized.TestCase):
         optimizer.step()
 
         state = optimizer.state[param]
-        identity = torch.eye(4, device=FLAGS.device)
-        torch.testing.assert_close(state["u"].mT @ state["u"], identity, atol=1e-5, rtol=1e-5)
-        torch.testing.assert_close(state["v"].mT @ state["v"], identity, atol=1e-5, rtol=1e-5)
+        assert_close_to_orthogonal(state["u"], diag_atol=1e-5, off_diag_atol=1e-5)
+        assert_close_to_orthogonal(state["v"], diag_atol=1e-5, off_diag_atol=1e-5)
 
     @parameterized.named_parameters(
         ("float16", torch.float16),
         ("bfloat16", torch.bfloat16),
     )
-    def test_cpu_low_precision_uses_fp32_factor_state(self, dtype: torch.dtype) -> None:
-        param = torch.nn.Parameter(torch.randn((6, 4), dtype=dtype, device="cpu"))
+    def test_low_precision_uses_fp32_factor_state(self, dtype: torch.dtype) -> None:
+        param = torch.nn.Parameter(torch.randn((6, 4), dtype=dtype, device=FLAGS.device))
         optimizer = Iso([param], lr=1e-2)
         param.grad = torch.randn_like(param)
 
