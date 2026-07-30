@@ -7,4 +7,7 @@ emerging_optimizers.riemannian_optimizers
 
 .. automodule:: emerging_optimizers.riemannian_optimizers.normalized_optimizer
     :members:
+
+.. automodule:: emerging_optimizers.riemannian_optimizers.isospectral
+    :members:
 ```
