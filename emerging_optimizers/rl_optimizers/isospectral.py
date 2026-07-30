@@ -22,8 +22,7 @@ import torch
 from torch.optim.optimizer import Optimizer, ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import registry
-from emerging_optimizers import utils
+from emerging_optimizers import registry, utils
 
 
 __all__ = ["Iso"]
