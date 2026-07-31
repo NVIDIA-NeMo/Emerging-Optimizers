@@ -149,6 +149,11 @@ class Iso(Optimizer):
         self.fp32_matmul_prec = fp32_matmul_prec
         super().__init__(params, defaults)
 
+        for group in self.param_groups:
+            for param in group["params"]:
+                if param.ndim != 2:
+                    raise ValueError("Iso only supports 2D parameters")
+
     @torch.no_grad()  # type: ignore[misc]
     def _init_state(self, param: torch.Tensor) -> None:
         state = self.state[param]
@@ -193,8 +198,6 @@ class Iso(Optimizer):
             for param in group["params"]:
                 if param.grad is None:
                     continue
-                if param.ndim != 2:
-                    raise ValueError("Iso only supports 2D parameters")
                 if param.grad.is_sparse:
                     raise ValueError("Iso does not support sparse gradients")
 

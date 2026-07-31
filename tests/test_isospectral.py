@@ -92,11 +92,8 @@ class IsospectralTest(parameterized.TestCase):
 
     def test_rejects_non_matrix_parameter(self) -> None:
         param = torch.nn.Parameter(torch.randn(4, device=FLAGS.device))
-        optimizer = Iso([param])
-        param.grad = torch.randn_like(param)
-
         with self.assertRaisesRegex(ValueError, "only supports 2D"):
-            optimizer.step()
+            Iso([param])
 
     @parameterized.named_parameters(
         ("negative_lr", {"lr": -1e-3}, "learning rate"),
