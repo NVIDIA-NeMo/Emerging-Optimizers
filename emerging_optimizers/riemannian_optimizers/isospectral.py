@@ -225,9 +225,9 @@ class Iso(Optimizer):
                     )
                     scaled_u = u * sigma.unsqueeze(0)
                     if param.dtype == torch.float32:
-                        torch.addmm(param, scaled_u, v.mT, beta=0.0, out=param)
+                        torch.mm(scaled_u, v.mT, out=param)
                     else:
-                        # Mixed-dtype addmm cannot write an FP32 result directly into param.
+                        # Mixed-dtype mm cannot write an FP32 result directly into param.
                         param.copy_(torch.mm(scaled_u, v.mT))
 
                 state["u"] = u

@@ -70,6 +70,18 @@ class IsospectralTest(parameterized.TestCase):
         assert_close_to_orthogonal(state["u"], diag_atol=1e-5, off_diag_atol=1e-5)
         assert_close_to_orthogonal(state["v"], diag_atol=1e-5, off_diag_atol=1e-5)
 
+    def test_fp32_parameter_reconstructed_in_place(self) -> None:
+        param = torch.nn.Parameter(torch.randn((6, 4), device=FLAGS.device))
+        initial_param = param.detach().clone()
+        optimizer = Iso([param], lr=1e-2)
+        param.grad = torch.randn_like(param)
+
+        optimizer.step()
+
+        self.assertEqual(param.dtype, torch.float32)
+        self.assertTrue(torch.isfinite(param).all())
+        self.assertFalse(torch.equal(param, initial_param))
+
     @parameterized.named_parameters(
         ("float16", torch.float16),
         ("bfloat16", torch.bfloat16),
