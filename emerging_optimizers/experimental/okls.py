@@ -82,10 +82,10 @@ class OklsPreconditioner:
         return {
             "L": torch.zeros(m, m, device=device, dtype=torch.float32),
             "R": torch.zeros(n, n, device=device, dtype=torch.float32),
-            # Identity roots make the first factor update degenerate to the plain Gram products
-            # ``G G^T`` and ``G^T G``, so the first step needs no separate seeding path.
-            "P_L": torch.eye(m, device=device, dtype=torch.float32),
-            "P_R": torch.eye(n, device=device, dtype=torch.float32),
+            # Overwritten on the first step, which seeds the factors from the gradient and derives the
+            # roots from them rather than preconditioning with whatever is here.
+            "P_L": torch.zeros(m, m, device=device, dtype=torch.float32),
+            "P_R": torch.zeros(n, n, device=device, dtype=torch.float32),
         }
 
     def rebind_state(self, state: dict) -> None:
@@ -111,7 +111,7 @@ class OklsPreconditioner:
             raise KeyError(f"rebind_state: state missing keys {sorted(missing)}")
         state.update(updates)
 
-    def _refresh_inverse_roots(self) -> None:
+    def update_inverse_roots(self) -> None:
         """Recomputes both inverse square roots from the current covariance factors."""
         self.inverse_root_pair = shampoo_base.TensorPair(
             *(
@@ -124,6 +124,35 @@ class OklsPreconditioner:
             )
         )
 
+    def init_step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
+        r"""Seeds both factors from the first gradient.
+
+        Each factor is that gradient's one-sided covariance, rescaled so the two sides carry comparable
+        magnitude:
+
+        .. math::
+
+            L = \frac{1}{\lVert G \rVert}\sqrt{\frac{m}{n}}\, G G^T
+
+        and symmetrically for :math:`R` with the two dimensions exchanged.
+
+        The inverse roots are then derived from that seed, so the first step needs no roots to
+        precondition with.
+
+        Args:
+            grad: Gradient of the parameter on the first step.
+            shampoo_beta: Unused, since the seed replaces the factors rather than accumulating into them;
+                accepted so that every preconditioner shares one calling convention.
+        """
+        m, n = grad.shape
+        grad_norm = torch.linalg.vector_norm(grad, dtype=torch.float64)
+
+        L = grad @ grad.T * math.sqrt(m / n) / grad_norm
+        R = grad.T @ grad * math.sqrt(n / m) / grad_norm
+
+        self.kronecker_factor_pair = shampoo_base.TensorPair((L + L.T) * 0.5, (R + R.T) * 0.5)
+        self.update_inverse_roots()
+
     def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float) -> None:
         """Accumulates the cross-preconditioned gradient into both covariance factors.
 
@@ -134,7 +163,7 @@ class OklsPreconditioner:
         *previous* refresh, so as in the reference each update sees the other factor as it was before this
         step rather than after.
 
-        Kept separate from :meth:`_refresh_inverse_roots` so that ``precond_grad_pair`` dies with this
+        Kept separate from :meth:`update_inverse_roots` so that ``precond_grad_pair`` dies with this
         frame instead of staying live across the inverse-root iteration, which allocates several square
         temporaries of its own.
 
@@ -142,29 +171,23 @@ class OklsPreconditioner:
             grad: Gradient of the parameter, in the parameter basis.
             shampoo_beta: EMA coefficient for the covariance factor update.
         """
+        m, n = grad.shape
+
         # Paired by the factor each one feeds, so the side it was preconditioned on is the opposite one:
-        # ``L`` is the gradient preconditioned on the right and drives the left factor, and vice versa. The
-        # right entry is transposed so that both sides are the same ``X X^T`` contraction, which lets the
-        # per-side dimensions fall out of ``X.shape`` instead of being spelled out.
-        precond_grad_pair = shampoo_base.TensorPair(
-            grad @ self.inverse_root_pair.R, (self.inverse_root_pair.L @ grad).T
+        # ``L`` is the gradient preconditioned on the right and drives the left factor, and vice versa.
+        precond_grad_pair = shampoo_base.TensorPair(grad @ self.inverse_root_pair.R, self.inverse_root_pair.L @ grad)
+
+        # A <- shampoo_beta * A + (1 - shampoo_beta) / dim * Gram, in one call. ``beta`` decays the running
+        # factor and ``alpha`` scales the update; folding the 1/dim into lerp_'s single weight instead would
+        # decay the factor by 1 - (1 - shampoo_beta) / dim rather than by shampoo_beta.
+        L = self.kronecker_factor_pair.L.addmm_(
+            precond_grad_pair.L, precond_grad_pair.L.T, beta=shampoo_beta, alpha=(1 - shampoo_beta) / n
+        )
+        R = self.kronecker_factor_pair.R.addmm_(
+            precond_grad_pair.R.T, precond_grad_pair.R, beta=shampoo_beta, alpha=(1 - shampoo_beta) / m
         )
 
-        updated_factors = []
-        for kronecker_factor, precond_grad in zip(self.kronecker_factor_pair, precond_grad_pair, strict=True):
-            # A <- shampoo_beta * A + (1 - shampoo_beta) / dim * X X^T, in one call. ``beta`` decays the
-            # running factor and ``alpha`` scales the update; folding the 1/dim into lerp_'s single weight
-            # instead would decay the factor by 1 - (1 - shampoo_beta) / dim rather than by shampoo_beta.
-            kronecker_factor.addmm_(
-                precond_grad,
-                precond_grad.T,
-                beta=shampoo_beta,
-                alpha=(1 - shampoo_beta) / precond_grad.shape[1],
-            )
-            kronecker_factor = (kronecker_factor + kronecker_factor.T) * 0.5
-            updated_factors.append(kronecker_factor)
-
-        self.kronecker_factor_pair = shampoo_base.TensorPair(*updated_factors)
+        self.kronecker_factor_pair = shampoo_base.TensorPair((L + L.T) * 0.5, (R + R.T) * 0.5)
 
     def step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
         """Updates the covariance factors from the cross-preconditioned gradient, then refreshes the roots.
@@ -174,7 +197,7 @@ class OklsPreconditioner:
             shampoo_beta: EMA coefficient for the covariance factor update.
         """
         self.update_kronecker_factors(grad, shampoo_beta)
-        self._refresh_inverse_roots()
+        self.update_inverse_roots()
 
     def precondition(self, x: torch.Tensor) -> torch.Tensor:
         """Applies the two-sided preconditioner to a matrix in the parameter basis.
@@ -346,7 +369,10 @@ class OKLS(optim.Optimizer, opt_mixin.WeightDecayMixin):
 
                 scalar_update = self._scalar_update(grad, state["exp_avg"], beta1=group["beta1"])
 
-                preconditioner.step(grad, group["beta2"])
+                if state["step"] == 0:
+                    preconditioner.init_step(grad, group["beta2"])
+                else:
+                    preconditioner.step(grad, group["beta2"])
                 preconditioned_update = preconditioner.precondition(scalar_update)
 
                 # Aspect-ratio factor, a property of the preconditioned matrix rather than of the inner

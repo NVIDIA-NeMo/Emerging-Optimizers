@@ -87,6 +87,18 @@ class _PreconditionerProtocol(Protocol):
             The state entries owned by this preconditioner, keyed as :meth:`rebind_state` expects them.
         """
 
+    def init_step(self, grad: torch.Tensor, shampoo_beta: float, /) -> None:
+        """Performs the first step's update, before any history exists to correct with.
+
+        Called by the optimizer instead of :meth:`step` on the first step. Implementations seed the covariance factors directly
+        from ``grad`` rather than accumulating into them, and derive whatever they hold alongside the
+        factors from that seed.
+
+        Args:
+            grad: Tensor driving the covariance update, in the parameter basis.
+            shampoo_beta: EMA coefficient for the covariance factor update.
+        """
+
     def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float, /) -> None:
         """Accumulates ``grad`` into the covariance factors.
 
@@ -102,8 +114,8 @@ class _PreconditionerProtocol(Protocol):
     def step(self, grad: torch.Tensor, shampoo_beta: float, /) -> None:
         """Updates the covariance factors and everything derived from them.
 
-        Equivalent to :meth:`update_kronecker_factors` followed by refreshing whatever the preconditioner
-        derives from the factors -- an eigenbasis, or their inverse square roots.
+        Refreshes whatever the preconditioner derives from the factors -- an eigenbasis, or their inverse
+        square roots -- as well as the factors themselves.
 
         Args:
             grad: Tensor driving the covariance update, in the parameter basis.
