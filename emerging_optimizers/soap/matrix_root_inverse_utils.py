@@ -80,13 +80,17 @@ def mat_root_inv_via_scaled_cans(
     inf_norm = torch.linalg.matrix_norm(x, ord=float("inf"), dim=(-2, -1), keepdim=True).clamp_min_(eps)
     y = x / inf_norm
 
-    z = torch.eye(x.shape[-1], device=x.device, dtype=y.dtype)
+    z = torch.eye(x.shape[-1], device=x.device)
     z = z.expand(x.shape[0], -1, -1)
 
-    for beta, alpha in _CANS_COEFFS:
-        p = z @ y
+    p = y
+    for beta, alpha in _CANS_COEFFS[:-1]:
         z = torch.baddbmm(z, p, z, beta=beta, alpha=alpha)
         y = torch.baddbmm(y, y, p, beta=beta, alpha=alpha)
+        p = z @ y
+
+    beta, alpha = _CANS_COEFFS[-1]
+    z = torch.baddbmm(z, p, z, beta=beta, alpha=alpha)
 
     z.mul_(torch.rsqrt(inf_norm))
     result = (z + z.mT) * 0.5
