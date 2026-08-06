@@ -17,7 +17,6 @@ from typing import TypeAlias
 
 import torch
 
-from emerging_optimizers import utils
 from emerging_optimizers.utils import eig as eig_utils
 
 
@@ -125,18 +124,18 @@ def get_eigenbasis_qr(
             More steps can lead to better convergence but increased computation time.
 
     Returns:
-        Tuple of (list of approximate eigenvalues of each kronecker factor in its updated eigenbasis,
-        updated list of orthonormal eigenbases (QL and QR)).
+        Tuple of (list of approximate eigenvalues in descending order, updated list of orthonormal
+        eigenbases (QL and QR) with columns ordered to match).
     """
     updated_eigenbasis_list: TensorList = []
     updated_eigvals_list: TensorList = []
     for kronecker_factor, eigenbasis in zip(kronecker_factor_list, eigenbasis_list, strict=True):
-        Q = eigenbasis
-        for _ in range(power_iter_steps):
-            Q = kronecker_factor @ Q
-            Q = torch.linalg.qr(Q).Q
-        with utils.fp32_matmul_precision("highest"):
-            updated_eigvals_list.append(eig_utils.conjugate(kronecker_factor, Q, diag=True))
-        updated_eigenbasis_list.append(Q)
+        eigvals, eigenbasis = eig_utils.orthogonal_iteration(
+            kronecker_factor=kronecker_factor,
+            eigenbasis=eigenbasis,
+            power_iter_steps=power_iter_steps,
+        )
+        updated_eigvals_list.append(eigvals)
+        updated_eigenbasis_list.append(eigenbasis)
 
     return updated_eigvals_list, updated_eigenbasis_list
