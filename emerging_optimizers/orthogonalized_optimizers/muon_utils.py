@@ -249,17 +249,25 @@ def newton_schulz(
         # is converted to BF16 before converting back to FP32. The rest should be the same as long as epilogue
         # is always in FP32.
         if use_syrk:
-            if X.ndim > 2:
-                raise TypeError("use_syrk does not support N-d input.")
-            if X.size(-1) % 8 == 0 and X.size(-2) % 8 == 0:
-                ns_step_fn = newton_schulz_step_tsyrk
-            else:
+            if X.size(-1) % 8 != 0 or X.size(-2) % 8 != 0:
                 logging.log_first_n(
                     logging.ERROR,
                     "[SYRK-SKIP] skipping SYRK for shape %s because GEMM M or N is not 16-byte "
                     "aligned, which is incompatible with TMA.",
                     8,
                     tuple(X.shape),
+                )
+            elif X.ndim == 2:
+                ns_step_fn = newton_schulz_step_tsyrk
+            elif X.is_cuda:
+                ns_step_fn = batched_newton_schulz_step_tsyrk
+            else:
+                logging.log_first_n(
+                    logging.ERROR,
+                    "[SYRK-SKIP] skipping SYRK for batched input on device %s because the batched "
+                    "SYRK kernel requires CUDA.",
+                    8,
+                    X.device.type,
                 )
         X = X.to(torch.bfloat16)
         logging.log_first_n(logging.INFO, "Using BF16 I/O kernels for Newton-Schulz iteration.", 1)
@@ -441,4 +449,38 @@ def newton_schulz_step_tsyrk(
         X = torch.addmm(X, B, X, alpha=1.0, beta=a)
     else:
         X = torch.addmm(X, A, X, alpha=b, beta=a)
+    return X
+
+
+def batched_newton_schulz_step_tsyrk(
+    X: torch.Tensor, a: float, b: float, c: float, tp_group: torch.distributed.ProcessGroup | None = None
+) -> torch.Tensor:
+    """Perform a single Newton-Schulz iteration step on a batched (3d) input using the batched SYRK kernel.
+
+    Equivalent to :func:`batched_newton_schulz_step` but computes the two symmetric products
+    (``X @ X.mT`` and ``A @ A``, since ``A`` is symmetric) with the batched Triton SYRK kernel,
+    which only computes the lower triangle and mirrors it. The final ``B @ X`` product is a general
+    matmul and stays on :func:`torch.baddbmm`.
+
+    Arguments:
+        X: The batched tensor to be orthogonalized, shape ``(B, M, N)``. Must be bfloat16.
+        a: The a coefficient.
+        b: The b coefficient.
+        c: The c coefficient.
+        tp_group: The process group to use for the all-reduce.
+
+    Returns:
+        The orthogonalization of X, same shape as input.
+    """
+    assert triton_kernels.HAS_TRITON_340, (  # type: ignore[attr-defined]
+        "Triton version doesn't support tensor descriptor API. Minimum required version is 3.4.0."
+    )
+    A = triton_kernels.batched_tsyrk_ex(X)  # type: ignore[attr-defined]
+    if tp_group is not None:
+        torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
+    if c != 0.0:
+        B = triton_kernels.batched_tsyrk_ex(A, A, alpha=c, beta=b)  # type: ignore[attr-defined]
+        X = torch.baddbmm(X, B, X, alpha=1.0, beta=a)
+    else:
+        X = torch.baddbmm(X, A, X, alpha=b, beta=a)
     return X

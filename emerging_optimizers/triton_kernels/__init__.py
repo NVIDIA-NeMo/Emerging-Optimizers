@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 try:
+    from .batched_syrk import *
     from .syrk import *
 except ModuleNotFoundError as exc:
     if exc.name != "triton":
