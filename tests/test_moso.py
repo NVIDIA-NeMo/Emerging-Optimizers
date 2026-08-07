@@ -17,7 +17,7 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import registry
-from emerging_optimizers.soap import MOSO
+from emerging_optimizers.legacy_soap import MOSO
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")

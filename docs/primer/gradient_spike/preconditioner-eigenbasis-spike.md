@@ -20,7 +20,7 @@ Setup:
 import numpy as np
 import torch
 
-from emerging_optimizers.soap.soap import SOAP
+from emerging_optimizers.legacy_soap.soap import SOAP
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cpu")  # uncomment to force CPU

@@ -22,7 +22,7 @@ import torch
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import registry
-from emerging_optimizers.soap.soap import SOAP
+from emerging_optimizers.legacy_soap.soap import SOAP
 
 
 __all__ = ["StackedSoap"]

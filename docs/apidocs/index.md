@@ -7,7 +7,7 @@ NeMo Emerging Optimizers API reference provides comprehensive technical document
 :hidden:
 
 orthogonalized-optimizers.md
-soap.md
+legacy-soap.md
 riemannian-optimizers.md
 psgd.md
 scalar-optimizers.md

@@ -22,8 +22,8 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
-from emerging_optimizers.soap import REKLS, SOAP, soap
-from emerging_optimizers.soap.soap import _clip_update_rms_in_place
+from emerging_optimizers.legacy_soap import REKLS, SOAP, soap
+from emerging_optimizers.legacy_soap.soap import _clip_update_rms_in_place
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")

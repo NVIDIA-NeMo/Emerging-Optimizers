@@ -27,8 +27,8 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry, utils
+from emerging_optimizers.legacy_soap import soap_utils
 from emerging_optimizers.scalar_optimizers import update_functions
-from emerging_optimizers.soap import soap_utils
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
@@ -347,8 +347,8 @@ def update_kronecker_factors_kl_shampoo(
         \\Lambda_R = \\mathrm{diag}(Q_R^{\\top} R_t Q_R)
 
     (passed as ``eigvals_list``, typically computed and stored at the previous eigenbasis update, see
-    :func:`~emerging_optimizers.soap.soap_utils.get_eigenbasis_qr` and
-    :func:`~emerging_optimizers.soap.soap_utils.get_eigenbasis_eigh`), the EMA update with momentum
+    :func:`~emerging_optimizers.legacy_soap.soap_utils.get_eigenbasis_qr` and
+    :func:`~emerging_optimizers.legacy_soap.soap_utils.get_eigenbasis_eigh`), the EMA update with momentum
     :math:`\\beta` (= ``shampoo_beta``) and exponent :math:`p` (= ``eigval_exp``, default ``-1``) is
 
     .. math::

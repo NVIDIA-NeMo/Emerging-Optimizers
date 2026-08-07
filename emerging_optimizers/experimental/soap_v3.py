@@ -27,8 +27,8 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry, utils
+from emerging_optimizers.legacy_soap import soap
 from emerging_optimizers.scalar_optimizers import update_functions
-from emerging_optimizers.soap import soap
 from emerging_optimizers.utils import eig as eig_utils
 
 

@@ -26,8 +26,8 @@ if TYPE_CHECKING:
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry, utils
+from emerging_optimizers.legacy_soap import soap, soap_utils
 from emerging_optimizers.scalar_optimizers import update_functions
-from emerging_optimizers.soap import soap, soap_utils
 from emerging_optimizers.utils import FP32MatmulPrecT, get_pg_rank, get_pg_size
 
 
@@ -79,13 +79,13 @@ def all_gather_grad_and_kronecker_factors_tp(
 
 @registry.register_optimizer("tp_rekls")
 class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
-    """Tensor-parallel variant of :class:`~emerging_optimizers.soap.rekls.REKLS`.
+    """Tensor-parallel variant of :class:`~emerging_optimizers.legacy_soap.rekls.REKLS`.
 
-    Reimplemented from scratch (not inheriting from :class:`~emerging_optimizers.soap.soap.SOAP`) so the
+    Reimplemented from scratch (not inheriting from :class:`~emerging_optimizers.legacy_soap.soap.SOAP`) so the
     tensor-parallel bookkeeping stays isolated. Eigenbases are not stored in optimizer state; they are
-    recomputed via :func:`~emerging_optimizers.soap.soap_utils.get_eigenbasis_eigh` from the kronecker
+    recomputed via :func:`~emerging_optimizers.legacy_soap.soap_utils.get_eigenbasis_eigh` from the kronecker
     factors. Each step calls eigh twice — once on the pre-update L, R for the
-    :func:`~emerging_optimizers.soap.soap.update_kronecker_factors_kl_shampoo` correction, and once on
+    :func:`~emerging_optimizers.legacy_soap.soap.update_kronecker_factors_kl_shampoo` correction, and once on
     the post-update L, R for the gradient projection.
 
     State per parameter (one entry per rank):
@@ -93,7 +93,7 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
       - ``exp_avg``, ``exp_avg_sq``: full-size tensors duplicated across ``tp_group`` ranks. ``exp_avg``
         is rotated through the basis change between steps (project back via the pre-update eigenbasis,
         then forward via the post-update eigenbasis), matching SOAP's
-        :func:`~emerging_optimizers.soap.soap.update_eigenbasis_and_exp_avgs`. ``exp_avg_sq`` is not
+        :func:`~emerging_optimizers.legacy_soap.soap.update_eigenbasis_and_exp_avgs`. ``exp_avg_sq`` is not
         rotated, matching SOAP's eigh path.
       - ``L``, ``R``: kronecker factor matrices, sharded along dimension 0 across ``tp_group``.
 
