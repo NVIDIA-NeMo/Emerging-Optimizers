@@ -454,10 +454,10 @@ class SoapVsReferenceTest(parameterized.TestCase):
 
     @parameterized.product(
         shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
-        num_steps=[2, 5, 7],
+        num_steps=[1, 2, 5, 7],
         correct_bias=[False, True],
     )
-    def test_update_matches_reference(self, shape: tuple, num_steps: int, correct_bias: bool):
+    def test_update_close_to_reference(self, shape: tuple, num_steps: int, correct_bias: bool):
         """Test that SOAP optimizer matches reference implementation for basic config."""
         # Create two identical parameters
         param_test = torch.randint(-2, 3, shape, dtype=torch.float32, device=self.device)
@@ -503,8 +503,8 @@ class SoapVsReferenceTest(parameterized.TestCase):
             torch.testing.assert_close(
                 param_test,
                 param_ref,
-                atol=1e-4,
-                rtol=1e-4,
+                atol=1e-5,
+                rtol=1e-5,
                 msg=lambda msg: f"Parameter mismatch at step {step}:\n{msg}",
             )
 
@@ -515,7 +515,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
         shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
         num_steps=[2, 5, 7],
     )
-    def test_eigenbasis_matches_reference(self, shape: tuple, num_steps: int):
+    def test_eigenbasis_close_to_reference(self, shape: tuple, num_steps: int):
         param_soap = torch.randint(-2, 3, shape, dtype=torch.float32, device=self.device)
         param_ref = param_soap.clone()
 
