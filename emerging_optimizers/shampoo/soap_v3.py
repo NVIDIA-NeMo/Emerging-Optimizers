@@ -439,7 +439,7 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         return None
 
 
-@registry.register_optimizer("kl_soap_v3")
+@registry.register_optimizer("kl_soap")
 class KlSoapV3(SoapBase):
     """Implements a variant of KLSOAP algorithm."""
 
