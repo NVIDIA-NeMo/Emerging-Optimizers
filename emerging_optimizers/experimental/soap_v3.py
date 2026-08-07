@@ -126,8 +126,7 @@ class KlSoapPreconditioner:
             grad: Gradient of the parameter.
             shampoo_beta: EMA coefficient for the kronecker factor update.
         """
-        self.kronecker_factor_pair.L.lerp_(grad @ grad.T, 1 - shampoo_beta)
-        self.kronecker_factor_pair.R.lerp_(grad.T @ grad, 1 - shampoo_beta)
+        self.update_kronecker_factors(grad, shampoo_beta)
         eigvals_L, Q_L = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.L)
         eigvals_R, Q_R = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.R)
         self.eigenbasis_pair = shampoo_base.TensorPair(Q_L, Q_R)
