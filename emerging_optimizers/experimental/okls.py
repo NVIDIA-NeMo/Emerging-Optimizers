@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import TYPE_CHECKING, Callable, ClassVar, override
+from typing import TYPE_CHECKING, Callable, ClassVar, Literal, override
 
 
 if TYPE_CHECKING:
@@ -52,7 +52,7 @@ class OklsPreconditioner:
         self,
         state: dict,
         ridge_eps: float,
-        fp32_matmul_prec: utils.FP32MatmulPrecT,
+        fp32_matmul_prec: Literal["high", "highest"],
     ) -> None:
         self.kronecker_factor_pair = shampoo_base.TensorPair(state["L"], state["R"])
         self.inverse_root_pair = shampoo_base.TensorPair(state["P_L"], state["P_R"])
@@ -112,17 +112,21 @@ class OklsPreconditioner:
         state.update(updates)
 
     def update_inverse_roots(self) -> None:
-        """Recomputes both inverse square roots from the current covariance factors."""
-        self.inverse_root_pair = shampoo_base.TensorPair(
-            *(
-                matrix_root_inverse_utils.mat_root_inv_via_scaled_cans(
-                    kronecker_factor,
-                    eps=self.ridge_eps,
-                    fp32_matmul_prec=self.fp32_matmul_prec,
+        """Recomputes both inverse square roots from the current covariance factors.
+
+        CANS reads the ambient FP32 matmul precision rather than taking it as an argument, so the
+        preconditioner's choice is applied with the context manager here.
+        """
+        with utils.fp32_matmul_precision(self.fp32_matmul_prec):
+            self.inverse_root_pair = shampoo_base.TensorPair(
+                *(
+                    matrix_root_inverse_utils.mat_root_inv_via_scaled_cans(
+                        kronecker_factor,
+                        eps=self.ridge_eps,
+                    )
+                    for kronecker_factor in self.kronecker_factor_pair
                 )
-                for kronecker_factor in self.kronecker_factor_pair
             )
-        )
 
     def init_step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
         r"""Seeds both factors from the first gradient.
@@ -227,8 +231,8 @@ class OKLS(optim.Optimizer, opt_mixin.WeightDecayMixin):
         beta2: KL-Shampoo factor EMA coefficient.
         ridge_eps: Numerical stability offset added to the KL-Shampoo factors.
         weight_decay: Decoupled weight-decay coefficient.
-        cans_fp32_matmul_prec: Precision used for FP32 matrix multiplications in CANS: ``"medium"`` for
-            BF16, ``"high"`` for TF32, or ``"highest"`` for FP32.
+        cans_fp32_matmul_prec: Precision used for FP32 matrix multiplications in CANS: ``"high"`` for
+            TF32 or ``"highest"`` for FP32.
 
     Attributes:
         PreconditionerCls: Preconditioner used for every parameter. Subclasses set it to change how the
@@ -249,7 +253,7 @@ class OKLS(optim.Optimizer, opt_mixin.WeightDecayMixin):
         beta2: float = 0.9482,
         ridge_eps: float = 1e-9,
         weight_decay: float = 0.0,
-        cans_fp32_matmul_prec: utils.FP32MatmulPrecT = "high",
+        cans_fp32_matmul_prec: Literal["high", "highest"] = "high",
     ) -> None:
         self.weight_decay_method = "decoupled"
         self.cans_fp32_matmul_prec = cans_fp32_matmul_prec
