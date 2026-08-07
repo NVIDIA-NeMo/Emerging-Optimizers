@@ -37,7 +37,7 @@ def setUpModule() -> None:
 class MatrixRootInverseUtilsTest(parameterized.TestCase):
     @parameterized.product(
         shape=[(4, 4), (2, 4, 4)],
-        fp32_matmul_prec=["medium", "high", "highest"],
+        fp32_matmul_prec=["high", "highest"],
     )
     def test_mat_root_inv_via_scaled_cans_smoke(
         self,
@@ -86,6 +86,13 @@ class MatrixRootInverseUtilsTest(parameterized.TestCase):
     def test_mat_root_inv_via_scaled_cans_rejects_non_fp32_tensor(self) -> None:
         with self.assertRaisesRegex(TypeError, "must be in float32"):
             mat_root_inv_via_scaled_cans(torch.eye(4, device=FLAGS.device, dtype=torch.bfloat16))
+
+    def test_mat_root_inv_via_scaled_cans_rejects_medium_fp32_matmul_precision(self) -> None:
+        with (
+            utils.fp32_matmul_precision("medium"),
+            self.assertRaisesRegex(RuntimeError, "`medium`.*insufficient for CANS"),
+        ):
+            mat_root_inv_via_scaled_cans(torch.eye(4, device=FLAGS.device))
 
     @parameterized.parameters(8, 16, 32)
     def test_inv_root_via_eigh_reconstruct_idendity(self, m) -> None:

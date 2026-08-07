@@ -44,11 +44,13 @@ def mat_root_inv_via_scaled_cans(
     Args:
         x: A 2D symmetric positive-definite FP32 matrix or 3D batch of matrices.
         eps: Lower bound used when normalizing the matrices.
-        fp32_matmul_prec: Precision used for FP32 matrix multiplications: ``"medium"`` for BF16,
-            ``"high"`` for TF32, or ``"highest"`` for FP32.
 
     Returns:
         The approximate inverse square root as an FP32 tensor with the same shape as ``x``.
+
+    Raises:
+        TypeError: If ``x`` is not a square FP32 matrix or batch of square FP32 matrices.
+        RuntimeError: If the active FP32 matmul precision is ``"medium"``.
     """
     # All constant arithmetic, including the 1.01 safety factor, is folded into these coefficients.
     _CANS_COEFFS = (
@@ -68,6 +70,8 @@ def mat_root_inv_via_scaled_cans(
         raise TypeError(f"x must be a square matrix or batch of square matrices, got shape {tuple(x.shape)}")
     if x.dtype != torch.float32:
         raise TypeError(f"x must be in float32, got {x.dtype}")
+    if torch.get_float32_matmul_precision() == "medium":
+        raise RuntimeError("`medium` (bf16 compute) is insufficient for CANS, use `high` or `highest`")
 
     is_batched = x.dim() == 3
     if not is_batched:
@@ -75,18 +79,19 @@ def mat_root_inv_via_scaled_cans(
 
     inf_norm = torch.linalg.matrix_norm(x, ord=float("inf"), dim=(-2, -1), keepdim=True).clamp_min_(eps)
     y = x / inf_norm
-    if torch.get_float32_matmul_precision() == "medium":
-        y = y.to(torch.bfloat16)
 
-    z = torch.eye(x.shape[-1], device=x.device, dtype=y.dtype)
+    z = torch.eye(x.shape[-1], device=x.device)
     z = z.expand(x.shape[0], -1, -1)
 
-    for beta, alpha in _CANS_COEFFS:
-        p = z @ y
+    p = y
+    for beta, alpha in _CANS_COEFFS[:-1]:
         z = torch.baddbmm(z, p, z, beta=beta, alpha=alpha)
         y = torch.baddbmm(y, y, p, beta=beta, alpha=alpha)
+        p = z @ y
 
-    z = z.to(torch.float32)
+    beta, alpha = _CANS_COEFFS[-1]
+    z = torch.baddbmm(z, p, z, beta=beta, alpha=alpha)
+
     z.mul_(torch.rsqrt(inf_norm))
     result = (z + z.mT) * 0.5
     return result if is_batched else result.squeeze(0)
