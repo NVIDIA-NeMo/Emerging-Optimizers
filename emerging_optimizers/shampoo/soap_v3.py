@@ -92,7 +92,7 @@ class KlSoapPreconditioner:
         }
 
     def rebind_state(self, state: dict) -> None:
-        """Writes the current preconditioner tensors back into the optimizer state dict.
+        """Binds the current preconditioner tensors back into the optimizer state dict.
 
         Args:
             state: Per-parameter optimizer state, updated in place.
@@ -116,15 +116,9 @@ class KlSoapPreconditioner:
         state.update(updates)
 
     def init_step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
-        """Seeds the kronecker factors and eigenbases from the first gradient.
+        """Seeds the kronecker factors and eigenbases from the first gradient with eigh
 
-        The KL-Shampoo correction needs an eigenbasis and eigenvalues to weight the gradient with, and
-        neither exists yet, so the factors take the plain Gram products and the eigenbases are built from
-        those with eigh. ``exp_avg`` is still zero here, so it needs no re-projection.
-
-        Args:
-            grad: Gradient of the parameter.
-            shampoo_beta: EMA coefficient for the kronecker factor update.
+        It calls KL correction in the init step to match legacy Soap behavior.
         """
         self.update_kronecker_factors(grad, shampoo_beta)
         eigvals_L, Q_L = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.L)
@@ -134,9 +128,6 @@ class KlSoapPreconditioner:
 
     def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float) -> None:
         """Accumulates the gradient into the kronecker factors with the KL-Shampoo correction.
-
-        Split out of :meth:`step` as the override point for a variant that accumulates differently -- a
-        plain Shampoo factor update, say -- without having to restate the eigenbasis handling.
 
         Args:
             grad: Gradient of the parameter.
@@ -207,13 +198,7 @@ class KlSoapPreconditioner:
 
 
 class ReklsPreconditioner(KlSoapPreconditioner):
-    """KL-Shampoo preconditioner that rebuilds the eigenbases with eigh on every step.
-
-    Realtime Eigen KL-Shampoo: :class:`KlSoapPreconditioner` refines the previous eigenbasis with a single
-    orthogonal iteration, which is cheap but leaves the basis a step behind whenever the spectrum moves.
-    Rebuilding it from the current kronecker factors instead makes the basis exact for the factors that
-    have already absorbed this step's gradient, at the cost of a full eigendecomposition per factor.
-    """
+    """KL-Shampoo preconditioner that rebuilds the eigenbases with eigh on every step."""
 
     @override
     def step(
@@ -288,12 +273,10 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         eps: float = 1e-8,
         weight_decay: float = 0.01,
         *,
-        max_update_rms: float = 0.0,
         stream_list: list[torch.cuda.Stream] | None = None,
     ) -> None:
         self.weight_decay_method = "decoupled"
         self.eps = eps
-        self.max_update_rms = max_update_rms
         self.stream_list = stream_list
 
         defaults = {
@@ -315,11 +298,7 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
     ) -> torch.Tensor:
         """Applies the inner scalar optimizer to the projected gradient, in the eigenbasis.
 
-        Override this to run a different scalar update inside the eigenbasis. The moment buffers are owned
-        by the preconditioner, so an override may only use the buffers that ``PreconditionerCls.init_state``
-        allocates -- an update needing a different set of buffers (the slow EMA of AdEMAMix, say) is a
-        preconditioner change too, since every buffer living in the eigenbasis has to be re-projected when
-        the eigenbasis rotates.
+        Override this to run a different scalar update inside the eigenbasis.
 
         Args:
             grad: Gradient projected into the eigenbasis.
@@ -445,7 +424,7 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
                         # Projecting back the preconditioned exponential moving average of gradients
                         precond_update = preconditioner.project_out(scalar_update)
 
-                    soap._clip_update_rms_in_place(precond_update, self.max_update_rms)
+                    # TODO (skyw): Add RMS clip back.
                     p.add_(precond_update, alpha=-group["lr"])
 
                     # Preconditioner does both inplace and out-of-place changes, rebind state to make sure
@@ -462,12 +441,7 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
 
 @registry.register_optimizer("kl_soap_v3")
 class KlSoapV3(SoapBase):
-    """Implements a variant of SOAP algorithm.
-
-    Pairs the KL-Shampoo kronecker factor update with Adam as the inner scalar optimizer. Takes
-    :class:`SoapBase`'s constructor unchanged, where ``betas``
-    are inner Adam's and ``eps`` serves both inner Adam's denominator and the kronecker factor update.
-    """
+    """Implements a variant of KLSOAP algorithm."""
 
     PreconditionerCls: ClassVar[type[shampoo_base.SoapPreconditionerProtocol]] = KlSoapPreconditioner
 
@@ -507,12 +481,7 @@ class KlSoapV3(SoapBase):
 
 @registry.register_optimizer("rekls_v3")
 class ReklsV3(KlSoapV3):
-    """Realtime Eigen KL-Shampoo.
-
-    :class:`KlSoapV3` with :class:`ReklsPreconditioner`, so the eigenbases are rebuilt from the current
-    kronecker factors on every step rather than refined from the previous ones by a single orthogonal
-    iteration. Inherits the inner Adam update and :class:`SoapBase`'s constructor unchanged.
-    """
+    """Realtime Eigen KL-Shampoo"""
 
     PreconditionerCls: ClassVar[type[shampoo_base.SoapPreconditionerProtocol]] = ReklsPreconditioner
 

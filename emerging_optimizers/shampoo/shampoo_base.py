@@ -41,33 +41,11 @@ class TensorPair:
 class _PreconditionerProtocol(Protocol):
     """Interface every preconditioner in the family must provide, for one parameter.
 
-    A preconditioner owns the covariance factors of a single parameter and whatever it derives from them.
-    Implementations are constructed from the per-parameter state dict and must write their tensors back
-    with :meth:`rebind_state`, since the updates are partly out-of-place.
-
-    An optimizer's ``PreconditionerCls`` is annotated ``ClassVar[type[...]]`` of one of the subclasses
-    below, which is what checks a swapped-in preconditioner and lets the step loop be written against the
-    interface rather than a concrete class. Note that mypy excludes ``__init__`` from protocol member
-    checks, so the constructors declared here type the construction site but do not verify implementations.
-
-    Positional-only parameters let implementations name the driving tensor after what it actually is -- a
-    gradient for :class:`~emerging_optimizers.shampoo.soap_v3.KlSoapPreconditioner`, a momentum for a
-    Muon-style variant.
+    Preconditioner is designed to be created and used in side each step() function call of torch optimizer
     """
 
     def __init__(self, state: dict, /, *args: Any, **kwargs: Any) -> None:
-        """Binds the preconditioner to one parameter's state.
-
-        Only ``state`` is fixed. The rest are whatever hyperparameters the preconditioner needs, passed by
-        the optimizer that selects it, so implementations are free to differ there. Declaring the
-        constructor at all is what makes construction through ``PreconditionerCls`` type-check; mypy
-        excludes ``__init__`` from protocol member checks, so it does not verify implementations.
-
-        Args:
-            state: Per-parameter optimizer state to bind to.
-            *args: Preconditioner-specific positional hyperparameters.
-            **kwargs: Preconditioner-specific keyword hyperparameters.
-        """
+        """Binds the preconditioner to one parameter's state."""
 
     @staticmethod
     def init_state(
@@ -88,54 +66,23 @@ class _PreconditionerProtocol(Protocol):
         """
 
     def init_step(self, grad: torch.Tensor, shampoo_beta: float, /) -> None:
-        """Performs the first step's update, before any history exists to correct with.
-
-        Called by the optimizer instead of :meth:`step` on the first step. Implementations seed the covariance factors directly
-        from ``grad`` rather than accumulating into them, and derive whatever they hold alongside the
-        factors from that seed.
-
-        Args:
-            grad: Tensor driving the covariance update, in the parameter basis.
-            shampoo_beta: EMA coefficient for the covariance factor update.
-        """
+        """Performs the first step's update, before any history exists to correct with."""
 
     def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float, /) -> None:
-        """Accumulates ``grad`` into the covariance factors.
+        """Accumulates ``grad`` into the Kronecker factors.
 
-        Exposed separately from :meth:`step` so that an optimizer can drive the factor update itself --
-        for instance to run a different accumulation on the first step, before any eigenbasis or inverse
-        root exists to correct with.
-
-        Args:
-            grad: Tensor driving the covariance update, in the parameter basis.
-            shampoo_beta: EMA coefficient for the covariance factor update.
+        KL correction or any other correction should be implemented in this function of a preconditioner class.
         """
 
     def step(self, grad: torch.Tensor, shampoo_beta: float, /) -> None:
-        """Updates the covariance factors and everything derived from them.
-
-        Refreshes whatever the preconditioner derives from the factors -- an eigenbasis, or their inverse
-        square roots -- as well as the factors themselves.
-
-        Args:
-            grad: Tensor driving the covariance update, in the parameter basis.
-            shampoo_beta: EMA coefficient for the covariance factor update.
-        """
+        """Updates the preconditioner internal with latest grad"""
 
     def rebind_state(self, state: dict, /) -> None:
-        """Writes the current preconditioner tensors back into the optimizer state dict.
-
-        Args:
-            state: Per-parameter optimizer state, updated in place.
-        """
+        """Binds the current preconditioner tensors back into the optimizer state dict."""
 
 
 class SoapPreconditionerProtocol(_PreconditionerProtocol, Protocol):
-    """A preconditioner that maintains an eigenbasis and the moments of an inner scalar optimizer.
-
-    The moments live in the eigenbasis and are re-projected whenever the eigenbasis rotates, which is why
-    they belong to the preconditioner rather than to the optimizer.
-    """
+    """Soap preconditioner which projects update from/to eigen bases"""
 
     exp_avg: torch.Tensor
     exp_avg_sq: torch.Tensor
@@ -162,12 +109,7 @@ class SoapPreconditionerProtocol(_PreconditionerProtocol, Protocol):
 
 
 class ShampooPreconditionerProtocol(_PreconditionerProtocol, Protocol):
-    """A preconditioner that keeps inverse square roots of the covariance factors instead of an eigenbasis.
-
-    It applies the roots directly, so it exposes a single :meth:`precondition` rather than a
-    ``project_in`` / ``project_out`` pair, and it owns no moments -- the momentum lives in the parameter
-    basis and is never re-projected, so the optimizer keeps it.
-    """
+    """Shampoo preconditioner"""
 
     def precondition(self, x: torch.Tensor, /) -> torch.Tensor:
         """Applies the two-sided preconditioner to a matrix in the parameter basis.
