@@ -31,8 +31,8 @@ import torch
 
 from emerging_optimizers.orthogonalized_optimizers.muon import Muon
 from emerging_optimizers.scalar_optimizers.laprop import LaProp
-from emerging_optimizers.soap.rekls import REKLS
-from emerging_optimizers.soap.soap import SOAP
+from emerging_optimizers.legacy_soap.rekls import REKLS
+from emerging_optimizers.legacy_soap.soap import SOAP
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # device = "cpu"

@@ -24,9 +24,9 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry, utils
+from emerging_optimizers.legacy_soap import soap_utils
+from emerging_optimizers.legacy_soap.soap import _clip_update_rms_in_place
 from emerging_optimizers.scalar_optimizers import update_functions
-from emerging_optimizers.soap import soap_utils
-from emerging_optimizers.soap.soap import _clip_update_rms_in_place
 
 
 __all__ = ["MOSO"]

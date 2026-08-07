@@ -18,7 +18,7 @@ import torch
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers import psgd, registry, scalar_optimizers, soap
+from emerging_optimizers import legacy_soap, psgd, registry, scalar_optimizers
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -59,7 +59,7 @@ class TestRegistry(parameterized.TestCase):
         ("adaptive_muon", adaptive_muon.AdaptiveMuon),
         ("psgd_pro", psgd.PSGDPro),
         ("scion", scion.Scion),
-        ("soap", soap.SOAP),
+        ("soap", legacy_soap.SOAP),
         ("lion", scalar_optimizers.Lion),
         ("laprop", scalar_optimizers.LaProp),
     )

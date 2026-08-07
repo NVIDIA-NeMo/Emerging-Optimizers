@@ -17,7 +17,7 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry
-from emerging_optimizers.soap.soap import SOAP
+from emerging_optimizers.legacy_soap.soap import SOAP
 
 
 __all__ = ["REKLS"]
@@ -31,7 +31,7 @@ class REKLS(SOAP):
     "up to date" because current step's gradient is accumulated to the kronecker factor before eigenbasis update.
 
     Note:
-        Refer to :class:`~emerging_optimizers.soap.soap.SOAP` for detailed documentation of arguments.
+        Refer to :class:`~emerging_optimizers.legacy_soap.soap.SOAP` for detailed documentation of arguments.
     """
 
     def __init__(

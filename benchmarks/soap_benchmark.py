@@ -22,7 +22,7 @@ import torch
 from absl import app, flags
 from common import FLAGS, build_qwen3_30b_a3b_params, print_shape_breakdown
 
-from emerging_optimizers.soap.soap import SOAP
+from emerging_optimizers.legacy_soap.soap import SOAP
 
 
 flags.DEFINE_bool("use_eigh", False, "Use eigh instead of QR iteration.")

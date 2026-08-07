@@ -17,8 +17,8 @@ from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.soap import SOAP
-from emerging_optimizers.soap.stacked_soap import StackedSoap, _stack_2d, _unstack
+from emerging_optimizers.legacy_soap import SOAP
+from emerging_optimizers.legacy_soap.stacked_soap import StackedSoap, _stack_2d, _unstack
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")

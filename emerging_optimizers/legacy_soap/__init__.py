@@ -12,10 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from emerging_optimizers.soap.moso import MOSO
-from emerging_optimizers.soap.rekls import REKLS
-from emerging_optimizers.soap.soap import SOAP
-from emerging_optimizers.soap.stacked_soap import StackedSoap
+from emerging_optimizers.legacy_soap.moso import MOSO
+from emerging_optimizers.legacy_soap.rekls import REKLS
+from emerging_optimizers.legacy_soap.soap import SOAP
+from emerging_optimizers.legacy_soap.stacked_soap import StackedSoap
 
 
 __all__ = [

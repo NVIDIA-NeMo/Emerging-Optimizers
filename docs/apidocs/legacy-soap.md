@@ -2,14 +2,14 @@
 .. role:: hidden
     :class: hidden-section
 
-emerging_optimizers.soap
+emerging_optimizers.legacy_soap
 ===================================
 
 
 :hidden:`SOAP`
 ~~~~~~~~~~~~~~~
 
-.. currentmodule:: emerging_optimizers.soap.soap
+.. currentmodule:: emerging_optimizers.legacy_soap.soap
 
 .. autoclass:: SOAP
     :members:
@@ -28,15 +28,15 @@ emerging_optimizers.soap
 :hidden:`REKLS`
 ~~~~~~~~~~~~~~~
 
-.. currentmodule:: emerging_optimizers.soap.rekls
+.. currentmodule:: emerging_optimizers.legacy_soap.rekls
 
 .. autoclass:: REKLS
     :members:
 
 
-emerging_optimizers.soap.soap_utils
-=====================================
+emerging_optimizers.legacy_soap.soap_utils
+==========================================
 
-.. automodule:: emerging_optimizers.soap.soap_utils
+.. automodule:: emerging_optimizers.legacy_soap.soap_utils
     :members:
 ```
