@@ -252,16 +252,16 @@ class TestTensorParallelNewtonSchulz(parameterized.TestCase):
                 tp_mode=tp_mode,
                 use_syrk=False,
             )
-            with self.assertRaisesRegex(TypeError, "use_syrk does not support"):
-                muon_utils.newton_schulz_tp(
-                    local_x,
-                    steps=1,
-                    coefficient_type="simple",
-                    tp_group=torch.distributed.group.WORLD,
-                    partition_dim=partition_dim,
-                    tp_mode=tp_mode,
-                    use_syrk=True,
-                )
+            # use_syrk on batched CPU input falls back to the GEMM path instead of raising.
+            muon_utils.newton_schulz_tp(
+                local_x,
+                steps=1,
+                coefficient_type="simple",
+                tp_group=torch.distributed.group.WORLD,
+                partition_dim=partition_dim,
+                tp_mode=tp_mode,
+                use_syrk=True,
+            )
 
 
 if __name__ == "__main__":
