@@ -20,7 +20,7 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers.legacy_soap import rekls, soap
-from emerging_optimizers.shampoo.soap_v3 import KlSoapPreconditioner, KlSoapV3, ReklsV3
+from emerging_optimizers.shampoo.soap_v3 import KlMSoap, KlSoapPreconditioner, KlSoapV3, ReklsV3
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -230,6 +230,29 @@ class ReklsV3AgainstLegacyTest(parameterized.TestCase):
             test_state = test_opt.state_dict()["state"][0]
             for key in ref_state.keys():
                 torch.testing.assert_close(test_state[key], ref_state[key], atol=atol, rtol=rtol)
+
+
+class KlMSoapTest(parameterized.TestCase):
+    @parameterized.product(shape=[(8, 5), (5, 8), (16, 16)])
+    def test_smoke(self, shape) -> None:
+        p = torch.nn.Parameter(torch.randn(shape, device=FLAGS.device))
+        initial = p.detach().clone()
+
+        opt = KlMSoap([p], lr=1e-2, weight_decay=0.01)
+        for _ in range(3):
+            p.grad = torch.randn_like(p)
+            opt.step()
+
+        self.assertTrue(torch.isfinite(p).all())
+        self.assertFalse(torch.equal(p.detach(), initial))
+        self.assertEqual(opt.state[p]["step"], 3)
+
+    def test_rejects_non_2d(self) -> None:
+        p = torch.nn.Parameter(torch.randn(2, 3, 4, device=FLAGS.device))
+        p.grad = torch.randn_like(p)
+        opt = KlMSoap([p], lr=1e-2)
+        with self.assertRaisesRegex(TypeError, "only supported for 2D"):
+            opt.step()
 
 
 if __name__ == "__main__":
