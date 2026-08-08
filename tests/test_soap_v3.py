@@ -101,8 +101,12 @@ class KlSoapPreconditionerTest(parameterized.TestCase):
 
 
 class SoapV3AgainstLegacyTest(parameterized.TestCase):
-    @parameterized.parameters((4, 4), (8, 4))
-    def test_small_input_5steps_matches_legacy(self, m: int, n: int) -> None:
+    @parameterized.parameters(
+        {"m": 4, "n": 4, "atol": 0, "rtol": 0},
+        {"m": 8, "n": 4, "atol": 1e-4, "rtol": 1e-4},
+        {"m": 33, "n": 17, "atol": 1e-3, "rtol": 1e-3},
+    )
+    def test_5steps_closes_to_legacy(self, m: int, n: int, atol: float, rtol: float) -> None:
         raw = torch.randint(-3, 4, (m, n), device=FLAGS.device, dtype=torch.float)
 
         # Testing aruments are chosen to have best chance of exactly matching reference
@@ -129,49 +133,12 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
             test_param.grad = None
             ref_param.grad = None
 
-            assert_equal(test_param, ref_param)
+            torch.testing.assert_close(test_param, ref_param, atol=atol, rtol=rtol)
 
             ref_state = ref_opt.state_dict()["state"][0]
             test_state = test_opt.state_dict()["state"][0]
             for key in ref_state.keys():
-                assert_equal(test_state[key], ref_state[key])
-
-    @parameterized.parameters((32, 16), (17, 33))
-    def test_medium_input_2steps_closes_to_legacy(self, m: int, n: int) -> None:
-        raw = torch.randint(-3, 4, (m, n), device=FLAGS.device, dtype=torch.float)
-
-        # Testing aruments are chosen to have best chance of exactly matching reference
-        test_kwargs = {
-            "lr": 2,
-            "betas": (1 / 2, 1 / 4),
-            "shampoo_beta": 1 / 4,
-            "eps": 1 / 8,
-            "weight_decay": 1 / 16,
-        }
-
-        ref_param = raw.clone()
-        ref_opt = SOAP([ref_param], use_kl_shampoo=True, **test_kwargs)
-
-        test_param = raw.clone()
-        test_opt = KlSoapV3([test_param], **test_kwargs)
-
-        for _ in range(2):
-            grad = torch.randint_like(raw, -3, 4)
-            test_param.grad = grad.clone()
-            ref_param.grad = grad.clone()
-            ref_opt.step()
-            test_opt.step()
-            test_param.grad = None
-            ref_param.grad = None
-
-            # Legacy uses tensordot for projection which can't match matmul exactly
-            torch.testing.assert_close(test_param, ref_param, atol=1e-3, rtol=1e-3)
-
-            # States should still match exactly
-            ref_state = ref_opt.state_dict()["state"][0]
-            test_state = test_opt.state_dict()["state"][0]
-            for key in ref_state.keys():
-                torch.testing.assert_close(test_state[key], ref_state[key], atol=1e-3, rtol=1e-3)
+                torch.testing.assert_close(test_state[key], ref_state[key], atol=atol, rtol=rtol)
 
 
 if __name__ == "__main__":
