@@ -120,7 +120,8 @@ class KlSoapPreconditioner:
 
         It calls KL correction in the init step to match legacy Soap behavior.
         """
-        self.update_kronecker_factors(grad, shampoo_beta)
+        with utils.fp32_matmul_precision("highest"):
+            self.update_kronecker_factors(grad, shampoo_beta)
         eigvals_L, Q_L = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.L)
         eigvals_R, Q_R = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.R)
         self.eigenbasis_pair = shampoo_base.TensorPair(Q_L, Q_R)
