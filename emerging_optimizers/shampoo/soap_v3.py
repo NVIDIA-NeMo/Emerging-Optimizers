@@ -213,7 +213,8 @@ class ReklsPreconditioner(KlSoapPreconditioner):
             grad: Gradient of the parameter.
             shampoo_beta: EMA coefficient for the kronecker factor update.
         """
-        self.update_kronecker_factors(grad, shampoo_beta)
+        with utils.fp32_matmul_precision("highest"):
+            self.update_kronecker_factors(grad, shampoo_beta)
 
         with utils.fp32_matmul_precision("high"):
             # Project exp_avg back to the original basis
