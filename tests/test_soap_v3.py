@@ -12,13 +12,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import override
+
 import torch
 from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.legacy_soap import SOAP, soap
-from emerging_optimizers.shampoo.soap_v3 import KlSoapPreconditioner, KlSoapV3
+from emerging_optimizers.legacy_soap import rekls, soap
+from emerging_optimizers.shampoo.soap_v3 import KlSoapPreconditioner, KlSoapV3, ReklsV3
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -119,10 +121,99 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
         }
 
         ref_param = raw.clone()
-        ref_opt = SOAP([ref_param], use_kl_shampoo=True, **test_kwargs)
+        ref_opt = soap.SOAP([ref_param], use_kl_shampoo=True, **test_kwargs)
 
         test_param = raw.clone()
         test_opt = KlSoapV3([test_param], **test_kwargs)
+
+        for _ in range(5):
+            grad = torch.randint_like(raw, -3, 4)
+            test_param.grad = grad.clone()
+            ref_param.grad = grad.clone()
+            ref_opt.step()
+            test_opt.step()
+            test_param.grad = None
+            ref_param.grad = None
+
+            torch.testing.assert_close(test_param, ref_param, atol=atol, rtol=rtol)
+
+            ref_state = ref_opt.state_dict()["state"][0]
+            test_state = test_opt.state_dict()["state"][0]
+            for key in ref_state.keys():
+                torch.testing.assert_close(test_state[key], ref_state[key], atol=atol, rtol=rtol)
+
+    @parameterized.parameters((5, 5), (16, 32), (63, 31), (127, 129))
+    def test_tensordot_patched_matches_legacy(self, m, n):
+        """Test aims exactly match legacy with use of tensordot
+
+        Despite different abstraction, the only functional difference between V3 and legacy is use of matmul
+        vs. tensordot in projections. Creating a subclass that uses legacy project_in/out to exactly match legacy
+        """
+
+        class PatchedConditioner(KlSoapPreconditioner):
+            @override
+            def project_in(self, x):
+                return soap.project_in(x, self.eigenbasis_pair)
+
+            @override
+            def project_out(self, x):
+                return soap.project_out(x, self.eigenbasis_pair)
+
+        class PatchedKlSoap(KlSoapV3):
+            PreconditionerCls = PatchedConditioner
+
+        raw = torch.randint(-3, 4, (m, n), device=FLAGS.device, dtype=torch.float)
+
+        test_kwargs = {
+            "lr": 2,
+            "eps": 1 / 8,
+        }
+
+        ref_param = raw.clone()
+        ref_opt = soap.SOAP([ref_param], use_kl_shampoo=True, **test_kwargs)
+
+        test_param = raw.clone()
+        test_opt = PatchedKlSoap([test_param], **test_kwargs)
+
+        for _ in range(5):
+            grad = torch.randint_like(raw, -3, 4)
+            test_param.grad = grad.clone()
+            ref_param.grad = grad.clone()
+            ref_opt.step()
+            test_opt.step()
+            test_param.grad = None
+            ref_param.grad = None
+
+            assert_equal(test_param, ref_param)
+
+            ref_state = ref_opt.state_dict()["state"][0]
+            test_state = test_opt.state_dict()["state"][0]
+            for key in ref_state.keys():
+                assert_equal(test_state[key], ref_state[key])
+
+
+class ReklsV3AgainstLegacyTest(parameterized.TestCase):
+    @parameterized.parameters(
+        {"m": 8, "n": 4, "atol": 1e-4, "rtol": 1e-4},
+        {"m": 17, "n": 33, "atol": 1e-3, "rtol": 1e-3},
+        {"m": 33, "n": 17, "atol": 1e-3, "rtol": 1e-3},
+    )
+    def test_5steps_closes_to_legacy(self, m: int, n: int, atol: float, rtol: float) -> None:
+        raw = torch.randint(-3, 4, (m, n), device=FLAGS.device, dtype=torch.float)
+
+        test_kwargs = {
+            "lr": 2,
+            "betas": (1 / 2, 1 / 4),
+            "shampoo_beta": 1 / 4,
+            "eps": 1 / 8,
+            "weight_decay": 1 / 16,
+        }
+
+        ref_param = raw.clone()
+        ref_opt = rekls.REKLS([ref_param], **test_kwargs)
+
+        test_param = raw.clone()
+        test_opt = ReklsV3([test_param], **test_kwargs)
 
         for _ in range(5):
             grad = torch.randint_like(raw, -3, 4)
