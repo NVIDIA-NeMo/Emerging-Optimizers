@@ -78,7 +78,7 @@ class KlSoapPreconditioner:
             ValueError: If ``shape`` is not 2D.
         """
         if len(shape) != 2:
-            raise ValueError(f"KlSoapPreconditioner is only supported for 2D tensors, got shape {tuple(shape)}")
+            raise TypeError(f"KlSoapPreconditioner is only supported for 2D tensors, got shape {tuple(shape)}")
         m, n = shape
         return {
             "exp_avg": torch.zeros(m, n, device=device),
