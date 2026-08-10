@@ -170,11 +170,11 @@ class ShampooPreconditionerProtocol(_PreconditionerProtocol, Protocol):
     """
 
     def precondition(self, x: torch.Tensor, /) -> torch.Tensor:
-        """Applies the two-sided preconditioner to a matrix in the parameter basis.
+        """Applies the two-sided preconditioner and the aspect-ratio scale to a matrix in the parameter basis.
 
         Args:
             x: Matrix in the parameter basis.
 
         Returns:
-            The preconditioned matrix, in the parameter basis.
+            The preconditioned and scaled matrix, in the parameter basis.
         """

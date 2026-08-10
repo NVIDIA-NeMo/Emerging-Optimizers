@@ -204,15 +204,20 @@ class OklsPreconditioner:
         self.update_inverse_roots()
 
     def precondition(self, x: torch.Tensor) -> torch.Tensor:
-        """Applies the two-sided preconditioner to a matrix in the parameter basis.
+        """Applies the two-sided preconditioner and the aspect-ratio scale to a matrix in the parameter basis.
+
+        The aspect-ratio factor is a property of the preconditioned matrix rather than of the inner scalar
+        optimizer, so it belongs here rather than in the optimizer's scalar update.
 
         Args:
             x: Matrix in the parameter basis.
 
         Returns:
-            The preconditioned matrix, in the parameter basis.
+            The preconditioned and scaled matrix, in the parameter basis.
         """
-        return self.inverse_root_pair.L @ x @ self.inverse_root_pair.R
+        m, n = x.shape
+        shape_scale = math.sqrt(m / n) / (math.sqrt(m) + math.sqrt(n))
+        return (self.inverse_root_pair.L @ x @ self.inverse_root_pair.R) * shape_scale
 
 
 @registry.register_optimizer("okls_v3")
@@ -379,18 +384,13 @@ class OKLS(optim.Optimizer, opt_mixin.WeightDecayMixin):
                     preconditioner.step(grad, group["beta2"])
                 preconditioned_update = preconditioner.precondition(scalar_update)
 
-                # Aspect-ratio factor, a property of the preconditioned matrix rather than of the inner
-                # scalar optimizer, so it stays out of _scalar_update.
-                m, n = grad.shape
-                shape_scale = math.sqrt(m / n) / (math.sqrt(m) + math.sqrt(n))
-
                 self._apply_weight_decay_inplace(
                     p,
                     grad,
                     group["lr"],
                     group["weight_decay"],
                 )
-                p.add_(preconditioned_update.to(p.dtype), alpha=-group["lr"] * shape_scale)
+                p.add_(preconditioned_update.to(p.dtype), alpha=-group["lr"])
 
                 preconditioner.rebind_state(state)
                 state["step"] += 1
