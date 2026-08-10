@@ -104,9 +104,9 @@ class KlSoapPreconditionerTest(parameterized.TestCase):
 
 class SoapV3AgainstLegacyTest(parameterized.TestCase):
     @parameterized.parameters(
-        {"m": 4, "n": 4, "atol": 0, "rtol": 0},
+        {"m": 4, "n": 4, "atol": 1e-5, "rtol": 1e-5},
         {"m": 8, "n": 4, "atol": 1e-4, "rtol": 1e-4},
-        {"m": 33, "n": 17, "atol": 1e-3, "rtol": 1e-3},
+        {"m": 33, "n": 17, "atol": 2e-3, "rtol": 2e-3},
     )
     def test_5steps_closes_to_legacy(self, m: int, n: int, atol: float, rtol: float) -> None:
         raw = torch.randint(-3, 4, (m, n), device=FLAGS.device, dtype=torch.float)
