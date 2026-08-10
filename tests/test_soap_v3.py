@@ -108,7 +108,7 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
         {"m": 8, "n": 4, "atol": 1e-4, "rtol": 1e-4},
         {"m": 33, "n": 17, "atol": 2e-3, "rtol": 2e-3},
     )
-    def test_5steps_closes_to_legacy(self, m: int, n: int, atol: float, rtol: float) -> None:
+    def test_5steps_close_to_legacy(self, m: int, n: int, atol: float, rtol: float) -> None:
         raw = torch.randint(-3, 4, (m, n), device=FLAGS.device, dtype=torch.float)
 
         # Testing aruments are chosen to have best chance of exactly matching reference
@@ -143,7 +143,7 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
                 torch.testing.assert_close(test_state[key], ref_state[key], atol=atol, rtol=rtol)
 
     @parameterized.parameters((5, 5), (16, 32), (63, 31), (127, 129))
-    def test_tensordot_patched_matches_legacy(self, m, n):
+    def test_tensordot_patched_5steps_matches_legacy(self, m, n):
         """Test aims exactly match legacy with use of tensordot
 
         Despite different abstraction, the only functional difference between V3 and legacy is use of matmul
@@ -162,7 +162,7 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
         class PatchedKlSoap(KlSoapV3):
             PreconditionerCls = PatchedConditioner
 
-        raw = torch.randint(-3, 4, (m, n), device=FLAGS.device, dtype=torch.float)
+        raw = torch.randn((m, n), device=FLAGS.device, dtype=torch.float)
 
         test_kwargs = {
             "lr": 2,
@@ -176,7 +176,7 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
         test_opt = PatchedKlSoap([test_param], **test_kwargs)
 
         for _ in range(5):
-            grad = torch.randint_like(raw, -3, 4)
+            grad = torch.randn_like(raw)
             test_param.grad = grad.clone()
             ref_param.grad = grad.clone()
             ref_opt.step()
@@ -190,6 +190,19 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
             test_state = test_opt.state_dict()["state"][0]
             for key in ref_state.keys():
                 assert_equal(test_state[key], ref_state[key])
+
+    @parameterized.parameters((5, 5), (16, 32), (63, 31), (127, 129))
+    def test_project_in_out_matches_legacy(self, m: int, n: int) -> None:
+        device = torch.device(FLAGS.device)
+        state = KlSoapPreconditioner.init_state((m, n), device)
+        state["Q_L"] = torch.randint(-3, 4, (m, m), device=device, dtype=torch.float)
+        state["Q_R"] = torch.randint(-3, 4, (n, n), device=device, dtype=torch.float)
+        preconditioner = KlSoapPreconditioner(state, 1e-8)
+
+        x = torch.randint(-3, 4, (m, n), device=device, dtype=torch.float)
+
+        assert_equal(preconditioner.project_in(x), soap.project_in(x, preconditioner.eigenbasis_pair))
+        assert_equal(preconditioner.project_out(x), soap.project_out(x, preconditioner.eigenbasis_pair))
 
 
 class ReklsV3AgainstLegacyTest(parameterized.TestCase):
