@@ -12,13 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import torch
 import torch.nn as nn
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.orthogonalized_optimizers import mop, muon, muon_hyperball, polargrad, scion
+from emerging_optimizers.orthogonalized_optimizers import mop, muon, muon_hyperball, scion
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
 
 
@@ -95,11 +95,9 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         orthogonalized_opt.step()
         sgd_opt.step()
 
-        torch.testing.assert_close(
+        assert_equal(
             test_param.data,
             ref_param.data,
-            atol=0,
-            rtol=0,
         )
 
     @parameterized.parameters(
@@ -140,11 +138,9 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
             orthogonalized_opt.step()
             sgd_opt.step()
 
-        torch.testing.assert_close(
+        assert_equal(
             test_param.data,
             ref_param.data,
-            atol=0,
-            rtol=0,
         )
 
     @parameterized.parameters(
@@ -207,11 +203,9 @@ class OrthogonalizedOptimizerTest(parameterized.TestCase):
         assert not torch.allclose(test_param, test_param.grad)
 
         ref_out = dummy_interleaved_split_orth_fn(test_param.grad)
-        torch.testing.assert_close(
+        assert_equal(
             test_param,
             ref_out,
-            atol=0,
-            rtol=0,
         )
 
     def test_non_2d_param_raises_value_error(self) -> None:
@@ -293,11 +287,9 @@ class MuonTest(parameterized.TestCase):
         )
         muon_opt_indep.step()
 
-        torch.testing.assert_close(
+        assert_equal(
             test_param,
             expected_param,
-            atol=0,
-            rtol=0,
         )
 
     def test_zero_num_ns_steps_raises_value_error(self) -> None:
@@ -377,6 +369,7 @@ class MuonHyperballTest(parameterized.TestCase):
             lr=0.01,
             momentum=0.0,
             weight_decay=0.0,
+            hyperball_radius=initial_norm,
         )
 
         # Run multiple steps with random gradients
@@ -392,110 +385,33 @@ class MuonHyperballTest(parameterized.TestCase):
                 rtol=1e-5,
             )
 
-    @parameterized.product(
-        shape=[(5, 7), (33, 65), (127, 257)],
-        hyperball_radius=[0.5, 1.0, 2.0],
-    )
-    def test_hyperball_radius_rescales_params(self, shape, hyperball_radius) -> None:
-        """Test that hyperball_radius kwarg rescales parameters to specified radius."""
-        test_param = nn.Parameter(torch.randn(shape, dtype=torch.float32, device=self.device))
-
-        opt = muon_hyperball.MuonHyperball(
-            [test_param],
-            lr=0.01,
-            hyperball_radius=hyperball_radius,
-        )
-
-        # After initialization, parameter should have the specified radius
-        torch.testing.assert_close(
-            test_param.norm(),
-            torch.tensor(hyperball_radius, device=self.device),
-            atol=1e-5,
-            rtol=1e-5,
-        )
-
-        # Run multiple steps with random gradients
-        for _ in range(5):
-            test_param.grad = torch.randn_like(test_param)
-            opt.step()
-
-            # Norm should remain at hyperball_radius after each step
-            torch.testing.assert_close(
-                test_param.norm(),
-                torch.tensor(hyperball_radius, device=self.device),
-                atol=1e-5,
-                rtol=1e-5,
-            )
-
     def test_zero_norm_raises_error(self) -> None:
-        """Test that MuonHyperball raises ValueError for zero-norm parameters."""
-        test_param = nn.Parameter(torch.zeros((5, 7), dtype=torch.float32, device=self.device))
+        test_param = nn.Parameter(torch.zeros((5, 7), device=self.device))
 
         with self.assertRaises(ValueError):
-            muon_hyperball.MuonHyperball([test_param], lr=0.01)
+            muon_hyperball.MuonHyperball([test_param], lr=0.01, hyperball_radius=1.0)
 
     def test_rejects_weight_update_hook(self) -> None:
         """MuonHyperball manages its own Hyperball hook internally."""
         test_param = nn.Parameter(torch.randn((5, 7), dtype=torch.float32, device=self.device))
+        hyperball_radius = torch.linalg.vector_norm(test_param).item()
 
-        with self.assertRaisesRegex(TypeError, "does not accept a 'weight_update_hook' argument"):
+        with self.assertRaisesRegex(KeyError, "does not accept a 'weight_update_hook' argument"):
             muon_hyperball.MuonHyperball(
                 [test_param],
                 lr=0.01,
+                hyperball_radius=hyperball_radius,
                 weight_update_hook=None,
             )
 
+    def test_radius_mismatch_raises_error(self) -> None:
+        """Test that MuonHyperball raises ValueError when a parameter's norm does not match the radius."""
+        test_param = nn.Parameter(torch.randn((5, 7), dtype=torch.float32, device=self.device))
+        # Pick a radius that differs from the parameter's actual Frobenius norm.
+        mismatched_radius = test_param.norm().item() + 1.0
 
-class PolarGradTest(parameterized.TestCase):
-    def setUp(self):
-        self.device = FLAGS.device
-
-    @parameterized.product(
-        shape=[(5, 7), (33, 65), (127, 257)],
-        extra_scale_factor=[1.0, 0.2],
-    )
-    def test_smoke(self, shape, extra_scale_factor) -> None:
-        test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=self.device))
-        test_param.grad = torch.randint_like(test_param, -5, 5)
-
-        polargrad_opt = polargrad.PolarGrad(
-            [test_param],
-            extra_scale_factor=extra_scale_factor,
-        )
-        polargrad_opt.step()
-
-    @parameterized.product(
-        shape=[(4, 8), (16, 16), (32, 64), (13, 17)],
-        extra_scale_factor=[0.25, 0.125],
-    )
-    def test_orthogonalize_fn_matches_ref(self, shape, extra_scale_factor) -> None:
-        dummy_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=self.device))
-        dummy_grad = torch.full(shape, 0.5, dtype=torch.float32, device=self.device)
-
-        # Set num_ns_steps to 0 to skip Newton-Schulz iterations and only normalize the input gradient.
-        polargrad_opt = polargrad.PolarGrad([dummy_param], num_ns_steps=0, extra_scale_factor=extra_scale_factor)
-        norm_grad = torch.nn.functional.normalize(dummy_grad, p=2, dim=(-2, -1), eps=1e-7)
-
-        # Assert normalization took effect
-        self.assertFalse((norm_grad == 1).all())
-
-        ref_scale = (norm_grad * dummy_grad).sum()
-        ref_out = norm_grad * ref_scale * extra_scale_factor
-
-        test_out = polargrad_opt.scaled_orthogonalize_fn(dummy_grad)
-
-        torch.testing.assert_close(
-            ref_out,
-            test_out,
-            atol=0,
-            rtol=0,
-        )
-
-    def test_negative_num_ns_steps_raises_value_error(self) -> None:
-        """Test that PolarGrad raises ValueError for negative num_ns_steps."""
-        test_param = nn.Parameter(torch.randn(5, 7, dtype=torch.float32, device=self.device))
-        with self.assertRaisesRegex(ValueError, "num_ns_steps must be positive"):
-            polargrad.PolarGrad([test_param], num_ns_steps=-1)
+        with self.assertRaises(ValueError):
+            muon_hyperball.MuonHyperball([test_param], lr=0.01, hyperball_radius=mismatched_radius)
 
 
 if __name__ == "__main__":

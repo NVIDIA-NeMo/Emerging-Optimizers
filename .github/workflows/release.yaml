@@ -72,7 +72,7 @@ concurrency:
 jobs:
   pre-flight:
     if: github.event_name != 'workflow_dispatch'
-    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_cicd_preflight.yml@v0.94.1
+    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_cicd_preflight.yml@c1a0837f362a1a696e647238ab1cf916b2a7cf4a # v1.8.6
 
   release:
     needs: [pre-flight]
@@ -80,7 +80,7 @@ jobs:
       !cancelled() && !failure()
       && !(needs.pre-flight.outputs.docs_only == 'true'
            || needs.pre-flight.outputs.is_deployment_workflow == 'true')
-    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_release_library.yml@v1.4.0
+    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_release_library.yml@f7af92c4d1caea5a58577ce4ac5314f7de1bc5d4 # v1.4.3
     with:
       release-ref: ${{ inputs.release-ref || github.sha }}
       python-package: emerging_optimizers
@@ -88,12 +88,12 @@ jobs:
       validate-only: ${{ github.event_name != 'workflow_dispatch' }}
       dry-run: ${{ inputs.dry-run || false }}
       version-bump-branch: ${{ inputs.version-bump-branch || github.ref_name }}
-      create-gh-release: ${{ inputs.create-gh-release || true }}
+      create-gh-release: ${{ inputs.create-gh-release || false }}
       packaging: uv
-      skip-wheel-build: true
+      skip-wheel-build: false
       app-id: ${{ vars.BOT_ID }}
       gh-release-use-changelog-builder: ${{ inputs.generate-changelog || false }}
-      publish-docs: true
+      publish-docs: ${{ inputs.publish-docs || false }}
       docs-target-path: nemo/emerging-optimizers
       docs-sync-all: true
       gh-release-from-tag: ${{ inputs.gh-release-from-tag || '' }}

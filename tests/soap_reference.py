@@ -49,6 +49,8 @@ class ReferenceSoap(optim.Optimizer):
 
     Note:
         Order of operations are slightly changed from original code to match our algorithmic choices.
+        * Current step's gradient is included in the Kronecker factors.
+        * QR path sort eigen basis right after power iteration.
     """
 
     def __init__(
@@ -278,8 +280,6 @@ class ReferenceSoap(optim.Optimizer):
                 state["exp_avg"], state, merge_dims=merge_dims, max_precond_dim=max_precond_dim
             )
 
-        # print("wtf1", state["exp_avg"])
-
     def project_back(self, grad, state, merge_dims=False, max_precond_dim=10000):
         """
         Projects the gradient back to the original space.
@@ -378,16 +378,15 @@ class ReferenceSoap(optim.Optimizer):
             exp_avg_sq = state["exp_avg_sq"]
 
         final = []
-        for ind, (m, o) in enumerate(zip(matrix, orth_matrix)):
+        for m, o in zip(matrix, orth_matrix):
             if len(m) == 0:
                 final.append([])
                 continue
-            est_eig = torch.diag(o.T @ m @ o)
-            sort_idx = torch.argsort(est_eig, descending=True)
-            exp_avg_sq = exp_avg_sq.index_select(ind, sort_idx)
-            o = o[:, sort_idx]
             power_iter = m @ o
             Q, _ = torch.linalg.qr(power_iter)
+            est_eig = (Q.T @ m * Q.T).sum(dim=-1)
+            sort_idx = torch.argsort(est_eig, descending=True)
+            Q = Q[:, sort_idx]
 
             if not float_data:
                 Q = Q.to(original_device).type(original_type)

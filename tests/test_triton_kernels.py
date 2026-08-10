@@ -14,6 +14,7 @@
 # limitations under the License.
 import torch
 import triton
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -253,7 +254,7 @@ class TsyrkIntegerInputTest(parameterized.TestCase):
         # warmup the triton kernel to avoid the wrong result from the first run.
         _ = triton_kernels.tsyrk_ex(a_warmup)
         c = triton_kernels.tsyrk_ex(a)
-        torch.testing.assert_close(c, ref, atol=0, rtol=0)
+        assert_equal(c, ref)
 
     @parameterized.product(
         ({"n": 128, "k": 128}, {"n": 256, "k": 64}),
@@ -269,7 +270,7 @@ class TsyrkIntegerInputTest(parameterized.TestCase):
         # warmup the triton kernel to avoid the wrong result from the first run.
         _ = triton_kernels.tsyrk_ex_small_matrix(a_warmup)
         c = triton_kernels.tsyrk_ex_small_matrix(a)
-        torch.testing.assert_close(c, ref, atol=0, rtol=0)
+        assert_equal(c, ref)
 
     @parameterized.product(
         ({"n": 128, "alpha": 0.5, "beta": 0.5}, {"n": 256, "alpha": 0.25, "beta": 0.25}),
@@ -287,7 +288,7 @@ class TsyrkIntegerInputTest(parameterized.TestCase):
         # warmup the triton kernel to avoid the wrong result from the first run.
         _ = triton_kernels.tsyrk_ex(a_warmup, a_warmup, alpha=alpha, beta=beta)
         c = triton_kernels.tsyrk_ex(a, a, alpha=alpha, beta=beta)
-        torch.testing.assert_close(c, ref, atol=0, rtol=0)
+        assert_equal(c, ref)
 
     @parameterized.product(
         ({"n": 128, "alpha": 0.5, "beta": 0.5}, {"n": 256, "alpha": 0.25, "beta": 0.25}),
@@ -305,7 +306,7 @@ class TsyrkIntegerInputTest(parameterized.TestCase):
         # warmup the triton kernel to avoid the wrong result from the first run.
         _ = triton_kernels.tsyrk_ex_small_matrix(a_warmup, a_warmup, alpha=alpha, beta=beta)
         c = triton_kernels.tsyrk_ex_small_matrix(a, a, alpha=alpha, beta=beta)
-        torch.testing.assert_close(c, ref, atol=0, rtol=0)
+        assert_equal(c, ref)
 
 
 if __name__ == "__main__":

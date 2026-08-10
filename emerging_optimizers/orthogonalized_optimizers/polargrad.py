@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Literal
+
 import torch
 from absl import logging
 from torch.optim.optimizer import ParamsT
@@ -23,9 +25,10 @@ from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
 from emerging_optimizers.utils import FP32MatmulPrecT
+from emerging_optimizers.utils.eig import eigh_with_fallback
 
 
-__all__ = ["PolarGrad"]
+__all__ = ["PolarGrad", "left_polargrad_orth_fn", "one_sided_polargrad_orth_fn", "right_polargrad_orth_fn"]
 
 
 @registry.register_optimizer("polargrad")
@@ -79,8 +82,11 @@ class PolarGrad(OrthogonalizedOptimizer):
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
-                f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient, "
-                f"multiplied with the nuclear norm of grad, extra_scale_factor={extra_scale_factor}"
+                "Orthogonalizing grad with %s steps, %s coefficient, "
+                "multiplied with the nuclear norm of grad, extra_scale_factor=%s",
+                num_ns_steps,
+                coefficient_type,
+                extra_scale_factor,
             )
             orth_grad = muon_utils.newton_schulz(
                 grad,
@@ -103,3 +109,96 @@ class PolarGrad(OrthogonalizedOptimizer):
 
 
 PolarGrad.__doc__ = PolarGrad.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
+
+
+def one_sided_polargrad_orth_fn(
+    grad: torch.Tensor,
+    *,
+    side: Literal["left", "right"],
+    alpha: float = 1.0,
+    center_rows: bool = False,
+    eps: float = 1e-15,
+    extra_scale_factor: float = 1.0,
+) -> torch.Tensor:
+    r"""One-sided (spectral) polar orthogonalization of a matrix.
+
+    Orthogonalizes a single polar factor of ``G``, selected by ``side``:
+
+    .. math::
+        u_\text{left} = (G \, G^\top)^{-1/2} \, G, \qquad
+        u_\text{right} = G \, (G^\top G)^{-1/2}, \qquad
+        \text{update} = \lVert G \rVert_*^{\,\alpha} \, u
+
+    ``side="right"`` suits tall matrices (e.g. an embedding or LM-head weight, ``vocab x hidden``);
+    ``side="left"`` suits wide matrices (e.g. an MoE router weight, ``num_experts x hidden``).
+
+    Args:
+        grad: The (momentum) tensor to orthogonalize.
+        side: Which polar factor to orthogonalize, ``"left"`` or ``"right"``.
+        alpha: Exponent applied to the nuclear-norm scale factor.
+        center_rows: If True, subtract the per-column mean (the average over the row axis, ``dim=0``)
+            before and after the update, so each column is zero-mean.
+        eps: Floor on the Gram eigenvalues for the nuclear-norm computation.
+        extra_scale_factor: Extra multiplier on the update.
+
+    Returns:
+        The scaled one-sided polar update, same shape and dtype as ``grad``.
+
+    Raises:
+        ValueError: If ``side`` is not ``"left"`` or ``"right"``.
+    """
+    if side not in ("left", "right"):
+        raise ValueError(f"side must be 'left' or 'right', got {side!r}")
+
+    m = grad.to(torch.float32)
+    if center_rows:
+        m = m - m.mean(dim=0, keepdim=True)
+
+    gram = m @ m.transpose(-1, -2) if side == "left" else m.transpose(-1, -2) @ m
+    eigvals, eigvecs = eigh_with_fallback(gram)
+    eigvals.clamp_min_(eps)
+    cutoff = eigvals.amax() * gram.shape[-1] * torch.finfo(m.dtype).eps
+    inv_sqrt_eigvals = torch.where(eigvals > cutoff, eigvals.rsqrt(), torch.zeros_like(eigvals))
+    gram_inv_sqrt = (eigvecs * inv_sqrt_eigvals.unsqueeze(-2)) @ eigvecs.transpose(-1, -2)
+
+    u = gram_inv_sqrt @ m if side == "left" else m @ gram_inv_sqrt
+    nuclear_norm = eigvals.sqrt().sum()
+    update = u * nuclear_norm.pow(alpha) * extra_scale_factor
+
+    if center_rows:
+        update = update - update.mean(dim=0, keepdim=True)
+    return update.to(grad.dtype)
+
+
+def right_polargrad_orth_fn(
+    grad: torch.Tensor,
+    *,
+    alpha: float = 1.0,
+    center_rows: bool = False,
+    eps: float = 1e-15,
+    extra_scale_factor: float = 1.0,
+) -> torch.Tensor:
+    r"""Right-spectral orthogonalization for tall matrices (e.g. embedding or LM-head weights).
+
+    Equivalent to :func:`one_sided_polargrad_orth_fn` with ``side="right"``.
+    """
+    return one_sided_polargrad_orth_fn(
+        grad, side="right", alpha=alpha, center_rows=center_rows, eps=eps, extra_scale_factor=extra_scale_factor
+    )
+
+
+def left_polargrad_orth_fn(
+    grad: torch.Tensor,
+    *,
+    alpha: float = 1.0,
+    center_rows: bool = False,
+    eps: float = 1e-15,
+    extra_scale_factor: float = 1.0,
+) -> torch.Tensor:
+    r"""Left-spectral orthogonalization for wide matrices (e.g. MoE router weights).
+
+    Equivalent to :func:`one_sided_polargrad_orth_fn` with ``side="left"``.
+    """
+    return one_sided_polargrad_orth_fn(
+        grad, side="left", alpha=alpha, center_rows=center_rows, eps=eps, extra_scale_factor=extra_scale_factor
+    )

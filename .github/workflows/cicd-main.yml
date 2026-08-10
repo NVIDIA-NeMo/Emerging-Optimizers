@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   pre-flight:
-    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_cicd_preflight.yml@v0.80.1
+    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_cicd_preflight.yml@c1a0837f362a1a696e647238ab1cf916b2a7cf4a # v1.8.6
     with:
       default_runner_prefix: nemo-ci-aws-gpu-x2
       non_nvidia_runner_prefix: nemo-ci-aws-gpu-x2-ephemeral
@@ -70,7 +70,7 @@ jobs:
       - name: Get PR info
         id: get-pr-info
         if: startsWith(github.ref, 'refs/heads/pull-request/')
-        uses: nv-gha-runners/get-pr-info@main
+        uses: nv-gha-runners/get-pr-info@090577647b8ddc4e06e809e264f7881650ecdccf # main
 
       - name: Get merge commit sha
         shell: bash -x -e -u -o pipefail {0}
@@ -86,7 +86,7 @@ jobs:
           echo "main=${SHA}" | tee -a "$GITHUB_OUTPUT"
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           submodules: recursive
           ref: ${{ steps.sha.outputs.main }}
@@ -123,7 +123,7 @@ jobs:
           echo "EOF" | tee -a $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Compute cache keys
         id: cache_keys
@@ -142,7 +142,7 @@ jobs:
           echo "cache-to=type=registry,ref=${{ needs.pre-flight.outputs.registry }}/emerging-optimizers:${KEY}-buildcache,mode=max" | tee -a "$GITHUB_OUTPUT"
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           file: ./docker/Dockerfile.ci
           push: true
@@ -182,7 +182,7 @@ jobs:
       && !cancelled()
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: main
         uses: ./.github/actions/test-template
         with:
@@ -197,7 +197,7 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: test-results-${{ matrix.script }}
           path: test-results/**/*.xml
@@ -217,7 +217,7 @@ jobs:
       && !cancelled()
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: main
         uses: ./.github/actions/test-template
         with:
@@ -230,7 +230,7 @@ jobs:
 
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: test-results-L1_Tests_GPU
           path: test-results/**/*.xml
@@ -246,13 +246,13 @@ jobs:
     steps:
       - name: Download Test Results
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: test-results-L0_*
           merge-multiple: true
 
       - name: Publish Test Report
-        uses: EnricoMi/publish-unit-test-result-action@v2
+        uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3 # v2
         with:
           files: "**/*.xml"
           fail_on: "nothing"
@@ -267,13 +267,13 @@ jobs:
     steps:
       - name: Download Test Results
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: test-results-L1_*
           merge-multiple: true
 
       - name: Publish Test Report
-        uses: EnricoMi/publish-unit-test-result-action@v2
+        uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3 # v2
         with:
           files: "**/*.xml"
           fail_on: "nothing"
@@ -296,7 +296,7 @@ jobs:
     permissions: write-all
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Get workflow result
         id: result
@@ -323,7 +323,7 @@ jobs:
           echo "code=$RESULT" | tee -a $GITHUB_OUTPUT
 
       - name: Checkout for GH CLI
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Remove label if not cancelled
         if: |
@@ -340,7 +340,7 @@ jobs:
           steps.result.outputs.code == 'success'
           && github.event_name == 'pull_request'
           && env.SLACK_WEBHOOK != ''
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
           REPOSITORY: ${{ github.repository }}
@@ -398,7 +398,7 @@ jobs:
       && !cancelled()
     steps:
       - name: Generate fake coverage report
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           github-token: ${{ secrets.PAT }}
           script: |
@@ -427,13 +427,13 @@ jobs:
       - name: Get PR info
         id: get-pr-info
         if: startsWith(github.ref, 'refs/heads/pull-request/')
-        uses: nv-gha-runners/get-pr-info@main
+        uses: nv-gha-runners/get-pr-info@090577647b8ddc4e06e809e264f7881650ecdccf # main
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Download coverage reports of current branch
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: coverage-${{ matrix.flag }}-*
 
@@ -451,7 +451,7 @@ jobs:
           ls -al
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
@@ -459,7 +459,7 @@ jobs:
           base_sha: ${{ fromJSON(steps.get-pr-info.outputs.pr-info || '{}').base.sha }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: coverage-${{ matrix.flag }}-aggregated
           path: |

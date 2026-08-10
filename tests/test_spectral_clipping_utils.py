@@ -38,7 +38,7 @@ class TestSpectralClipping(parameterized.TestCase):
         self.prev_precision = torch.get_float32_matmul_precision()
         torch.set_float32_matmul_precision("highest")
         self.device = FLAGS.device
-        logging.info(f"Using device: {self.device}")
+        logging.info("Using device: %s", self.device)
 
     def tearDown(self):
         torch.set_float32_matmul_precision(self.prev_precision)
@@ -47,7 +47,7 @@ class TestSpectralClipping(parameterized.TestCase):
         dims=[(256, 128), (128, 256), (512, 512), (2048, 2048)],
         sigma_range=[(0.2, 0.8), (0.1, 20)],
     )
-    def test_spectral_clipping(self, dims, sigma_range):
+    def test_spectral_clipping_clips_singular_values_to_range(self, dims, sigma_range):
         """Test that spectral clipping properly clips singular values to the specified range."""
 
         sigma_min, sigma_max = sigma_range
@@ -59,16 +59,16 @@ class TestSpectralClipping(parameterized.TestCase):
 
         clipped_x = orthogonalized_optimizers.spectral_clip(x, sigma_min=sigma_min, sigma_max=sigma_max)
 
-        _, singular_values, _ = torch.linalg.svd(clipped_x, full_matrices=False)
+        singular_values = torch.linalg.svdvals(clipped_x.double())
 
         min_sv = singular_values.min().item()
         max_sv = singular_values.max().item()
 
-        logging.debug(f"Original matrix shape: {x.shape}")
-        logging.debug(f"Original singular values range: [{original_min_sv:.6f}, {original_max_sv:.6f}]")
-        logging.debug(f"Clipped singular values range: [{min_sv:.6f}, {max_sv:.6f}]")
-        logging.debug(f"Target range: [{sigma_min:.6f}, {sigma_max:.6f}]")
-        logging.debug(f"Shape preservation: input {x.shape} -> output {clipped_x.shape}")
+        logging.debug("Original matrix shape: %s", x.shape)
+        logging.debug("Original singular values range: [%.6f, %.6f]", original_min_sv, original_max_sv)
+        logging.debug("Clipped singular values range: [%.6f, %.6f]", min_sv, max_sv)
+        logging.debug("Target range: [%.6f, %.6f]", sigma_min, sigma_max)
+        logging.debug("Shape preservation: input %s -> output %s", x.shape, clipped_x.shape)
 
         # use higher tolerance for lower singular values
         # typically, this algorithm introduces more error for lower singular values
@@ -93,23 +93,23 @@ class TestSpectralClipping(parameterized.TestCase):
         """Test that spectral hardcap properly clips singular values from above to be less than beta."""
         x = torch.randn(dims, device=self.device, dtype=torch.float32)
 
-        U_orig, original_singular_values, Vt_orig = torch.linalg.svd(x, full_matrices=False)
+        U_orig, original_singular_values, Vt_orig = torch.linalg.svd(x.double(), full_matrices=False)
         original_min_sv = original_singular_values.min().item()
         original_max_sv = original_singular_values.max().item()
-        logging.debug(f"Original matrix shape: {x.shape}")
-        logging.debug(f"Original singular values range: [{original_min_sv:.6f}, {original_max_sv:.6f}]")
+        logging.debug("Original matrix shape: %s", x.shape)
+        logging.debug("Original singular values range: [%.6f, %.6f]", original_min_sv, original_max_sv)
 
         hardcapped_x = orthogonalized_optimizers.spectral_hardcap(x, beta=beta)
 
-        U_hard, singular_values, Vt_hard = torch.linalg.svd(hardcapped_x, full_matrices=False)
+        U_hard, singular_values, Vt_hard = torch.linalg.svd(hardcapped_x.double(), full_matrices=False)
 
         tolerance_upper = 1e-1
 
         max_sv = singular_values.max().item()
 
-        logging.debug(f"Hardcapped max singular value: {max_sv:.6f}")
-        logging.debug(f"Beta (upper bound): {beta:.6f}")
-        logging.debug(f"Shape preservation: input {x.shape} -> output {hardcapped_x.shape}")
+        logging.debug("Hardcapped max singular value: %.6f", max_sv)
+        logging.debug("Beta (upper bound): %.6f", beta)
+        logging.debug("Shape preservation: input %s -> output %s", x.shape, hardcapped_x.shape)
 
         self.assertLessEqual(
             max_sv - tolerance_upper,
@@ -126,7 +126,7 @@ class TestSpectralClipping(parameterized.TestCase):
         relative_polar_frobenius_diff = torch.norm(polar_orig - polar_hard, "fro") / torch.norm(polar_orig, "fro")
         polar_tolerance = 1e-4
 
-        logging.debug(f"Polar factor Frobenius norm difference: {relative_polar_frobenius_diff:.6f}")
+        logging.debug("Polar factor Frobenius norm difference: %.6f", relative_polar_frobenius_diff)
 
         self.assertLessEqual(
             relative_polar_frobenius_diff,

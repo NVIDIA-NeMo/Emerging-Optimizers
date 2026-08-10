@@ -92,7 +92,7 @@ class Spel(OrthogonalizedOptimizer):
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
 
         def scaled_orthogonalize_fn(X: torch.Tensor) -> torch.Tensor:
-            logging.debug(f"Orthogonalizing with {num_ns_steps} steps, {coefficient_type} coefficient")
+            logging.debug("Orthogonalizing with %s steps, %s coefficient", num_ns_steps, coefficient_type)
             return muon_utils.newton_schulz(
                 X,
                 steps=num_ns_steps,

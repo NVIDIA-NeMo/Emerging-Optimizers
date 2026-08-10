@@ -105,7 +105,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay_method: opt_mixin.WeightDecayT,
         fp32_matmul_prec: FP32MatmulPrecT,
         scaled_orthogonalize_fn: Callable | None = None,
-        weight_update_hook: WeightUpdateHook | None = None,
+        weight_update_hook: WeightUpdateHook[Any] | None = None,
         **kwargs: Any,
     ):
         if scaled_orthogonalize_fn is None:
@@ -115,7 +115,9 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self.fp32_matmul_prec = fp32_matmul_prec
         self.nesterov = nesterov
         self.weight_decay_method = weight_decay_method
-        self.weight_update_hook = weight_update_hook if weight_update_hook is not None else NoOpWeightUpdateHook()
+        self._weight_update_hook: WeightUpdateHook[Any] = (
+            weight_update_hook if weight_update_hook is not None else NoOpWeightUpdateHook()
+        )
 
         default_args_dict = dict(
             lr=lr,
@@ -199,10 +201,10 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 # perform weight update with pre and post weight update functions for subclass customization
                 self.pre_weight_update_fn_inplace(p, orth_grad)
-                weight_update_hook_pre_update_state = self.weight_update_hook.pre_weight_update_inplace(p, orth_grad)
+                hook_state = self._weight_update_hook.pre_weight_update_inplace(p, orth_grad)
                 p.add_(orth_grad, alpha=-group["lr"])
                 self.post_weight_update_fn_inplace(p)
-                self.weight_update_hook.post_weight_update_inplace(p, weight_update_hook_pre_update_state)
+                self._weight_update_hook.post_weight_update_inplace(p, hook_state)
 
         return None
 

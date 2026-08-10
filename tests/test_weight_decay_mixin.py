@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import torch
+from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -55,8 +56,8 @@ class WeightDecayMixinTest(parameterized.TestCase):
 
         helper._apply_weight_decay_inplace(p, grad, lr=0.1, weight_decay=0.0)
 
-        torch.testing.assert_close(p, p_orig, atol=0, rtol=0)
-        torch.testing.assert_close(grad, grad_orig, atol=0, rtol=0)
+        assert_equal(p, p_orig)
+        assert_equal(grad, grad_orig)
 
     @parameterized.parameters(
         {"lr": 0.25, "wd": 0.5},
@@ -73,8 +74,8 @@ class WeightDecayMixinTest(parameterized.TestCase):
         helper._apply_weight_decay_inplace(p, grad, lr=lr, weight_decay=wd)
 
         expected_p = p_orig * (1 - wd * lr)
-        torch.testing.assert_close(p, expected_p, atol=0, rtol=0)
-        torch.testing.assert_close(grad, grad_orig, atol=0, rtol=0)
+        assert_equal(p, expected_p)
+        assert_equal(grad, grad_orig)
 
     @parameterized.parameters(
         {"lr": 0.25, "wd": 0.5},
@@ -91,8 +92,8 @@ class WeightDecayMixinTest(parameterized.TestCase):
         helper._apply_weight_decay_inplace(p, grad, lr=lr, weight_decay=wd)
 
         expected_p = p_orig * (1 - wd)
-        torch.testing.assert_close(p, expected_p, atol=0, rtol=0)
-        torch.testing.assert_close(grad, grad_orig, atol=0, rtol=0)
+        assert_equal(p, expected_p)
+        assert_equal(grad, grad_orig)
 
     def test_independent_ignores_lr(self):
         """Two different lr values must produce identical results for independent decay."""
@@ -105,7 +106,7 @@ class WeightDecayMixinTest(parameterized.TestCase):
         _WeightDecayTestHelper("independent")._apply_weight_decay_inplace(p1, grad1, lr=0.001, weight_decay=wd)
         _WeightDecayTestHelper("independent")._apply_weight_decay_inplace(p2, grad2, lr=100.0, weight_decay=wd)
 
-        torch.testing.assert_close(p1, p2, atol=0, rtol=0)
+        assert_equal(p1, p2)
 
     @parameterized.parameters(
         {"lr": 0.1, "wd": 0.5},
@@ -122,8 +123,8 @@ class WeightDecayMixinTest(parameterized.TestCase):
         helper._apply_weight_decay_inplace(p, grad, lr=lr, weight_decay=wd)
 
         expected_grad = grad_orig + p_orig * wd
-        torch.testing.assert_close(p, p_orig, atol=0, rtol=0)
-        torch.testing.assert_close(grad, expected_grad, atol=0, rtol=0)
+        assert_equal(p, p_orig)
+        assert_equal(grad, expected_grad)
 
     def test_l2_ignores_lr(self):
         """Two different lr values must produce identical results for L2 decay."""
@@ -136,7 +137,7 @@ class WeightDecayMixinTest(parameterized.TestCase):
         _WeightDecayTestHelper("l2")._apply_weight_decay_inplace(p1, grad1, lr=0.001, weight_decay=wd)
         _WeightDecayTestHelper("l2")._apply_weight_decay_inplace(p2, grad2, lr=100.0, weight_decay=wd)
 
-        torch.testing.assert_close(grad1, grad2, atol=0, rtol=0)
+        assert_equal(grad1, grad2)
 
     @parameterized.parameters(
         {"lr": 0.25, "wd": 0.5},
@@ -153,8 +154,8 @@ class WeightDecayMixinTest(parameterized.TestCase):
         helper._apply_weight_decay_inplace(p, grad, lr=lr, weight_decay=wd)
 
         expected_p = p_orig * (1 - wd * lr * lr)
-        torch.testing.assert_close(p, expected_p, atol=0, rtol=0)
-        torch.testing.assert_close(grad, grad_orig, atol=0, rtol=0)
+        assert_equal(p, expected_p)
+        assert_equal(grad, grad_orig)
 
     def test_default_method_is_l2(self):
         """When weight_decay_method attribute is absent, default to L2."""
@@ -167,8 +168,8 @@ class WeightDecayMixinTest(parameterized.TestCase):
         helper._apply_weight_decay_inplace(p, grad, lr=0.1, weight_decay=wd)
 
         expected_grad = grad_orig + p_orig * wd
-        torch.testing.assert_close(p, p_orig, atol=0, rtol=0)
-        torch.testing.assert_close(grad, expected_grad, atol=0, rtol=0)
+        assert_equal(p, p_orig)
+        assert_equal(grad, expected_grad)
 
     def test_invalid_method_raises(self):
         """An unrecognized weight_decay_method must raise ValueError."""

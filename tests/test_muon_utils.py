@@ -16,6 +16,7 @@ import math
 from copy import deepcopy
 
 import torch
+from _comparison import assert_close_to_orthogonal, assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -83,7 +84,7 @@ class TestNewtonSchulz(parameterized.TestCase):
         (512, 256),
         (256, 512),
     )
-    def test_newtonschulz5_svd_close(self, dim1, dim2):
+    def test_newtonschulz5_close_to_svd(self, dim1, dim2):
         shape = (dim1, dim2)
         x = torch.randn(*shape, device=self.device, dtype=torch.float32)
         out_zeropowerns = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic")
@@ -119,6 +120,15 @@ class TestNewtonSchulz(parameterized.TestCase):
             atol=1e-6,
             rtol=1e-7,
         )
+
+    def test_preserve_values_with_underflowed_norm_in_fp64(self):
+        scale = 1e-30
+        x = torch.randn(256, 256, device=self.device, dtype=torch.float32) * scale
+        assert torch.linalg.vector_norm(x) == 0  # should underflow
+        norm_ref = torch.linalg.vector_norm(x, dtype=torch.double)
+        assert norm_ref != 0
+        out = muon_utils.newton_schulz(x, steps=0, normalize_in_double=True)
+        torch.testing.assert_close(x / norm_ref, out, atol=0, rtol=1e-6)
 
     @parameterized.parameters(
         (2, 256, 256),
@@ -230,14 +240,26 @@ class TestNewtonSchulz(parameterized.TestCase):
         l2_norm_diff_polar = torch.norm(out_polar_express.float() - out_svd.float(), p=2)
         l2_norm_diff_quintic = torch.norm(out_quintic.float() - out_svd.float(), p=2)
 
-        logging.info(f"{coefficient_type} norm difference: {l2_norm_diff_polar:.6f}")
-        logging.info(f"Quintic norm difference: {l2_norm_diff_quintic:.6f}")
+        logging.info("%s norm difference: %.6f", coefficient_type, l2_norm_diff_polar)
+        logging.info("Quintic norm difference: %.6f", l2_norm_diff_quintic)
 
         self.assertLess(
             l2_norm_diff_polar,
             l2_norm_diff_quintic,
             f"{coefficient_type} norm is larger than Quintic norm: {l2_norm_diff_polar:.6f} > {l2_norm_diff_quintic:.6f}",
         )
+
+    @parameterized.product(size=[(512, 256), (256, 512)])
+    def test_polar_express_16steps_almost_orthogonal(self, size):
+        """Polar Express Newton-Schulz with enough steps yields an almost-orthogonal matrix.
+
+        The output ``O`` should satisfy ``O Oᵀ ≈ I`` (or ``Oᵀ O ≈ I`` for the tall case), i.e. its
+        smaller-dimension Gram is close to the identity.
+        """
+        dim1, dim2 = size
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        out = muon_utils.newton_schulz(x, steps=16, coefficient_type="polar_express")
+        assert_close_to_orthogonal(out, diag_atol=1e-5, off_diag_atol=1e-5)
 
     @parameterized.parameters(
         (511, 513),
@@ -330,6 +352,49 @@ class TestNewtonSchulz(parameterized.TestCase):
         x = torch.randn(2, 4, 8, device=self.device, dtype=torch.float32)
         with utils.fp32_matmul_precision("medium"), self.assertRaisesRegex(TypeError, "use_syrk does not support"):
             muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic", use_syrk=True)
+
+    @parameterized.parameters(
+        (4, 4),
+        (4, 8),
+        (8, 4),
+    )
+    def test_newton_schulz_use_syrk_falls_back_for_non_8_aligned_shape(self, dim1, dim2) -> None:
+        """Test that use_syrk falls back to GEMM for shapes that cannot satisfy bf16 TMA alignment."""
+        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        gemm_call_count = 0
+        original_gemm_step = muon_utils.newton_schulz_step
+        original_tsyrk_step = muon_utils.newton_schulz_step_tsyrk
+
+        def record_gemm_call(
+            X: torch.Tensor,
+            a: float,
+            b: float,
+            c: float,
+            tp_group: torch.distributed.ProcessGroup | None = None,
+        ) -> torch.Tensor:
+            nonlocal gemm_call_count
+            gemm_call_count += 1
+            return original_gemm_step(X, a, b, c, tp_group=tp_group)
+
+        def fail_if_called(
+            X: torch.Tensor,
+            a: float,
+            b: float,
+            c: float,
+            tp_group: torch.distributed.ProcessGroup | None = None,
+        ) -> torch.Tensor:
+            raise AssertionError("SYRK step should not be called for non-8-aligned shape")
+
+        try:
+            muon_utils.newton_schulz_step = record_gemm_call
+            muon_utils.newton_schulz_step_tsyrk = fail_if_called
+            with utils.fp32_matmul_precision("medium"):
+                muon_utils.newton_schulz(x, steps=1, coefficient_type="simple", use_syrk=True)
+        finally:
+            muon_utils.newton_schulz_step = original_gemm_step
+            muon_utils.newton_schulz_step_tsyrk = original_tsyrk_step
+
+        self.assertEqual(gemm_call_count, 1)
 
 
 class TestMuonUtils(parameterized.TestCase):
@@ -438,7 +503,7 @@ class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):
         test_out = muon_utils.newton_schulz_step_tsyrk(x, 2**-1, 2**-2, 2**-3)
         test_ref = muon_utils.newton_schulz_step(x, 2**-1, 2**-2, 2**-3)
 
-        torch.testing.assert_close(test_out, test_ref, atol=0, rtol=0)
+        assert_equal(test_out, test_ref)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 import torch
 
@@ -20,20 +20,29 @@ import torch
 __all__ = ["NoOpWeightUpdateHook", "WeightUpdateHook"]
 
 
-class WeightUpdateHook(Protocol):
-    """Protocol for behavior around an optimizer's final in-place weight update."""
+HookStateT = TypeVar("HookStateT")
+
+
+class WeightUpdateHook(Protocol[HookStateT]):
+    """Static structural contract for behavior around the final weight update.
+
+    PEP 544 structural typing lets third-party hooks satisfy this interface without
+    inheriting from an Emerging Optimizers base class. An abstract base class is not
+    needed because hooks share no implementation or runtime state, and the optimizer
+    does not perform runtime ``isinstance`` checks.
+    """
 
     def pre_weight_update_inplace(
         self,
         p: torch.Tensor,
         update: torch.Tensor,
-    ) -> torch.Tensor | None:
+    ) -> HookStateT:
         """Called immediately before ``p.add_(update, alpha=-lr)`` and returns pre-update state."""
 
     def post_weight_update_inplace(
         self,
         p: torch.Tensor,
-        pre_update_state: torch.Tensor | None,
+        pre_update_state: HookStateT,
     ) -> None:
         """Called after the optimizer's final update and optimizer-specific post-update hook."""
 
@@ -51,6 +60,6 @@ class NoOpWeightUpdateHook:
     def post_weight_update_inplace(
         self,
         p: torch.Tensor,
-        pre_update_state: torch.Tensor | None,
+        pre_update_state: None,
     ) -> None:
         pass

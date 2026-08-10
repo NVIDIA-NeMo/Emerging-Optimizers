@@ -191,7 +191,7 @@ No JUnit XML, no `coverage run` wrapping — those are for CI's reporting pipeli
 
 - **GPU not visible inside container** → check `docker info | grep -i runtime` shows `nvidia`, and that `--gpus all` is passed. The NGC image won't fall back to CPU.
 - **`uv sync` reinstalling torch** → you forgot `--system-site-packages` on the venv create, or dropped a `--no-install-package` flag.
-- **Tests fail only with `--seed=42`** → likely a tolerance issue. The L0 GPU script runs the suite twice (random + fixed) for exactly this reason. See history of `tests/test_sinkhorn.py` for a recent example (commit `b64b9b2` relaxed a tolerance).
+- **Tests fail only with `--seed=42`** → likely a tolerance issue. The L0 GPU script runs the suite twice (random + fixed) for exactly this reason.
 - **Parameterized test selection failing** → absl synthesizes `_0/_1/...` suffixes for `parameterized.product` / `parameterized.parameters`; select by class name (`ClassName`), not bare method.
 - **Pre-commit modifies files** → ruff and end-of-file-fixer auto-fix; rerun until clean.
 - **`set -e` swallows test failures** → the inline container script runs under `bash -euc`. A bare failing command (e.g. `python tests/foo.py`) aborts the script before any post-hoc `[[ $? -eq 0 ]] || failed+=(...)` check can run. Always use the `cmd || failed+=(...)` form so the failure is part of an `||` list (which `set -e` ignores).

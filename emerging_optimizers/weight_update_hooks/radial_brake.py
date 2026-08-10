@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
+
 import torch
 
 
@@ -27,41 +29,56 @@ class RadialBrake:
 
         \\|w_{brake}\\| = \\|w_{prev}\\| + s(\\|w\\| - \\|w_{prev}\\|)
 
-    where ``s`` is ``outward_scale_factor`` when the update increases the norm, otherwise
-    ``inward_scale_factor``.
+    where ``s`` is ``outward_scale`` when the update increases the norm, otherwise
+    ``inward_scale``.
     """
 
     def __init__(
         self,
-        outward_scale_factor: float = 0.5,
-        inward_scale_factor: float = 1.0,
-        eps: float = 1e-12,
+        outward_scale: float = 0.5,
+        inward_scale: float = 1.0,
+        eps: float = 1e-15,
     ) -> None:
-        if not 0.0 <= outward_scale_factor <= 1.0:
-            raise ValueError(f"outward_scale_factor must be in [0, 1], got {outward_scale_factor}")
-        if not 0.0 <= inward_scale_factor <= 1.0:
-            raise ValueError(f"inward_scale_factor must be in [0, 1], got {inward_scale_factor}")
-        self.outward_scale_factor = outward_scale_factor
-        self.inward_scale_factor = inward_scale_factor
+        if not 0.0 <= outward_scale <= 1.0:
+            raise ValueError(f"outward_scale must be in [0, 1], got {outward_scale}")
+        if not 0.0 <= inward_scale <= 1.0:
+            raise ValueError(f"inward_scale must be in [0, 1], got {inward_scale}")
+        if not math.isfinite(eps) or eps <= 0.0:
+            raise ValueError(f"eps must be finite and positive, got {eps}")
+        self.outward_scale = outward_scale
+        self.inward_scale = inward_scale
         self.eps = eps
+
+    def _norm_or_zero(self, tensor: torch.Tensor) -> torch.Tensor:
+        norm = torch.linalg.vector_norm(tensor, dtype=torch.float32)
+        return torch.where(norm < self.eps, torch.zeros_like(norm), norm)
 
     def pre_weight_update_inplace(
         self,
         p: torch.Tensor,
         update: torch.Tensor,
     ) -> torch.Tensor:
-        return torch.linalg.vector_norm(p.detach().to(torch.float32))
+        return self._norm_or_zero(p)
 
     def post_weight_update_inplace(
         self,
         p: torch.Tensor,
-        pre_update_state: torch.Tensor | None,
+        pre_update_state: torch.Tensor,
     ) -> None:
-        if pre_update_state is None:
-            raise RuntimeError("RadialBrake requires pre-update norm state")
         pre_norm = pre_update_state
-        post_norm = torch.linalg.vector_norm(p.detach().to(torch.float32))
+        post_norm = self._norm_or_zero(p)
         norm_delta = post_norm - pre_norm
-        scale_factor = self.outward_scale_factor if norm_delta.item() > 0 else self.inward_scale_factor
-        target_norm = pre_norm + scale_factor * norm_delta
-        p.mul_((target_norm / post_norm.clamp_min(self.eps)).to(dtype=p.dtype))
+        outward_scale = torch.as_tensor(self.outward_scale, device=p.device, dtype=torch.float32)
+        inward_scale = torch.as_tensor(self.inward_scale, device=p.device, dtype=torch.float32)
+        scale = torch.where(
+            norm_delta >= self.eps,
+            outward_scale,
+            torch.where(norm_delta <= -self.eps, inward_scale, torch.zeros_like(norm_delta)),
+        )
+        target_norm = pre_norm + scale * norm_delta
+        projection_scale = torch.where(
+            post_norm < self.eps,
+            torch.zeros_like(post_norm),
+            target_norm / post_norm.clamp_min(self.eps),
+        )
+        p.mul_(projection_scale.to(dtype=p.dtype))

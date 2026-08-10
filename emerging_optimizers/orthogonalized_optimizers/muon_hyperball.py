@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from typing import Any
 
 import torch
@@ -36,8 +35,8 @@ class MuonHyperball(muon.Muon):
 
         W_{t+1} = R \\cdot \\text{normalize}(W_t - \\text{lr} \\cdot R \\cdot \\text{normalize}(\\text{update}))
 
-    where :math:`R` is the Frobenius norm of :math:`W_t` (or a user-specified radius). This keeps
-    the weight matrix at constant scale while updating.
+    where :math:`R` is the user-specified Frobenius norm. This keeps the weight matrix at
+    constant scale while updating.
 
     Warning:
         This optimizer is experimental and may change in future versions.
@@ -48,40 +47,49 @@ class MuonHyperball(muon.Muon):
 
     Args:
         *args: Arguments passed to Muon.
+        hyperball_radius: Fixed radius for the hyperball. All parameters must
+            already have this Frobenius norm at construction time.
         hyperball_eps: Epsilon for numerical stability in normalization.
-            Default: ``1e-8``.
-        hyperball_radius: Fixed radius for the hyperball. If ``None`` (default),
-            uses each parameter's initial Frobenius norm as its radius. If specified, all
-            parameters will be rescaled to have this radius at initialization.
         **kwargs: Keyword arguments passed to Muon.
+
+    Raises:
+        ValueError: If any parameter has zero norm, or if a parameter's
+            Frobenius norm does not match ``hyperball_radius``.
 
     """
 
     def __init__(
         self,
         *args: Any,
-        hyperball_eps: float = 1e-8,
-        hyperball_radius: float | None = None,
+        hyperball_radius: float,
+        hyperball_eps: float = 1e-15,
         **kwargs: Any,
     ) -> None:
         if "weight_update_hook" in kwargs:
-            raise TypeError(
+            raise KeyError(
                 "MuonHyperball does not accept a 'weight_update_hook' argument; "
                 "it manages its own Hyperball hook internally."
             )
         kwargs["weight_update_hook"] = Hyperball(radius=hyperball_radius, eps=hyperball_eps)
         super().__init__(*args, **kwargs)
 
-        # Validate and optionally rescale parameters based on hyperball_radius.
         with torch.no_grad():
             for group in self.param_groups:
                 for p in group["params"]:
-                    p_norm = p.norm()
-                    # Validate that parameter has non-zero norm.
-                    if p_norm.item() == 0:
+                    p_norm = torch.linalg.vector_norm(p, dtype=torch.float32)
+                    if p_norm < hyperball_eps:  # p_norm is non-negative, abs() is not needed
                         raise ValueError(
-                            "MuonHyperball requires all parameters to have non-zero norm. Found parameter with zero norm."
+                            "MuonHyperball requires all parameters to have non-zero norm. "
+                            "Found parameter with almost zero norm."
                         )
-                    # Rescale parameter to have the specified radius if provided.
-                    if hyperball_radius is not None:
-                        p.mul_(hyperball_radius / p_norm.clamp_min(hyperball_eps))
+                    if not torch.isclose(
+                        p_norm,
+                        torch.tensor(hyperball_radius, dtype=p_norm.dtype, device=p_norm.device),
+                        atol=0,
+                        rtol=1e-5,
+                    ):
+                        raise ValueError(
+                            f"hyperball_radius={hyperball_radius} was specified but a parameter "
+                            f"has Frobenius norm {p_norm.item()}. Rescale your model parameters to the "
+                            f"desired radius before constructing the optimizer."
+                        )

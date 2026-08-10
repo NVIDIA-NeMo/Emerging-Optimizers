@@ -111,8 +111,8 @@ def get_coefficient_iterator(
         ValueError: If coefficient_sets is empty.
         ValueError: If an invalid mode is provided.
     """
-    logging.debug(f"Iterating through {steps} steps with {mode} mode.")
-    logging.debug(f"Coefficient sets: {coefficient_sets}")
+    logging.debug("Iterating through %s steps with %s mode.", steps, mode)
+    logging.debug("Coefficient sets: %s", coefficient_sets)
 
     if not coefficient_sets:
         raise ValueError("coefficient_sets must be non-empty.")
@@ -129,11 +129,21 @@ def get_coefficient_iterator(
     return islice(base, steps)
 
 
-def distributed_normalize_p2(x: torch.Tensor, eps: float, group: torch.distributed.ProcessGroup) -> torch.Tensor:
-    """Normalize a tensor in a distributed way."""
-    x_sq_sum = (x * x).sum()
+def distributed_normalize_p2(
+    x: torch.Tensor, eps: float, group: torch.distributed.ProcessGroup, normalize_in_double: bool = False
+) -> torch.Tensor:
+    """Normalize a tensor by its distributed Frobenius norm.
+
+    When ``normalize_in_double`` is set, the squared sum is accumulated in float64 so that tiny
+    entries do not underflow to zero when squared in float32.
+    """
+    x_sq = x.double() if normalize_in_double else x
+    x_sq_sum = (x_sq * x_sq).sum()
     torch.distributed.all_reduce(x_sq_sum, op=torch.distributed.ReduceOp.SUM, group=group)
-    return x / torch.sqrt(x_sq_sum).clamp_min(eps)
+    norm = torch.sqrt(x_sq_sum).to(x.dtype)
+    if not normalize_in_double:
+        norm.clamp_min_(eps)
+    return x / norm
 
 
 def newton_schulz(
@@ -141,10 +151,11 @@ def newton_schulz(
     steps: int,
     coefficient_type: NSCoeffT = "quintic",
     custom_coefficient_sets: list[tuple[float, float, float]] | None = None,
-    eps: float = 1e-7,
+    eps: float = 1e-15,
     transpose: bool | None = None,
     tp_group: torch.distributed.ProcessGroup | None = None,
     use_syrk: bool = False,
+    normalize_in_double: bool = False,
 ) -> torch.Tensor:
     """Use Newton-Schulz iteration to compute the zeroth power / orthogonalization of x.
 
@@ -177,6 +188,10 @@ def newton_schulz(
             If None, will be determined based on the size of the tensor.
         tp_group: The process group for communication if input is distributed.
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
+        normalize_in_double: Whether to reduce the Frobenius norm in float64. This keeps the squared
+            sum out of float32 underflow for inputs with very small entries, at the cost of a float64
+            reduction. Without customized kernels, manually handle scaling without triggering a device to host
+            sync are usually more expensive than using double.
 
     Returns:
         The orthogonalization of x.
@@ -192,11 +207,19 @@ def newton_schulz(
     if transpose:
         x = x.mT
 
-    # Ensure spectral norm is at most 1
+    # Ensure spectral norm is at most 1 by normalizing with the Frobenius norm. Reducing in float64
+    # (``normalize_in_double``) keeps the squared sum out of float32 underflow for tiny-norm inputs.
     if tp_group is not None:
-        X = distributed_normalize_p2(x, eps, tp_group)
+        X = distributed_normalize_p2(x, eps, tp_group, normalize_in_double)
     else:
-        X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)  # type: ignore[arg-type]
+        if not normalize_in_double:
+            X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)  # type: ignore[arg-type]
+        else:
+            # eps is ignored when normalize in double so that zero division can happen if norm is exact 0.
+            # However, if norm is 0 in double precision, it means the entire input is 0, which usually
+            # suggests something wrong has happened in training. So we don't guard it here.
+            norm = torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True, dtype=torch.float64).to(x.dtype)
+            X = x / norm
 
     if coefficient_type in _COEFFICIENT_SETS:
         coefficient_sets = _COEFFICIENT_SETS[coefficient_type]
@@ -228,7 +251,16 @@ def newton_schulz(
         if use_syrk:
             if X.ndim > 2:
                 raise TypeError("use_syrk does not support N-d input.")
-            ns_step_fn = newton_schulz_step_tsyrk
+            if X.size(-1) % 8 == 0 and X.size(-2) % 8 == 0:
+                ns_step_fn = newton_schulz_step_tsyrk
+            else:
+                logging.log_first_n(
+                    logging.ERROR,
+                    "[SYRK-SKIP] skipping SYRK for shape %s because GEMM M or N is not 16-byte "
+                    "aligned, which is incompatible with TMA.",
+                    8,
+                    tuple(X.shape),
+                )
         X = X.to(torch.bfloat16)
         logging.log_first_n(logging.INFO, "Using BF16 I/O kernels for Newton-Schulz iteration.", 1)
 
@@ -251,6 +283,7 @@ def newton_schulz_tp(
     tp_group: torch.distributed.ProcessGroup,
     partition_dim: int | None = None,
     tp_mode: Literal["duplicated", "distributed"] = "duplicated",
+    use_syrk: bool = False,
 ) -> torch.Tensor:
     """Tensor Parallel Newton-Schulz iteration.
 
@@ -278,14 +311,19 @@ def newton_schulz_tp(
         partition_dim: The dimension to partition the tensor.
         tp_group: The process group for communication if input is distributed.
         tp_mode: The mode to use for the Newton-Schulz iteration.
+        use_syrk: Whether to use the Triton SYRK kernel for the Newton-Schulz iteration. Forwarded to the
+            underlying ``newton_schulz`` in every path (non-TP fallback, ``duplicated``, ``distributed``); it only
+            takes effect when the fp32 matmul precision is ``"medium"`` (see ``newton_schulz``).
+            Falls back to GEMM when either matrix dimension is not a multiple of 8.
     """
     if partition_dim is None:
         # Fallback path for non TP params.
-        return newton_schulz(x, steps, coefficient_type)
+        return newton_schulz(x, steps, coefficient_type, use_syrk=use_syrk)
 
     kwargs: Any = {
         "steps": steps,
         "coefficient_type": coefficient_type,
+        "use_syrk": use_syrk,
     }
 
     if tp_mode == "duplicated":

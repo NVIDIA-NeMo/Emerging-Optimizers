@@ -60,11 +60,11 @@ Refer to tests for usage of different optimizers, e.g.  [`tests/test_orthogonali
 
 ### Integration with Megatron Core
 
-Integration with Megatron Core is available in **dev** branch, e.g. [emerging_optimizers.py](https://github.com/NVIDIA/Megatron-LM/blob/dev/megatron/core/optimizer/emerging_optimizers.py)
+Emerging optimizer has been integrated into Megatron Core with tensor parallel support and many other features (split QKV for example), check out [emerging_optimizers.py](https://github.com/NVIDIA/Megatron-LM/blob/core_v0.18.0/megatron/core/optimizer/emerging_optimizers.py).
 
 ## Benchmarks
 
-Coming soon.
+Benchmark of Muon can be found in our [blog](https://developer.nvidia.com/blog/advancing-emerging-optimizers-for-accelerated-llm-training-with-nvidia-megatron/).
 
 ## License
 

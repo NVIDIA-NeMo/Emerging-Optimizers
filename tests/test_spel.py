@@ -15,6 +15,7 @@
 
 import torch
 import torch.nn as nn
+from _comparison import assert_close_to_identity
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -85,23 +86,8 @@ class SpelTest(parameterized.TestCase):
             else:
                 gram = W.mT @ W
 
-            diag = torch.diagonal(gram)
-            off_diag = gram[~torch.eye(gram.shape[0], dtype=torch.bool, device=FLAGS.device)]
-
-            # Newton-Schulz produces an approximate orthogonal factor, so check
-            # the identity structure directly instead of using one tolerance for all entries.
-            torch.testing.assert_close(
-                diag,
-                torch.ones_like(diag),
-                atol=0.0,
-                rtol=0.06,
-            )
-            torch.testing.assert_close(
-                off_diag,
-                torch.zeros_like(off_diag),
-                atol=0.06,
-                rtol=0.0,
-            )
+            # Newton-Schulz produces an approximate orthogonal factor, so allow a loose tolerance.
+            assert_close_to_identity(gram, diag_atol=0.06, off_diag_atol=0.06)
 
 
 if __name__ == "__main__":

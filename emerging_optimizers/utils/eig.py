@@ -16,6 +16,8 @@ import torch
 from absl import logging
 from torch import Tensor
 
+from emerging_optimizers import utils
+
 
 __all__ = [
     "eigh_with_fallback",
@@ -52,7 +54,7 @@ def eigh_with_fallback(
         eigenvalues, eigenvectors = torch.linalg.eigh(x)
     except (torch.linalg.LinAlgError, RuntimeError) as e:
         if not force_double:
-            logging.warning(f"Falling back to double precision: {e}")
+            logging.warning("Falling back to double precision: %s", e)
             # Fallback to double precision if the default precision fails
             x = x.to(torch.float64)
             eigenvalues, eigenvectors = torch.linalg.eigh(x)
@@ -72,13 +74,12 @@ def orthogonal_iteration(
     kronecker_factor: Tensor,
     eigenbasis: Tensor,
     power_iter_steps: int,
-) -> Tensor:
+) -> tuple[Tensor, Tensor]:
     """Refines an eigenbasis via power iteration with QR re-orthogonalization.
 
     Performs ``power_iter_steps`` rounds of ``Q = QR(kronecker_factor @ Q)`` starting from
-    ``eigenbasis``. The columns of ``eigenbasis`` are expected to already be aligned with the
-    intended descending-eigenvalue ordering of ``kronecker_factor`` (see
-    :func:`emerging_optimizers.soap.soap_utils.sort_eigenbasis_by_approx_eigvals`).
+    ``eigenbasis``, then returns the approximate eigenvalues and the refined eigenbasis, both sorted
+    in descending eigenvalue order.
 
     Args:
         kronecker_factor: Kronecker factor matrix (symmetric, used as the projector).
@@ -86,7 +87,8 @@ def orthogonal_iteration(
         power_iter_steps: Number of power-iteration / QR rounds to perform.
 
     Returns:
-        The refined eigenbasis.
+        Tuple of (approximate eigenvalues in descending order, refined eigenbasis with columns
+        ordered to match).
     """
     Q = eigenbasis
     for _ in range(power_iter_steps):
@@ -94,7 +96,10 @@ def orthogonal_iteration(
         Q = kronecker_factor @ Q
         # Perform QR to maintain orthogonality between iterations
         Q = torch.linalg.qr(Q).Q
-    return Q
+    with utils.fp32_matmul_precision("highest"):
+        eigvals = conjugate(kronecker_factor, Q, diag=True)
+    sort_idx = torch.argsort(eigvals, descending=True)
+    return eigvals[sort_idx], Q[:, sort_idx]
 
 
 def conjugate(a: Tensor, p: Tensor, diag: bool = False) -> Tensor:
@@ -111,12 +116,16 @@ def conjugate(a: Tensor, p: Tensor, diag: bool = False) -> Tensor:
     Returns:
         b
     """
-    if a.dim() != 2 or p.dim() != 2:
-        raise TypeError("a and p must be 2D matrices")
-    pta = p.T @ a
+    if a.dim() not in (2, 3) or p.dim() not in (2, 3):
+        raise TypeError(f"a and p must be 2D matrices or 3D batched matrices. Got {a.dim()} and {p.dim()}")
+    if a.dim() != p.dim():
+        raise ValueError(f"a and p must have the same number of dimensions. Got {a.dim()} and {p.dim()}")
+    if a.dim() == 3 and a.shape[0] != p.shape[0]:
+        raise ValueError(f"a and p must have the same batch dimension. Got {a.shape[0]} and {p.shape[0]}")
+    pta = p.mT @ a
     if not diag:
         b = pta @ p
     else:
         # return the diagonal of the similarity transformation
-        b = (pta * p.T).sum(dim=1)
+        b = (pta * p.mT).sum(dim=-1)
     return b

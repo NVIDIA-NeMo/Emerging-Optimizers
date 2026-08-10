@@ -17,11 +17,13 @@ from functools import partial
 
 import soap_reference
 import torch
+from _comparison import assert_close_to_identity, assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.soap import REKLS, SOAP, soap
-from emerging_optimizers.soap.soap import _clip_update_rms_in_place
+from emerging_optimizers import utils
+from emerging_optimizers.legacy_soap import REKLS, SOAP, soap
+from emerging_optimizers.legacy_soap.soap import _clip_update_rms_in_place
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -79,20 +81,14 @@ class SoapFunctionsTest(parameterized.TestCase):
         torch.manual_seed(13)
         cls.device = FLAGS.device
 
-    def test_init_kronecker_factors_2d_tensor_shapes(self) -> None:
-        """Tests init_kronecker_factors with a 2D tensor."""
-        grad = torch.randn(3, 4)
-        L, R = soap.init_kronecker_factors(grad.shape)
-        self.assertEqual(L.shape, (3, 3))
-        self.assertEqual(R.shape, (4, 4))
-
     def test_update_kronecker_factors(self) -> None:
         shampoo_beta = 0.9
         dim0, dim1 = 3, 10
         grad = torch.randn(dim0, dim1)
 
         # Initialize factors
-        initial_L, initial_R = soap.init_kronecker_factors(grad.shape)
+        initial_L = torch.zeros(dim0, dim0)
+        initial_R = torch.zeros(dim1, dim1)
         kronecker_factors = [initial_L.clone(), initial_R.clone()]
 
         soap.update_kronecker_factors(
@@ -164,16 +160,8 @@ class SoapFunctionsTest(parameterized.TestCase):
         Q_R = torch.linalg.qr(torch.randn(N, N))[0]
         orthonormal_matrix_list = [Q_L, Q_R]
 
-        projected = soap.precondition(
-            grad,
-            eigenbasis_list=orthonormal_matrix_list,
-            dims=[[0], [0]],
-        )
-        recov = soap.precondition(
-            projected,
-            eigenbasis_list=orthonormal_matrix_list,
-            dims=[[0], [1]],
-        )
+        projected = soap.project_in(grad, orthonormal_matrix_list)
+        recov = soap.project_out(projected, orthonormal_matrix_list)
         # Check that the recovered tensor is close to the original.
         torch.testing.assert_close(
             grad,
@@ -231,31 +219,29 @@ class SoapFunctionsTest(parameterized.TestCase):
         exp_avg = torch.randn(M, N, device=self.device)
         exp_avg_norm_before = torch.linalg.norm(exp_avg)
 
-        updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = soap.update_eigenbasis_and_exp_avgs(
-            kronecker_factor_list=kronecker_factor_list,
-            eigenbasis_list=eigenbasis_list,
-            exp_avg_sq=exp_avg_sq,
-            exp_avg=exp_avg,
-            use_eigh=use_eigh,
+        eigvals_list, updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = (
+            soap.update_eigenbasis_and_exp_avgs(
+                kronecker_factor_list=kronecker_factor_list,
+                eigenbasis_list=eigenbasis_list,
+                exp_avg_sq=exp_avg_sq,
+                exp_avg=exp_avg,
+                use_eigh=use_eigh,
+            )
         )
 
         # Check output shapes
         self.assertEqual(len(updated_eigenbasis_list), 2)
         self.assertEqual(updated_eigenbasis_list[0].shape, (M, M))
         self.assertEqual(updated_eigenbasis_list[1].shape, (N, N))
+        self.assertEqual(len(eigvals_list), 2)
+        self.assertEqual(eigvals_list[0].shape, (M,))
+        self.assertEqual(eigvals_list[1].shape, (N,))
         self.assertEqual(updated_exp_avg.shape, (M, N))
         self.assertEqual(updated_exp_avg_sq.shape, (M, N))
 
         # Check eigenbasis orthogonality
         for Q in updated_eigenbasis_list:
-            identity = torch.eye(Q.shape[0], device=Q.device, dtype=Q.dtype)
-            torch.testing.assert_close(
-                Q.T @ Q,
-                identity,
-                atol=1e-5,
-                rtol=1e-5,
-                msg="Updated eigenbasis is not orthogonal.",
-            )
+            assert_close_to_identity(Q.T @ Q, diag_atol=1e-5, off_diag_atol=1e-5)
 
         # exp_avg is projected via orthogonal transforms, so norm should be preserved
         torch.testing.assert_close(
@@ -289,24 +275,30 @@ class SoapFunctionsTest(parameterized.TestCase):
             eigenbasis_list=eigenbasis_list,
         )
         kl_shampoo_update_ref(kronecker_factor_list_ref, **kwargs)
-        soap.update_kronecker_factors_kl_shampoo(kronecker_factor_list, **kwargs)
+
+        eigvals_list = [
+            utils.eig.conjugate(kronecker_factor, eigenbasis, diag=True)
+            for kronecker_factor, eigenbasis in zip(kronecker_factor_list, eigenbasis_list, strict=True)
+        ]
+        soap.update_kronecker_factors_kl_shampoo(kronecker_factor_list, eigvals_list=eigvals_list, **kwargs)
 
         torch.testing.assert_close(kronecker_factor_list[0], kronecker_factor_list_ref[0], atol=1e-6, rtol=1e-6)
         torch.testing.assert_close(kronecker_factor_list[1], kronecker_factor_list_ref[1], atol=1e-6, rtol=1e-6)
-
-    def test_init_kronecker_factors_non_2d_raises_type_error(self) -> None:
-        """Test that init_kronecker_factors raises TypeError for non-2D shape."""
-        with self.assertRaisesRegex(TypeError, "only supported for 2D"):
-            soap.init_kronecker_factors((3,))
 
     def test_kl_shampoo_correction_non_2d_raises_type_error(self) -> None:
         """Test that update_kronecker_factors_kl_shampoo raises TypeError for non-2D grad."""
         grad = torch.randn(3, device=self.device)
         kronecker_factors = [torch.eye(3, device=self.device)]
         eigenbasis = [torch.eye(3, device=self.device)]
+        eigvals = [torch.ones(3, device=self.device)]
         with self.assertRaisesRegex(TypeError, "only supported for 2D"):
             soap.update_kronecker_factors_kl_shampoo(
-                kronecker_factors, grad=grad, shampoo_beta=0.9, eps=1e-8, eigenbasis_list=eigenbasis
+                kronecker_factors,
+                grad=grad,
+                shampoo_beta=0.9,
+                eps=1e-8,
+                eigvals_list=eigvals,
+                eigenbasis_list=eigenbasis,
             )
 
     def test_soap_non_2d_param_raises_type_error(self) -> None:
@@ -440,11 +432,9 @@ class SoapMultiStreamTest(parameterized.TestCase):
             torch.cuda.synchronize()
 
             for i, (p_no, p_with) in enumerate(zip(params_no_stream, params_with_stream)):
-                torch.testing.assert_close(
+                assert_equal(
                     p_with,
                     p_no,
-                    atol=0,
-                    rtol=0,
                     msg=lambda msg: f"Parameter {i} mismatch at step {step}:\n{msg}",
                 )
 
@@ -464,10 +454,10 @@ class SoapVsReferenceTest(parameterized.TestCase):
 
     @parameterized.product(
         shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
-        num_steps=[2, 5, 7],
+        num_steps=[1, 2, 5, 7],
         correct_bias=[False, True],
     )
-    def test_update_matches_reference(self, shape: tuple, num_steps: int, correct_bias: bool):
+    def test_update_close_to_reference(self, shape: tuple, num_steps: int, correct_bias: bool):
         """Test that SOAP optimizer matches reference implementation for basic config."""
         # Create two identical parameters
         param_test = torch.randint(-2, 3, shape, dtype=torch.float32, device=self.device)
@@ -513,8 +503,8 @@ class SoapVsReferenceTest(parameterized.TestCase):
             torch.testing.assert_close(
                 param_test,
                 param_ref,
-                atol=1e-4,
-                rtol=1e-4,
+                atol=1e-5,
+                rtol=1e-5,
                 msg=lambda msg: f"Parameter mismatch at step {step}:\n{msg}",
             )
 
@@ -525,7 +515,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
         shape=[(3, 3), (5, 3), (10, 10), (15, 31)],
         num_steps=[2, 5, 7],
     )
-    def test_eigenbasis_matches_reference(self, shape: tuple, num_steps: int):
+    def test_eigenbasis_close_to_reference(self, shape: tuple, num_steps: int):
         param_soap = torch.randint(-2, 3, shape, dtype=torch.float32, device=self.device)
         param_ref = param_soap.clone()
 
@@ -573,16 +563,25 @@ class SoapVsReferenceTest(parameterized.TestCase):
                 rtol=1e-5,
             )
 
-            for eigenbasis_test, eigenbasis_ref in zip([test_state["Q_L"], test_state["Q_R"]], ref_state["Q"]):
+            for kronecker_factor, eigenbasis_test, eigenbasis_ref in zip(
+                [test_state["L"], test_state["R"]],
+                [test_state["Q_L"], test_state["Q_R"]],
+                ref_state["Q"],
+                strict=True,
+            ):
+                sorted_eigenbasis_list = []
+                for eigenbasis in (eigenbasis_test, eigenbasis_ref):
+                    approx_eigvals = torch.diag(eigenbasis.T @ kronecker_factor @ eigenbasis)
+                    sort_idx = torch.argsort(approx_eigvals, descending=True)
+                    sorted_eigenbasis_list.append(eigenbasis[:, sort_idx])
                 torch.testing.assert_close(
-                    eigenbasis_test,
-                    eigenbasis_ref,
+                    sorted_eigenbasis_list[0],
+                    sorted_eigenbasis_list[1],
                     atol=1e-4,
                     rtol=1e-4,
-                    msg=lambda msg: f"Eigenbasis mismatch at step {step}:\n{msg}",
+                    msg=lambda msg, step=step: f"Eigenbasis mismatch at step {step}:\n{msg}",
                 )
 
-            # Compare step counters
             self.assertEqual(test_state["step"], ref_state["step"])
 
 

@@ -17,6 +17,7 @@ from emerging_optimizers.scalar_optimizers.update_functions.ademamix import *
 from emerging_optimizers.scalar_optimizers.update_functions.laprop import *
 from emerging_optimizers.scalar_optimizers.update_functions.lion import *
 from emerging_optimizers.scalar_optimizers.update_functions.madam import *
+from emerging_optimizers.scalar_optimizers.update_functions.rmsprop import *
 from emerging_optimizers.scalar_optimizers.update_functions.signum import *
 
 
@@ -26,6 +27,7 @@ __all__ = [
     "calculate_laprop_update",
     "calculate_lion_update",
     "calculate_madam_update",
+    "calculate_rmsprop_update",
     "calculate_signum_update",
     "calculate_sim_ademamix_update",
 ]

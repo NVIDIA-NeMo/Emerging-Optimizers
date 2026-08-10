@@ -18,7 +18,7 @@ import torch
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers import psgd, registry, scalar_optimizers, soap
+from emerging_optimizers import legacy_soap, psgd, registry, scalar_optimizers
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -59,7 +59,7 @@ class TestRegistry(parameterized.TestCase):
         ("adaptive_muon", adaptive_muon.AdaptiveMuon),
         ("psgd_pro", psgd.PSGDPro),
         ("scion", scion.Scion),
-        ("soap", soap.SOAP),
+        ("soap", legacy_soap.SOAP),
         ("lion", scalar_optimizers.Lion),
         ("laprop", scalar_optimizers.LaProp),
     )
@@ -78,7 +78,7 @@ class TestRegistry(parameterized.TestCase):
 
     def test_get_optimizer_name_list_all_names_registered(self):
         epot_name_list = registry.get_optimizer_name_list()
-        logging.debug(f"Available optimizers: {epot_name_list}")
+        logging.debug("Available optimizers: %s", epot_name_list)
 
         self.assertNotEmpty(epot_name_list)
 

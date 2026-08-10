@@ -31,8 +31,8 @@ from absl import app, flags, logging
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import AutoTokenizer, MixtralConfig, MixtralForCausalLM
 
+from emerging_optimizers.legacy_soap.soap import SOAP
 from emerging_optimizers.orthogonalized_optimizers.muon import Muon
-from emerging_optimizers.soap.soap import SOAP
 
 
 FLAGS = flags.FLAGS

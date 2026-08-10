@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
+
 import torch
 
 
@@ -27,37 +29,34 @@ class Hyperball:
 
     def __init__(
         self,
-        radius: float | None = None,
-        eps: float = 1e-8,
+        radius: float,
+        eps: float = 1e-15,
     ) -> None:
+        if not math.isfinite(eps) or eps <= 0.0:
+            raise ValueError(f"eps must be finite and positive, got {eps}")
+        if not math.isfinite(radius) or radius < eps:
+            raise ValueError(f"radius must be finite and at least eps={eps}, got {radius}")
         self.radius = radius
         self.eps = eps
+
+    def _scale_to_radius_inplace(self, tensor: torch.Tensor) -> None:
+        norm = torch.linalg.vector_norm(tensor, dtype=torch.float32)
+        is_numerical_zero = norm < self.eps
+        radius = torch.as_tensor(self.radius, device=tensor.device, dtype=torch.float32)
+        scale = torch.where(is_numerical_zero, torch.zeros_like(norm), radius / norm.clamp_min(self.eps))
+        tensor.mul_(scale.to(dtype=tensor.dtype))
 
     def pre_weight_update_inplace(
         self,
         p: torch.Tensor,
         update: torch.Tensor,
-    ) -> torch.Tensor:
-        current_norm = torch.linalg.vector_norm(p.detach().to(torch.float32))
-
-        if self.radius is not None:
-            radius = torch.as_tensor(self.radius, device=p.device, dtype=torch.float32)
-        else:
-            if current_norm.item() == 0:
-                raise ValueError("Hyperball requires all parameters to have non-zero norm when radius is not fixed.")
-            radius = current_norm
-
-        update_norm = torch.linalg.vector_norm(update.to(torch.float32)).clamp_min(self.eps)
-        update.mul_((radius / update_norm).to(dtype=update.dtype))
-        return radius
+    ) -> None:
+        self._scale_to_radius_inplace(update)
+        return None
 
     def post_weight_update_inplace(
         self,
         p: torch.Tensor,
-        pre_update_state: torch.Tensor | None,
+        pre_update_state: None,
     ) -> None:
-        if pre_update_state is None:
-            raise RuntimeError("Hyperball requires radius state")
-        radius = pre_update_state
-        post_norm = torch.linalg.vector_norm(p.detach().to(torch.float32)).clamp_min(self.eps)
-        p.mul_((radius / post_norm).to(dtype=p.dtype))
+        self._scale_to_radius_inplace(p)

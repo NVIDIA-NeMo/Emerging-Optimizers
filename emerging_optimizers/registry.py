@@ -24,10 +24,10 @@ from torch.optim.optimizer import ParamsT
 _OPTIMIZERS: dict[str, type[optim.Optimizer]] = {}
 
 
-def register_optimizer(name: str) -> Callable[[type[optim.Optimizer]], type[optim.Optimizer]]:
+def register_optimizer[Opt: optim.Optimizer](name: str) -> Callable[[type[Opt]], type[Opt]]:
     """Decorator to register an optimizer class in the registry."""
 
-    def decorator(cls: type[optim.Optimizer]) -> type[optim.Optimizer]:
+    def decorator(cls: type[Opt]) -> type[Opt]:
         if name.lower() in _OPTIMIZERS:
             raise ValueError(f"Optimizer {name} already registered.")
         _OPTIMIZERS[name.lower()] = cls
@@ -64,14 +64,14 @@ def get_optimizer_cls(name: str) -> type[optim.Optimizer]:
         >>> opt_cls
         <class 'emerging_optimizers.orthogonalized_optimizers.muon.Muon'>
     """
-    logging.debug(f"Available optimizers: {list(_OPTIMIZERS.keys())}")
+    logging.debug("Available optimizers: %s", list(_OPTIMIZERS.keys()))
     optimizer = _OPTIMIZERS.get(name.lower())
     if optimizer is None:
         raise ValueError(f"Optimizer {name} not found in the registry.")
     return optimizer
 
 
-def validate_optimizer_args(opt_cls: type, kwargs: dict[str, Any]) -> None:
+def validate_optimizer_args(opt_cls: type[optim.Optimizer], kwargs: dict[str, Any]) -> None:
     """Checks if kwargs are valid for the optimizer class signature."""
     sig = signature(opt_cls)
 

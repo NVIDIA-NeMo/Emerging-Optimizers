@@ -94,7 +94,7 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
 
         def raw_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             # Adaptive variants normalize the raw Newton-Schulz output first; Muon scale is applied after moment2.
-            logging.debug(f"Orthogonalizing grad with {num_ns_steps} steps, {coefficient_type} coefficient")
+            logging.debug("Orthogonalizing grad with %s steps, %s coefficient", num_ns_steps, coefficient_type)
             return muon_utils.newton_schulz(
                 grad,
                 steps=num_ns_steps,
@@ -120,7 +120,7 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
 
     def _apply_muon_scale(self, update: torch.Tensor, size_out: int, size_in: int) -> torch.Tensor:
         scale_factor = muon.get_muon_scale_factor(size_out, size_in, mode=self.scale_mode)
-        logging.debug(f"Applying Muon scale factor {scale_factor}, extra_scale_factor={self.extra_scale_factor}")
+        logging.debug("Applying Muon scale factor %s, extra_scale_factor=%s", scale_factor, self.extra_scale_factor)
         return update * scale_factor * self.extra_scale_factor
 
     def _match_frobenius_norm(

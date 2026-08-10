@@ -14,7 +14,7 @@
 # limitations under the License.
 from contextlib import nullcontext
 from functools import partial
-from typing import TYPE_CHECKING, Callable, override
+from typing import TYPE_CHECKING, Callable, Iterable, override
 
 
 if TYPE_CHECKING:
@@ -27,15 +27,15 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry, utils
+from emerging_optimizers.legacy_soap import soap_utils
 from emerging_optimizers.scalar_optimizers import update_functions
-from emerging_optimizers.soap import soap_utils
 from emerging_optimizers.utils import FP32MatmulPrecT
 
 
 __all__ = [
     "SOAP",
-    "precondition",
-    "init_kronecker_factors",
+    "project_in",
+    "project_out",
     "update_kronecker_factors",
     "update_eigenbasis_and_exp_avgs",
 ]
@@ -60,8 +60,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay: Weight decay coefficient
         weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
             for more details.
-        nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf,
-            https://openreview.net/forum?id=OM0jvwB8jIp57ZJjtNEZ)
+        nesterov: uses Nesterov momentum in Adam (https://cs229.stanford.edu/proj2015/054_report.pdf)
         correct_bias: Whether to use bias correction in Inner Adam and Kronecker factor matrices EMA
         fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
@@ -153,9 +152,12 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                 # Use shape of p instead of grad for initialization because of the introduction of skip_non_grad_params
                 # for megatron-lm distributed checkpointing use. _init_group can be called without grad.
-                state["L"], state["R"] = init_kronecker_factors(p.shape, device=p.device)
+                state["L"] = torch.zeros(p.shape[0], p.shape[0], device=p.device)
+                state["R"] = torch.zeros(p.shape[1], p.shape[1], device=p.device)
                 state["Q_L"] = torch.eye(p.shape[0], device=p.device)
                 state["Q_R"] = torch.eye(p.shape[1], device=p.device)
+                state["eigvals_L"] = torch.zeros(p.shape[0], device=p.device)
+                state["eigvals_R"] = torch.zeros(p.shape[1], device=p.device)
 
     if TYPE_CHECKING:
 
@@ -207,10 +209,9 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     # in the math equation that needs 1-based iteration count.
                     curr_iter_1_based = state["step"] + 1
 
-                    # Define kronecker_factor_update_fn based on whether to use KL-Shampoo here
-                    # because it needs access to eigenbasis_list and group
                     kronecker_factor_list = [state["L"], state["R"]]
                     eigenbasis_list = [state["Q_L"], state["Q_R"]]
+                    eigvals_list = [state["eigvals_L"], state["eigvals_R"]]
 
                     if not self.use_kl_shampoo:
                         kronecker_factor_update_fn = update_kronecker_factors
@@ -218,6 +219,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                         kronecker_factor_update_fn = partial(
                             update_kronecker_factors_kl_shampoo,
                             eigenbasis_list=eigenbasis_list,
+                            eigvals_list=eigvals_list,
                             eps=group["eps"],
                         )
 
@@ -234,17 +236,20 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                     use_eigh = self.use_eigh if state["step"] != 0 else True
 
                     with utils.fp32_matmul_precision(self.qr_fp32_matmul_prec):
-                        updated_eigenbasis_list, exp_avg, exp_avg_sq = update_eigenbasis_and_exp_avgs(
-                            kronecker_factor_list=kronecker_factor_list,
-                            eigenbasis_list=eigenbasis_list,
-                            exp_avg_sq=state["exp_avg_sq"],
-                            exp_avg=state["exp_avg"],
-                            use_eigh=use_eigh,
-                            power_iter_steps=self.power_iter_steps,
+                        updated_eigvals_list, updated_eigenbasis_list, exp_avg, exp_avg_sq = (
+                            update_eigenbasis_and_exp_avgs(
+                                kronecker_factor_list=kronecker_factor_list,
+                                eigenbasis_list=eigenbasis_list,
+                                exp_avg_sq=state["exp_avg_sq"],
+                                exp_avg=state["exp_avg"],
+                                use_eigh=use_eigh,
+                                power_iter_steps=self.power_iter_steps,
+                            )
                         )
                         state["Q_L"], state["Q_R"] = updated_eigenbasis_list
+                        state["eigvals_L"], state["eigvals_R"] = updated_eigvals_list
 
-                        # rebind local ref so precondition() below uses the updated Q
+                        # rebind local ref so project_in() below uses the updated Q
                         eigenbasis_list = updated_eigenbasis_list
 
                         state["exp_avg"] = exp_avg
@@ -259,11 +264,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                     # Project gradients to the eigenbases of Shampoo's preconditioner
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                        grad_projected = precondition(
-                            grad,
-                            eigenbasis_list=eigenbasis_list,
-                            dims=[[0], [0]],
-                        )
+                        grad_projected = project_in(grad, eigenbasis_list)
 
                     # Calculate the Adam update for the projected gradient tensor
                     adam_update = update_functions.calculate_adam_update(
@@ -279,11 +280,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
 
                     # Projecting back the preconditioned (by ADAM) exponential moving average of gradients
                     with utils.fp32_matmul_precision(self.fp32_matmul_prec):
-                        precond_update = precondition(
-                            adam_update,
-                            eigenbasis_list=eigenbasis_list,
-                            dims=[[0], [1]],
-                        )
+                        precond_update = project_out(adam_update, eigenbasis_list)
 
                     _clip_update_rms_in_place(precond_update, self.max_update_rms)
                     p.add_(precond_update, alpha=-group["lr"])
@@ -295,47 +292,6 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
                 current_stream.wait_stream(stream)
 
         return None
-
-
-@torch.no_grad()  # type: ignore[misc]
-def init_kronecker_factors(
-    grad_shape: torch.Size,
-    device: torch.device | None = None,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Initializes the kronecker factor matrices for the SOAP optimizer.
-
-    This function creates the initial Kronecker factor matrices (L and R) used for
-    preconditioning. It creates a square kronecker factor matrix for each dimension
-    of the 2D gradient shape.
-
-    Note:
-        The Kronecker factors are always initialized to float32 (unless default precision is set otherwise) as its
-        accumulation and decomposition are not safe in lower precisions.
-
-    Args:
-        grad_shape: Shape of the gradient tensor. Must be 2D.
-            Determines the size of the kronecker factor matrices.
-        device: Device on which to create the kronecker factor matrices.
-
-    Returns:
-        Tuple of kronecker factor matrices (L and R in paper).
-
-    Example:
-        >>> # For a 2D tensor (weight matrix)
-        >>> grad_shape = torch.Size([10, 20])
-        >>> precond_2d = init_kronecker_factors(grad_shape)
-        >>> print(len(precond_2d))  # 2
-        >>> print(precond_2d[0].shape)  # (10, 10)
-        >>> print(precond_2d[1].shape)  # (20, 20)
-
-    """
-    if len(grad_shape) != 2:
-        raise TypeError("init_kronecker_factors is only supported for 2D tensors")
-
-    # Create a square kronecker factor matrix for each dimension
-    L = torch.zeros(grad_shape[0], grad_shape[0], device=device)
-    R = torch.zeros(grad_shape[1], grad_shape[1], device=device)
-    return L, R
 
 
 @torch.no_grad()  # type: ignore[misc]
@@ -370,24 +326,45 @@ def update_kronecker_factors(
 
 @torch.no_grad()  # type: ignore[misc]
 def update_kronecker_factors_kl_shampoo(
-    kronecker_factor_list: list[torch.Tensor],
+    kronecker_factor_list: Iterable[torch.Tensor],
     grad: torch.Tensor,
     shampoo_beta: float,
-    eigenbasis_list: list[torch.Tensor],
+    eigenbasis_list: Iterable[torch.Tensor],
+    eigvals_list: Iterable[torch.Tensor],
     eps: float,
     eigval_exp: float = -1.0,
 ) -> None:
     """Updates the kronecker factor matrices in place using KL-Shampoo correction.
 
-    Implement Kullback–Leibler Minimization from https://arxiv.org/pdf/2509.03378
+    Implements the Kullback–Leibler minimization update from https://arxiv.org/pdf/2509.03378.
+
+    For a gradient :math:`G \\in \\mathbb{R}^{m \\times n}`, current kronecker factors
+    :math:`L_t \\in \\mathbb{R}^{m \\times m}`, :math:`R_t \\in \\mathbb{R}^{n \\times n}`, their
+    orthonormal eigenbases :math:`Q_L, Q_R`, and the approximate eigenvalues in those eigenbases
+
+    .. math::
+        \\Lambda_L = \\mathrm{diag}(Q_L^{\\top} L_t Q_L), \\quad
+        \\Lambda_R = \\mathrm{diag}(Q_R^{\\top} R_t Q_R)
+
+    (passed as ``eigvals_list``, typically computed and stored at the previous eigenbasis update, see
+    :func:`~emerging_optimizers.legacy_soap.soap_utils.get_eigenbasis_qr` and
+    :func:`~emerging_optimizers.legacy_soap.soap_utils.get_eigenbasis_eigh`), the EMA update with momentum
+    :math:`\\beta` (= ``shampoo_beta``) and exponent :math:`p` (= ``eigval_exp``, default ``-1``) is
+
+    .. math::
+        L_{t+1} = \\beta\\, L_t + \\frac{1-\\beta}{n}\\, G\\, Q_R\\, \\mathrm{diag}(\\Lambda_R^{p})\\, Q_R^{\\top} G^{\\top} \\\\
+        R_{t+1} = \\beta\\, R_t + \\frac{1-\\beta}{m}\\, G^{\\top}\\, Q_L\\, \\mathrm{diag}(\\Lambda_L^{p})\\, Q_L^{\\top} G
+
+    Eigenvalues are clamped to ``eps`` from below before exponentiation for numerical stability.
 
     Args:
         kronecker_factor_list: List of preconditioner matrices (L and R) to update.
         grad: Gradient tensor of the parameter being optimized
         shampoo_beta: Momentum coefficient for updating preconditioners.
         eigenbasis_list: List of orthonormal eigenbases of the kronecker factor matrices
+        eigvals_list: List of approximate eigenvalues of each kronecker factor in its eigenbasis.
         eps: Small offset for numerical stability.
-        eigenval_exp: Exponent of the eigenvalues.
+        eigval_exp: Exponent applied to the (clamped) eigenvalues.
     """
     if grad.dim() != 2:
         raise TypeError("KL-Shampoo mathematical correction is only supported for 2D tensors")
@@ -395,11 +372,10 @@ def update_kronecker_factors_kl_shampoo(
     # Scale the gradient matrix by the approximate eigenvalues and the eigenbasis
     # G@Q_R@λ_R^(−1)@Q_R.T@G.T/dim(GG.T) and G.T@Q_L@λ_L^(−1)@Q_L.T@G/dim(G.TG)
     updates = []
-    for idx, (kronecker_factor, eigenbasis) in enumerate(zip(kronecker_factor_list, eigenbasis_list, strict=True)):
-        approx_eigvals = utils.eig.conjugate(kronecker_factor, eigenbasis, diag=True)
+    for idx, (eigenbasis, approx_eigvals) in enumerate(zip(eigenbasis_list, eigvals_list, strict=True)):
         scale_factor = 1 / grad.shape[idx] * approx_eigvals.clamp_min(eps) ** eigval_exp
 
-        logging.debug(f"scale_factor[{idx}]: {scale_factor}")
+        logging.debug("scale_factor[%s]: %s", idx, scale_factor)
 
         correction = (eigenbasis * scale_factor[None, :]) @ eigenbasis.T
 
@@ -419,7 +395,7 @@ def update_eigenbasis_and_exp_avgs(
     exp_avg: torch.Tensor,
     use_eigh: bool = False,
     power_iter_steps: int = 1,
-) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
+) -> tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor, torch.Tensor]:
     """Updates the eigenbases and moving averages.
 
     This function performs an update of the eigenbases (QL and QR)
@@ -435,9 +411,9 @@ def update_eigenbasis_and_exp_avgs(
         eigenbasis_list: List of current eigenbases (QL and QR)
             used for preconditioning. These will be updated by this function.
         exp_avg_sq: Inner Adam's second moment tensor, used for scaling the preconditioner updates.
-            This tensor is modified in-place.
+            Permuted along each kronecker-factor axis on the QR path to track the sorted eigenbasis
+            columns; returned unchanged on the eigh path.
         exp_avg: Inner Adam's first moment tensor, used for tracking gradient momentum.
-            This tensor is modified in-place.
         use_eigh: Whether to use full symmetric eigendecomposition (eigh) to compute the eigenbasis.
             If False, use orthogonal iteration to compute the eigenbasis.
         power_iter_steps: Number of power iteration steps to perform before QR decomposition.
@@ -445,6 +421,7 @@ def update_eigenbasis_and_exp_avgs(
 
     Returns:
         A tuple containing:
+            - List of (approximate) eigenvalues of each kronecker factor in its updated eigenbasis
             - Updated list of eigenbases (QL and QR)
             - Updated exp_avg tensor projected to the new eigenbasis
             - Updated exp_avg_sq tensor
@@ -456,62 +433,37 @@ def update_eigenbasis_and_exp_avgs(
         >>> QR = torch.randn(20, 20)
         >>> exp_avg_sq = torch.randn(10, 20)
         >>> exp_avg = torch.randn(10, 20)
-        >>> updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = update_eigenbasis_and_exp_avgs(
-        ...     [L, R], [QL, QR], exp_avg_sq, exp_avg)
+        >>> eigvals_list, updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = (
+        ...     update_eigenbasis_and_exp_avgs([L, R], [QL, QR], exp_avg_sq, exp_avg))
 
     """
     # Step 1: Project exp_avg back to the original basis
-    exp_avg = precondition(
-        exp_avg,
-        eigenbasis_list,
-        dims=[[0], [1]],
-    )
+    exp_avg = project_out(exp_avg, eigenbasis_list)
 
-    # Step 2a: Sort current eigenbases by descending approximate eigenvalues of the updated kronecker
-    # factors, and permute exp_avg_sq.
-    # Shared by both eigh and QR paths so the new eigh-path approximation matches the QR-path slot semantics
-    # under small per-step drift.
-    # Sorting eigenbases is not necessary for eigh path technically, but decided to keep API simple.
-    eigenbasis_list, exp_avg_sq = soap_utils.sort_eigenbasis_by_approx_eigvals(
-        kronecker_factor_list,
-        eigenbasis_list,
-        exp_avg_sq,
-    )
-
-    # Step 2b: Update eigenbases
+    # Step 2: Update eigenbases
     if use_eigh:
-        updated_eigenbasis_list = soap_utils.get_eigenbasis_eigh(
+        updated_eigvals_list, updated_eigenbasis_list = soap_utils.get_eigenbasis_eigh(
             kronecker_factor_list,
         )
     else:
-        # Use QR decomposition and power iteration (orthogonal iteration) starting from the
-        # pre-sorted eigenbases.
-        updated_eigenbasis_list = soap_utils.get_eigenbasis_qr(
+        updated_eigvals_list, updated_eigenbasis_list = soap_utils.get_eigenbasis_qr(
             kronecker_factor_list,
             eigenbasis_list,
             power_iter_steps,
         )
 
     # Step 3: Project exp_avg to the new eigenbasis using the updated eigenbases
-    exp_avg = precondition(
-        exp_avg,
-        updated_eigenbasis_list,
-        dims=[[0], [0]],
-    )
+    exp_avg = project_in(exp_avg, updated_eigenbasis_list)
 
-    return updated_eigenbasis_list, exp_avg, exp_avg_sq
+    return updated_eigvals_list, updated_eigenbasis_list, exp_avg, exp_avg_sq
 
 
 @torch.no_grad()  # type: ignore[misc]
-def precondition(
+def project_in(
     x: torch.Tensor,
-    eigenbasis_list: list[torch.Tensor] | None = None,
-    dims: list[list[int]] | None = None,
+    eigenbasis_list: list[torch.Tensor],
 ) -> torch.Tensor:
-    """Projects the gradient to and from the eigenbases of the kronecker factor matrices.
-
-    This function performs tensor contractions between the input gradient
-    and kronecker factor eigenbases.
+    """Projects a tensor into the eigenbases
 
     Note:
         For 2D tensors, we can use matmul instead of tensordot for code legibility. However, the code has
@@ -519,31 +471,32 @@ def precondition(
         matmul and tensordot outputs exactly because of underlying floating point arithmetic differences.
         Therefore, we decided to keep using tensordot for consistency.
 
+    Args:
+        x: Input tensor to project into the eigenbasis.
+        eigenbasis_list: List of eigenbases for preconditioning.
+    """
+    for Q in eigenbasis_list:
+        x = torch.tensordot(x, Q, dims=[[0], [0]])
+    return x
+
+
+@torch.no_grad()  # type: ignore[misc]
+def project_out(
+    x: torch.Tensor,
+    eigenbasis_list: list[torch.Tensor],
+) -> torch.Tensor:
+    """Projects a tensor out of the eigenbases
+
+    Note:
+        Uses ``tensordot`` rather than ``matmul`` for the same numerical-consistency reason described in
+        :func:`project_in`.
 
     Args:
-        x: Input tensor to be preconditioned
+        x: Input tensor to project back to the original space.
         eigenbasis_list: List of eigenbases for preconditioning.
-            Each matrix should be a square matrix of eigenvectors.
-        dims: Dimensions for tensor contraction. Default is [[0], [0]] which contracts
-            the first dimension of grad with the first dimension of each eigenbasis matrix,
-            for projecting into the eigenbasis. Use [[0], [1]] for projecting back to original space.
-
-    Example:
-        >>> x = torch.randn(10, 20)
-        >>> Q = torch.randn(10, 10)
-        >>> precondition(x, [Q], dims=[[0], [0]])
     """
-    if dims is None:
-        # Pick contraction dims to project to the eigenbasis
-        dims = [[0], [0]]
-
-    if eigenbasis_list is None:
-        # If eigenbases are not provided, return the gradient without any preconditioning
-        return x
-
     for Q in eigenbasis_list:
-        x = torch.tensordot(x, Q, dims=dims)
-
+        x = torch.tensordot(x, Q, dims=[[0], [1]])
     return x
 
 
