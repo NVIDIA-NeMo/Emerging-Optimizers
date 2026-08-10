@@ -90,6 +90,8 @@ class Muon(OrthogonalizedOptimizer):
         if num_ns_steps < 1:
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
 
+        self._num_ns_steps = num_ns_steps
+
         if use_syrk:
             if torch.cuda.is_available():
                 sm_version = torch.cuda.get_device_capability()
@@ -132,6 +134,14 @@ class Muon(OrthogonalizedOptimizer):
             fp32_matmul_prec=fp32_matmul_prec,
             scaled_orthogonalize_fn=scaled_orthogonalize_fn,
         )
+
+    @property
+    def num_ns_steps(self) -> int:
+        return self._num_ns_steps
+
+    @num_ns_steps.setter
+    def num_ns_steps(self, value: int) -> None:
+        raise AttributeError("Cannot set `num_ns_steps` post-initialization.")
 
 
 Muon.__doc__ = Muon.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
