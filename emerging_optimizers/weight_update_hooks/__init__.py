@@ -15,11 +15,13 @@
 from emerging_optimizers.weight_update_hooks.base import NoOpWeightUpdateHook, WeightUpdateHook
 from emerging_optimizers.weight_update_hooks.hyperball import Hyperball
 from emerging_optimizers.weight_update_hooks.radial_brake import RadialBrake
+from emerging_optimizers.weight_update_hooks.relative_update import RelativeUpdate
 
 
 __all__ = [
     "Hyperball",
     "NoOpWeightUpdateHook",
     "RadialBrake",
+    "RelativeUpdate",
     "WeightUpdateHook",
 ]

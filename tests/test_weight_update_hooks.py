@@ -18,7 +18,7 @@ from absl import flags, logging
 from absl.testing import absltest
 
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer
-from emerging_optimizers.weight_update_hooks import Hyperball, NoOpWeightUpdateHook, RadialBrake
+from emerging_optimizers.weight_update_hooks import Hyperball, NoOpWeightUpdateHook, RadialBrake, RelativeUpdate
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -161,6 +161,54 @@ class WeightUpdateHooksTest(absltest.TestCase):
     def test_hyperball_rejects_radius_below_eps(self) -> None:
         with self.assertRaisesRegex(ValueError, "radius must be finite and at least eps"):
             Hyperball(radius=1e-4, eps=1e-3)
+
+    def test_relative_update_scales_update_to_weight_norm_without_post_projection(self) -> None:
+        hook = RelativeUpdate()
+        param = torch.tensor([3.0, 4.0], device=self.device)
+        update = torch.tensor([0.0, 10.0], device=self.device)
+        param_before = param.clone()
+
+        pre_update_state = hook.pre_weight_update_inplace(param, update)
+
+        assert_equal(param, param_before)
+        torch.testing.assert_close(torch.linalg.vector_norm(update), torch.tensor(5.0, device=self.device))
+
+        param.add_(update, alpha=-0.1)
+        param_after_update = param.clone()
+        hook.post_weight_update_inplace(param, pre_update_state)
+
+        assert_equal(param, param_after_update)
+
+    def test_relative_update_sets_update_below_eps_to_zero(self) -> None:
+        hook = RelativeUpdate(eps=0.25)
+        param = torch.tensor([2.0, 0.0], device=self.device)
+        update = torch.tensor([0.125, 0.0], device=self.device)
+
+        hook.pre_weight_update_inplace(param, update)
+
+        assert_equal(update, torch.zeros_like(update))
+
+    def test_relative_update_sets_update_to_zero_when_weight_is_below_eps(self) -> None:
+        hook = RelativeUpdate(eps=0.25)
+        param = torch.tensor([0.125, 0.0], device=self.device)
+        update = torch.tensor([2.0, 0.0], device=self.device)
+
+        hook.pre_weight_update_inplace(param, update)
+
+        assert_equal(update, torch.zeros_like(update))
+
+    def test_relative_update_scales_update_equal_to_eps(self) -> None:
+        hook = RelativeUpdate(eps=0.25)
+        param = torch.tensor([2.0, 0.0], device=self.device)
+        update = torch.tensor([0.25, 0.0], device=self.device)
+
+        hook.pre_weight_update_inplace(param, update)
+
+        torch.testing.assert_close(torch.linalg.vector_norm(update), torch.tensor(2.0, device=self.device))
+
+    def test_relative_update_rejects_nonpositive_eps(self) -> None:
+        with self.assertRaisesRegex(ValueError, "eps must be finite and positive"):
+            RelativeUpdate(eps=0.0)
 
     def test_orthogonalized_optimizer_applies_weight_update_hook(self) -> None:
         param = torch.tensor([[3.0, 4.0]], device=self.device)
