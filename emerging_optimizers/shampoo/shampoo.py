@@ -1,0 +1,308 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+from typing import TYPE_CHECKING, Callable, ClassVar, override
+
+
+if TYPE_CHECKING:
+    from typing import overload
+
+import torch
+from torch import optim
+from torch.optim.optimizer import ParamsT
+
+from emerging_optimizers import mixin as opt_mixin
+from emerging_optimizers.shampoo import shampoo_base
+from emerging_optimizers.utils import eig as eig_utils
+
+
+__all__ = [
+    "Shampoo",
+    "ShampooPreconditioner",
+]
+
+
+class ShampooPreconditioner:
+    """Per-parameter Shampoo preconditioner holding the Kronecker factors of one 2D parameter.
+
+    Args:
+        state: Per-parameter optimizer state holding ``L`` and ``R``.
+        p_inv_root: Inverse root order; each factor is applied as ``A^(-1/p_inv_root)``.
+        eps: Floor on the eigenvalue magnitudes before inversion.
+    """
+
+    def __init__(
+        self,
+        state: dict,
+        p_inv_root: float,
+        eps: float = 1e-8,
+    ) -> None:
+        self.kronecker_factor_pair = shampoo_base.TensorPair(state["L"], state["R"])
+        self.p_inv_root = p_inv_root
+        self.eps = eps
+
+    @staticmethod
+    def init_state(
+        shape: tuple[int, ...],
+        device: torch.device,
+    ) -> dict[str, torch.Tensor]:
+        """Creates the Kronecker factors for a parameter shape.
+
+        Args:
+            shape: Shape of the 2D parameter the preconditioner will be attached to.
+            device: Device to allocate the state tensors on.
+
+        Returns:
+            The state entries owned by this preconditioner, keyed as :meth:`rebind_state` expects them.
+
+        Raises:
+            TypeError: If ``shape`` is not 2D.
+        """
+        if len(shape) != 2:
+            raise TypeError(f"ShampooPreconditioner is only supported for 2D tensors, got shape {tuple(shape)}")
+        m, n = shape
+        return {
+            "L": torch.zeros(m, m, device=device),
+            "R": torch.zeros(n, n, device=device),
+        }
+
+    def rebind_state(self, state: dict) -> None:
+        """Binds the current preconditioner tensors back into the optimizer state dict.
+
+        Args:
+            state: Per-parameter optimizer state, updated in place.
+
+        Raises:
+            KeyError: If ``state`` is missing any of the preconditioner keys.
+        """
+        updates = {
+            "L": self.kronecker_factor_pair.L,
+            "R": self.kronecker_factor_pair.R,
+        }
+        missing = updates.keys() - state.keys()
+        if missing:
+            raise KeyError(f"rebind_state: state missing keys {sorted(missing)}")
+        state.update(updates)
+
+    def init_step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
+        """Performs the first step's factor update, before any history exists.
+
+        Args:
+            grad: Gradient of the parameter on the first step.
+            shampoo_beta: EMA coefficient for the Kronecker factor update.
+        """
+        self.update_kronecker_factors(grad, shampoo_beta)
+
+    def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float) -> None:
+        """Accumulates the gradient outer products into the Kronecker factors.
+
+        Args:
+            grad: Gradient of the parameter.
+            shampoo_beta: EMA coefficient for the Kronecker factor update.
+        """
+        self.kronecker_factor_pair.L.lerp_(grad @ grad.T, 1 - shampoo_beta)
+        self.kronecker_factor_pair.R.lerp_(grad.T @ grad, 1 - shampoo_beta)
+
+    def step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
+        """Updates the Kronecker factors with the latest gradient.
+
+        Args:
+            grad: Gradient of the parameter.
+            shampoo_beta: EMA coefficient for the Kronecker factor update.
+        """
+        self.update_kronecker_factors(grad, shampoo_beta)
+
+    def _get_inverse_root(self, kronecker_factor: torch.Tensor) -> torch.Tensor:
+        """Computes ``kronecker_factor^(-1/p_inv_root)`` from its eigendecomposition.
+
+        Args:
+            kronecker_factor: left or right kronecker factor
+
+        Returns:
+            The inverse root of the factor.
+        """
+        eigvals, eigvecs = eig_utils.eigh_with_fallback(kronecker_factor)
+        # Kronecker factors are symmetric. Eigh can sometime return negative values for numerical 0 therefore the abs.
+        return (eigvecs * eigvals.abs().clamp_min(self.eps) ** (-1.0 / self.p_inv_root)) @ eigvecs.mT
+
+    def precondition(self, x: torch.Tensor) -> torch.Tensor:
+        """Applies both inverse roots to a matrix in the parameter basis.
+
+        Args:
+            x: Matrix in the parameter basis.
+
+        Returns:
+            The preconditioned matrix, in the parameter basis.
+        """
+        inverse_root_pair = shampoo_base.TensorPair(
+            self._get_inverse_root(self.kronecker_factor_pair.L),
+            self._get_inverse_root(self.kronecker_factor_pair.R),
+        )
+
+        return inverse_root_pair.L @ x @ inverse_root_pair.R
+
+
+class Shampoo(optim.Optimizer, opt_mixin.WeightDecayMixin):
+    """Shampoo with inverse roots rebuilt by eigendecomposition on every step.
+
+    The update is EMA momentum in the parameter basis, preconditioned on both sides by the inverse roots
+    of the Kronecker factors.
+
+    Args:
+        params: Iterable of 2D CUDA parameters to optimize or dicts defining parameter groups.
+        lr: Learning rate.
+        momentum: Momentum EMA coefficient.
+        shampoo_beta: Kronecker factor EMA coefficient.
+        weight_decay: Decoupled weight decay coefficient.
+        p_inv_root: Inverse root order applied to each Kronecker factor.
+
+    Attributes:
+        PreconditionerCls: Preconditioner used for every parameter, and the source of the state layout
+            allocated by :meth:`_init_group`. Subclasses set it to change how the factors are maintained.
+    """
+
+    PreconditionerCls: ClassVar[type[shampoo_base.ShampooPreconditionerProtocol]] = ShampooPreconditioner
+
+    def __init__(
+        self,
+        params: ParamsT,
+        lr: float,
+        momentum: float = 0.9,
+        shampoo_beta: float = 0.95,
+        weight_decay: float = 0.01,
+        *,
+        p_inv_root: float = 4,
+    ) -> None:
+        self.weight_decay_method = "decoupled"
+        self.p_inv_root = p_inv_root
+
+        if lr < 0.0:
+            raise ValueError(f"Invalid learning rate: {lr}")
+
+        defaults = {
+            "lr": lr,
+            "momentum": momentum,
+            "shampoo_beta": shampoo_beta,
+            "weight_decay": weight_decay,
+        }
+        super().__init__(params, defaults)
+
+    @torch.compile
+    def _scalar_update(
+        self,
+        grad: torch.Tensor,
+        exp_avg: torch.Tensor,
+        *,
+        momentum: float,
+    ) -> torch.Tensor:
+        """Applies the inner scalar optimizer to the gradient, in the parameter basis.
+
+        Args:
+            grad: Gradient of the parameter.
+            exp_avg: Momentum buffer, updated in place.
+            momentum: Momentum EMA coefficient.
+
+        Returns:
+            The scalar update, in the parameter basis.
+        """
+        exp_avg.lerp_(grad, 1 - momentum)
+        return exp_avg
+
+    @torch.no_grad()  # type: ignore[misc]
+    def _init_group(
+        self,
+        group: dict,
+        skip_non_grad_params: bool = True,
+    ) -> None:
+        """Performs lazy state initialization for parameters with gradients.
+
+        Args:
+            group: Parameter group dictionary.
+            skip_non_grad_params: Whether to skip parameters with no gradients.
+
+        Raises:
+            TypeError: If the parameter is not a 2D CUDA tensor.
+        """
+        for p in group["params"]:
+            if skip_non_grad_params and p.grad is None:
+                continue
+
+            if p.dim() != 2:
+                raise TypeError(f"{type(self).__name__} is only supported for 2D tensors")
+            if not p.is_cuda:
+                raise TypeError(f"{type(self).__name__} only supports CUDA tensors")
+
+            state = self.state[p]
+
+            if len(state) == 0:
+                state["step"] = 0
+                state["exp_avg"] = torch.zeros_like(p, dtype=torch.float32)
+
+                state.update(self.PreconditionerCls.init_state(p.shape, p.device))
+
+    if TYPE_CHECKING:
+
+        @overload
+        def step(self, closure: None = ...) -> None: ...
+
+        @overload
+        def step(self, closure: Callable[[], float]) -> float: ...
+
+    @torch.no_grad()  # type: ignore[misc]
+    @override
+    def step(self, closure: Callable[[], float] | None = None) -> float | None:
+        """Performs a single optimization step.
+
+        Args:
+            closure: Unsupported; must be ``None``.
+
+        Raises:
+            ValueError: If ``closure`` is not ``None``.
+        """
+        if closure is not None:
+            raise ValueError("closure is not supported")
+
+        for group in self.param_groups:
+            self._init_group(group)
+
+        for group in self.param_groups:
+            for p in group["params"]:
+                if p.grad is None:
+                    continue  # pragma: no cover
+
+                grad = p.grad.to(torch.float32)
+                state = self.state[p]
+
+                preconditioner = self.PreconditionerCls(state, self.p_inv_root)
+
+                scalar_update = self._scalar_update(grad, state["exp_avg"], momentum=group["momentum"])
+
+                if state["step"] == 0:
+                    preconditioner.init_step(grad, group["shampoo_beta"])
+                else:
+                    preconditioner.step(grad, group["shampoo_beta"])
+                preconditioned_update = preconditioner.precondition(scalar_update)
+
+                self._apply_weight_decay_inplace(
+                    p,
+                    grad,
+                    group["lr"],
+                    group["weight_decay"],
+                )
+                p.add_(preconditioned_update.to(p.dtype), alpha=-group["lr"])
+
+                preconditioner.rebind_state(state)
+                state["step"] += 1
+
+        return None

@@ -37,6 +37,10 @@ class TensorPair:
         """Iterates over the pair as ``L`` then ``R``."""
         return iter((self.L, self.R))
 
+    def __getitem__(self, index: int) -> torch.Tensor:
+        """Indexes the pair as ``0`` for ``L`` and ``1`` for ``R``."""
+        return (self.L, self.R)[index]
+
 
 class _PreconditionerProtocol(Protocol):
     """Interface every preconditioner in the family must provide, for one parameter.
