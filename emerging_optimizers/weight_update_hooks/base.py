@@ -20,17 +20,11 @@ import torch
 __all__ = ["NoOpWeightUpdateHook", "WeightUpdateHook"]
 
 
-HookStateT = TypeVar("HookStateT")
+HookStateT = TypeVar("HookStateT", bound=torch.Tensor | None)
 
 
 class WeightUpdateHook(Protocol[HookStateT]):
-    """Static structural contract for behavior around the final weight update.
-
-    PEP 544 structural typing lets third-party hooks satisfy this interface without
-    inheriting from an Emerging Optimizers base class. An abstract base class is not
-    needed because hooks share no implementation or runtime state, and the optimizer
-    does not perform runtime ``isinstance`` checks.
-    """
+    """Static structural contract for behavior around the final weight update."""
 
     def pre_weight_update_inplace(
         self,

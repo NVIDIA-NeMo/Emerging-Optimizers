@@ -17,10 +17,10 @@ import math
 import torch
 
 
-__all__ = ["RadialBrake"]
+__all__ = ["RadialBrakeHook"]
 
 
-class RadialBrake:
+class RadialBrakeHook:
     """Dampen radial norm changes after an optimizer update.
 
     The optimizer first applies its usual update ``w = w_prev + dw``. This hook then rescales ``w`` so that
@@ -31,6 +31,11 @@ class RadialBrake:
 
     where ``s`` is ``outward_scale`` when the update increases the norm, otherwise
     ``inward_scale``.
+
+    Args:
+        outward_scale: Fraction of an outward norm change to retain.
+        inward_scale: Fraction of an inward norm change to retain.
+        eps: Norm threshold below which values are treated as numerical zero.
     """
 
     def __init__(

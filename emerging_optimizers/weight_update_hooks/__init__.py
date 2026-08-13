@@ -13,15 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from emerging_optimizers.weight_update_hooks.base import NoOpWeightUpdateHook, WeightUpdateHook
-from emerging_optimizers.weight_update_hooks.hyperball import Hyperball
-from emerging_optimizers.weight_update_hooks.radial_brake import RadialBrake
-from emerging_optimizers.weight_update_hooks.relative_update import RelativeUpdate
+from emerging_optimizers.weight_update_hooks.hyperball import HyperballHook
+from emerging_optimizers.weight_update_hooks.radial_brake import RadialBrakeHook
+from emerging_optimizers.weight_update_hooks.relative_update import RelativeUpdateHook
 
 
 __all__ = [
-    "Hyperball",
+    "HyperballHook",
     "NoOpWeightUpdateHook",
-    "RadialBrake",
-    "RelativeUpdate",
+    "RadialBrakeHook",
+    "RelativeUpdateHook",
     "WeightUpdateHook",
 ]

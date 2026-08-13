@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import TYPE_CHECKING, Any, Callable, override
+from typing import TYPE_CHECKING, Any, Callable, Generic, cast, override
 
 
 if TYPE_CHECKING:
@@ -27,6 +27,7 @@ from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import utils
 from emerging_optimizers.utils import FP32MatmulPrecT
 from emerging_optimizers.weight_update_hooks import NoOpWeightUpdateHook, WeightUpdateHook
+from emerging_optimizers.weight_update_hooks.base import HookStateT
 
 
 _args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
@@ -42,7 +43,7 @@ _args_doc = """params: Iterable of parameters to optimize or dicts defining para
 """
 
 
-class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
+class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer, Generic[HookStateT]):
     """Base class for orthogonalized optimizers.
 
     This class is a wrapper around a base optimizer that performs orthogonalization on the updates.
@@ -105,7 +106,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         weight_decay_method: opt_mixin.WeightDecayT,
         fp32_matmul_prec: FP32MatmulPrecT,
         scaled_orthogonalize_fn: Callable | None = None,
-        weight_update_hook: WeightUpdateHook[Any] | None = None,
+        weight_update_hook: WeightUpdateHook[HookStateT] | None = None,
         **kwargs: Any,
     ):
         if scaled_orthogonalize_fn is None:
@@ -115,8 +116,10 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer):
         self.fp32_matmul_prec = fp32_matmul_prec
         self.nesterov = nesterov
         self.weight_decay_method = weight_decay_method
-        self._weight_update_hook: WeightUpdateHook[Any] = (
-            weight_update_hook if weight_update_hook is not None else NoOpWeightUpdateHook()
+        self._weight_update_hook: WeightUpdateHook[HookStateT] = (
+            weight_update_hook
+            if weight_update_hook is not None
+            else cast(WeightUpdateHook[HookStateT], NoOpWeightUpdateHook())
         )
 
         default_args_dict = dict(

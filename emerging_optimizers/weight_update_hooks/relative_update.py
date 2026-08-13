@@ -12,15 +12,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import math
-
 import torch
 
 
-__all__ = ["RelativeUpdate"]
+__all__ = ["RelativeUpdateHook"]
 
 
-class RelativeUpdate:
+class RelativeUpdateHook:
     r"""Scale the update norm to the current weight norm without projecting the weight.
 
     Before the optimizer applies its learning rate, this hook performs
@@ -30,12 +28,12 @@ class RelativeUpdate:
         U \leftarrow \frac{\lVert W\rVert_F}{\lVert U\rVert_F} U.
 
     Therefore the learning rate directly controls the relative update norm. Unlike
-    :class:`Hyperball`, this hook does not project the weight after the update.
+    :class:`HyperballHook`, this hook does not project the weight after the update.
     """
 
     def __init__(self, eps: float = 1e-15) -> None:
-        if not math.isfinite(eps) or eps <= 0.0:
-            raise ValueError(f"eps must be finite and positive, got {eps}")
+        if eps <= 0.0:
+            raise ValueError(f"eps must be positive, got {eps}")
         self.eps = eps
 
     def pre_weight_update_inplace(

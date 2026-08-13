@@ -17,10 +17,10 @@ import math
 import torch
 
 
-__all__ = ["Hyperball"]
+__all__ = ["HyperballHook"]
 
 
-class Hyperball:
+class HyperballHook:
     """Normalize update and post-update weights to a fixed Frobenius norm.
 
     This hook mirrors the hyperball-style behavior used by MuonHyperball: before the weight update, normalize the

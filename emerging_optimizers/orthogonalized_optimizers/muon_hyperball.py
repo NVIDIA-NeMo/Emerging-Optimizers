@@ -18,14 +18,14 @@ import torch
 
 from emerging_optimizers import registry
 from emerging_optimizers.orthogonalized_optimizers import muon
-from emerging_optimizers.weight_update_hooks import Hyperball
+from emerging_optimizers.weight_update_hooks import HyperballHook
 
 
 __all__ = ["MuonHyperball"]
 
 
 @registry.register_optimizer("muon_hyperball")
-class MuonHyperball(muon.Muon):
+class MuonHyperball(muon.Muon[None]):
     """Muon optimizer with hyperball-style norm-preserving weight updates.
 
     This optimizer extends Muon by performing gradient descent on the sphere manifold
@@ -68,9 +68,9 @@ class MuonHyperball(muon.Muon):
         if "weight_update_hook" in kwargs:
             raise KeyError(
                 "MuonHyperball does not accept a 'weight_update_hook' argument; "
-                "it manages its own Hyperball hook internally."
+                "it manages its own HyperballHook internally."
             )
-        kwargs["weight_update_hook"] = Hyperball(radius=hyperball_radius, eps=hyperball_eps)
+        kwargs["weight_update_hook"] = HyperballHook(radius=hyperball_radius, eps=hyperball_eps)
         super().__init__(*args, **kwargs)
 
         with torch.no_grad():

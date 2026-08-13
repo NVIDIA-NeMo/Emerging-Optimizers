@@ -392,7 +392,7 @@ class MuonHyperballTest(parameterized.TestCase):
             muon_hyperball.MuonHyperball([test_param], lr=0.01, hyperball_radius=1.0)
 
     def test_rejects_weight_update_hook(self) -> None:
-        """MuonHyperball manages its own Hyperball hook internally."""
+        """MuonHyperball manages its own HyperballHook internally."""
         test_param = nn.Parameter(torch.randn((5, 7), dtype=torch.float32, device=self.device))
         hyperball_radius = torch.linalg.vector_norm(test_param).item()
 
