@@ -23,12 +23,14 @@ from torch import optim
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
+from emerging_optimizers import registry
 from emerging_optimizers.shampoo import shampoo_base
 from emerging_optimizers.utils import eig as eig_utils
 
 
 __all__ = [
     "Shampoo",
+    "ShampooBase",
     "ShampooPreconditioner",
 ]
 
@@ -102,6 +104,9 @@ class ShampooPreconditioner:
             grad: Gradient of the parameter on the first step.
             shampoo_beta: EMA coefficient for the Kronecker factor update.
         """
+        # Changing initial kronecker factors to be epsilon along the diagonal to match the paper
+        self.kronecker_factor_pair.L += self.eps * torch.eye(grad.shape[-2], device=grad.device)
+        self.kronecker_factor_pair.R += self.eps * torch.eye(grad.shape[-1], device=grad.device)
         self.update_kronecker_factors(grad, shampoo_beta)
 
     def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float) -> None:
@@ -123,7 +128,7 @@ class ShampooPreconditioner:
         """
         self.update_kronecker_factors(grad, shampoo_beta)
 
-    def _get_inverse_root(self, kronecker_factor: torch.Tensor) -> torch.Tensor:
+    def _get_root_inverse(self, kronecker_factor: torch.Tensor) -> torch.Tensor:
         """Computes ``kronecker_factor^(-1/p_inv_root)`` from its eigendecomposition.
 
         Args:
@@ -133,8 +138,8 @@ class ShampooPreconditioner:
             The inverse root of the factor.
         """
         eigvals, eigvecs = eig_utils.eigh_with_fallback(kronecker_factor)
-        # Kronecker factors are symmetric. Eigh can sometime return negative values for numerical 0 therefore the abs.
-        return (eigvecs * eigvals.abs().clamp_min(self.eps) ** (-1.0 / self.p_inv_root)) @ eigvecs.mT
+        # Eigh can sometime return negative values for numerical 0, which clamp to eps will also get rid off
+        return (eigvecs * eigvals.clamp_min(self.eps) ** (-1.0 / self.p_inv_root)) @ eigvecs.mT
 
     def precondition(self, x: torch.Tensor) -> torch.Tensor:
         """Applies both inverse roots to a matrix in the parameter basis.
@@ -146,18 +151,22 @@ class ShampooPreconditioner:
             The preconditioned matrix, in the parameter basis.
         """
         inverse_root_pair = shampoo_base.TensorPair(
-            self._get_inverse_root(self.kronecker_factor_pair.L),
-            self._get_inverse_root(self.kronecker_factor_pair.R),
+            self._get_root_inverse(self.kronecker_factor_pair.L),
+            self._get_root_inverse(self.kronecker_factor_pair.R),
         )
 
         return inverse_root_pair.L @ x @ inverse_root_pair.R
 
 
-class Shampoo(optim.Optimizer, opt_mixin.WeightDecayMixin):
-    """Shampoo with inverse roots rebuilt by eigendecomposition on every step.
+class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
+    """Canonical Shampoo step loop, shared by the Shampoo-family optimizers.
 
-    The update is EMA momentum in the parameter basis, preconditioned on both sides by the inverse roots
-    of the Kronecker factors.
+    :meth:`step` is the whole algorithm: update the preconditioner from the gradient, run an inner scalar
+    optimizer in the parameter basis, and precondition its update on both sides. Subclasses customize the
+    two pieces that vary between Shampoo variants and leave the loop alone:
+
+    - :attr:`PreconditionerCls` -- how the Kronecker factors and their inverse roots are maintained.
+    - :meth:`_scalar_update` -- which scalar optimizer produces the update being preconditioned.
 
     Args:
         params: Iterable of 2D CUDA parameters to optimize or dicts defining parameter groups.
@@ -172,7 +181,7 @@ class Shampoo(optim.Optimizer, opt_mixin.WeightDecayMixin):
             allocated by :meth:`_init_group`. Subclasses set it to change how the factors are maintained.
     """
 
-    PreconditionerCls: ClassVar[type[shampoo_base.ShampooPreconditionerProtocol]] = ShampooPreconditioner
+    PreconditionerCls: ClassVar[type[shampoo_base.ShampooPreconditionerProtocol]]
 
     def __init__(
         self,
@@ -198,7 +207,6 @@ class Shampoo(optim.Optimizer, opt_mixin.WeightDecayMixin):
         }
         super().__init__(params, defaults)
 
-    @torch.compile
     def _scalar_update(
         self,
         grad: torch.Tensor,
@@ -208,6 +216,8 @@ class Shampoo(optim.Optimizer, opt_mixin.WeightDecayMixin):
     ) -> torch.Tensor:
         """Applies the inner scalar optimizer to the gradient, in the parameter basis.
 
+        Override this to run a different scalar update ahead of the preconditioner.
+
         Args:
             grad: Gradient of the parameter.
             exp_avg: Momentum buffer, updated in place.
@@ -215,9 +225,11 @@ class Shampoo(optim.Optimizer, opt_mixin.WeightDecayMixin):
 
         Returns:
             The scalar update, in the parameter basis.
+
+        Raises:
+            NotImplementedError: Always; subclasses must provide the inner update.
         """
-        exp_avg.lerp_(grad, 1 - momentum)
-        return exp_avg
+        raise NotImplementedError
 
     @torch.no_grad()  # type: ignore[misc]
     def _init_group(
@@ -306,3 +318,32 @@ class Shampoo(optim.Optimizer, opt_mixin.WeightDecayMixin):
                 state["step"] += 1
 
         return None
+
+
+@registry.register_optimizer("shampoo")
+class Shampoo(ShampooBase):
+    """Shampoo with EMA momentum as the inner scalar optimizer."""
+
+    PreconditionerCls: ClassVar[type[shampoo_base.ShampooPreconditionerProtocol]] = ShampooPreconditioner
+
+    @torch.compile
+    @override
+    def _scalar_update(
+        self,
+        grad: torch.Tensor,
+        exp_avg: torch.Tensor,
+        *,
+        momentum: float,
+    ) -> torch.Tensor:
+        """Applies EMA momentum to the gradient, in the parameter basis.
+
+        Args:
+            grad: Gradient of the parameter.
+            exp_avg: Momentum buffer, updated in place.
+            momentum: Momentum EMA coefficient.
+
+        Returns:
+            The momentum update, in the parameter basis.
+        """
+        exp_avg.lerp_(grad, 1 - momentum)
+        return exp_avg
