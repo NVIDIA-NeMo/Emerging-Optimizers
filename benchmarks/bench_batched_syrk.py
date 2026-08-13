@@ -23,19 +23,12 @@ from emerging_optimizers.triton_kernels.batched_syrk import batched_tsyrk_ex
 from emerging_optimizers.triton_kernels.syrk import tsyrk_ex_small_matrix
 
 
-def ref_fp32(a, c, alpha, beta):
-    """Compute the fp32 reference of alpha * a @ a.mT + beta * c."""
-    out = alpha * (a.float() @ a.mT.float())
-    if beta != 0.0:
-        out += beta * c.float()
-    return out
-
-
 def max_err(x, ref):
-    """Return (max abs err, max rel err) of x against a fp32 reference."""
+    """Return (max abs err, max rel err) of x against ref."""
+    ref = ref.float()
+    assert ref.abs().amax() > 0.0, "reference is all zeros"
     diff = (x.float() - ref).abs()
-    denom = ref.abs().clamp_min(1e-6)
-    return diff.max().item(), (diff / denom).max().item()
+    return diff.max().item(), (diff / ref.abs()).max().item()
 
 
 def bench(fn, warmup=25, rep=100):
@@ -55,13 +48,14 @@ def run_case(B, N, K, alpha=1.0, beta=0.0, trans=False, device="cuda"):
         s = torch.randn(B, N, N, device=device, dtype=torch.bfloat16)
         c = ((s + s.mT) * 0.5).contiguous()
 
-    ref = ref_fp32(a, c, alpha, beta)
-
     # --- correctness ---
+    a_fp32 = a.float()
     d_triton = batched_tsyrk_ex(a, c, alpha=alpha, beta=beta)
     if beta != 0.0:
+        ref = torch.baddbmm(c.float(), a_fp32, a_fp32.mT, beta=beta, alpha=alpha)
         d_torch = torch.baddbmm(c, a, a.mT, beta=beta, alpha=alpha)
     else:
+        ref = alpha * torch.bmm(a_fp32, a_fp32.mT)
         d_torch = torch.bmm(a, a.mT) if alpha == 1.0 else alpha * torch.bmm(a, a.mT)
 
     tri_abs, tri_rel = max_err(d_triton, ref)

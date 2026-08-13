@@ -257,18 +257,8 @@ def newton_schulz(
                     8,
                     tuple(X.shape),
                 )
-            elif X.ndim == 2:
-                ns_step_fn = newton_schulz_step_tsyrk
-            elif X.is_cuda:
-                ns_step_fn = batched_newton_schulz_step_tsyrk
             else:
-                logging.log_first_n(
-                    logging.ERROR,
-                    "[SYRK-SKIP] skipping SYRK for batched input on device %s because the batched "
-                    "SYRK kernel requires CUDA.",
-                    8,
-                    X.device.type,
-                )
+                ns_step_fn = newton_schulz_step_tsyrk if X.ndim == 2 else batched_newton_schulz_step_tsyrk
         X = X.to(torch.bfloat16)
         logging.log_first_n(logging.INFO, "Using BF16 I/O kernels for Newton-Schulz iteration.", 1)
 

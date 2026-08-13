@@ -13,40 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # type: ignore
-"""Batched bf16 syrk Triton kernel, a drop-in replacement for ``torch.baddbmm(c, a, a.mT)``.
-
-Exploits output symmetry: only the lower-triangular tiles are computed (triangular grid mapping on
-axis 0, batch on axis 1) and off-diagonal tiles are mirrored on store, i.e. ~half the MMA work of a
-general baddbmm. Requires Hopper (sm90) TMA tensor descriptors, so Triton >= 3.4 and bf16 input with
-N and K multiples of 8; use :func:`can_use_batched_tsyrk` as the eligibility gate.
-
-When to call this instead of ``torch.baddbmm`` (measured on H20Z, 132 SMs, ~774 TFLOPS bf16 peak;
-sweep/probes in ``benchmarks/{bench,sweep,probe}_batched_syrk.py``, 2026-08):
-
-- Large per-matrix work wins: N >= 2048 gives 1.5-1.7x vs baddbmm (theoretical ceiling 2x); the
-  beta != 0 accumulate path wins more because it is fully fused here (C tiles loaded in the main
-  loop), while baddbmm launches an extra DtoD copy of C into the output before the GEMM.
-- N around 1024 is roughly break-even (0.95-1.1x). Small shapes LOSE: at N <= 512 with small B*N*K
-  the kernel is launch-latency-bound and cuBLAS is 1.3-2x faster; ``can_use_batched_tsyrk`` checks
-  eligibility only, not profitability, so gate on size (roughly N >= 1024) at the call site.
-- vs looping ``tsyrk_ex_small_matrix`` over the batch: 4-100x for B >= 8 (one launch vs B launches).
-
-Accuracy matches baddbmm's own bf16 rounding vs an fp32 reference (fp32 accumulate, one final bf16
-round); the output is exactly symmetric by construction.
-
-Tuning notes (H20-specific, from an exhaustive config sweep standing in for ncu, which is blocked in
-containers without CAP_SYS_ADMIN when RmProfilingAdminOnly=1):
-
-- The autotune shortlists in :func:`prune_invalid_batched_configs` are measured winners per N-band,
-  not heuristics; re-sweep with ``benchmarks/sweep_batched_syrk.py`` before porting to H100/H200
-  (H20 has ~1/4 the tensor-core rate of H100 at similar bandwidth, so the compute:BW balance and the
-  best tiles likely differ).
-- Ruled out by measurement on H20: TILE_M=256 (never wins), num_ctas=2 (fails to compile for 3D TMA
-  stores on Triton 3.7), rectangular 128x256 tiles (ties square at N=2048; ~8% win only at K ~ 7168,
-  not worth a second kernel). warp_specialize helps ~4% only at N >= 1536.
-- Host wrapper costs ~10 us (two TensorDescriptor ctors at ~2 us each — a/a_t and d/d_t share one
-  descriptor since tiles are square); irrelevant for large shapes, part of why small shapes lose.
-"""
+"""Batched bf16 syrk Triton kernel, a drop-in replacement for ``torch.baddbmm(c, a, a.mT)``."""
 
 import sys
 

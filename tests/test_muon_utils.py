@@ -347,24 +347,28 @@ class TestNewtonSchulz(parameterized.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid coefficient type.*nonexistent"):
             muon_utils.newton_schulz(x, steps=5, coefficient_type="nonexistent")
 
-    def test_newton_schulz_use_syrk_with_3d_falls_back_on_cpu(self) -> None:
-        """Test that newton_schulz with 3D input and use_syrk=True falls back to GEMM on CPU."""
-        x = torch.randn(2, 4, 8, device="cpu", dtype=torch.float32)
-        with utils.fp32_matmul_precision("medium"):
-            out = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic", use_syrk=True)
-        self.assertEqual(out.shape, x.shape)
-
     @parameterized.parameters(
-        (4, 4),
-        (4, 8),
-        (8, 4),
+        ((4, 4),),
+        ((4, 8),),
+        ((8, 4),),
+        ((2, 4, 8),),
+        ((2, 8, 4),),
     )
-    def test_newton_schulz_use_syrk_falls_back_for_non_8_aligned_shape(self, dim1, dim2) -> None:
+    def test_newton_schulz_use_syrk_falls_back_for_non_8_aligned_shape(self, shape) -> None:
         """Test that use_syrk falls back to GEMM for shapes that cannot satisfy bf16 TMA alignment."""
-        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        x = torch.randn(shape, device=self.device, dtype=torch.float32)
         gemm_call_count = 0
-        original_gemm_step = muon_utils.newton_schulz_step
-        original_tsyrk_step = muon_utils.newton_schulz_step_tsyrk
+        originals = {
+            name: getattr(muon_utils, name)
+            for name in (
+                "newton_schulz_step",
+                "batched_newton_schulz_step",
+                "newton_schulz_step_tsyrk",
+                "batched_newton_schulz_step_tsyrk",
+            )
+        }
+        gemm_step_name = "newton_schulz_step" if len(shape) == 2 else "batched_newton_schulz_step"
+        original_gemm_step = originals[gemm_step_name]
 
         def record_gemm_call(
             X: torch.Tensor,
@@ -387,13 +391,14 @@ class TestNewtonSchulz(parameterized.TestCase):
             raise AssertionError("SYRK step should not be called for non-8-aligned shape")
 
         try:
-            muon_utils.newton_schulz_step = record_gemm_call
+            setattr(muon_utils, gemm_step_name, record_gemm_call)
             muon_utils.newton_schulz_step_tsyrk = fail_if_called
+            muon_utils.batched_newton_schulz_step_tsyrk = fail_if_called
             with utils.fp32_matmul_precision("medium"):
                 muon_utils.newton_schulz(x, steps=1, coefficient_type="simple", use_syrk=True)
         finally:
-            muon_utils.newton_schulz_step = original_gemm_step
-            muon_utils.newton_schulz_step_tsyrk = original_tsyrk_step
+            for name, fn in originals.items():
+                setattr(muon_utils, name, fn)
 
         self.assertEqual(gemm_call_count, 1)
 
