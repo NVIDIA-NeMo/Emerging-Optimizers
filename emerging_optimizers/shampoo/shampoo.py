@@ -48,7 +48,7 @@ class ShampooPreconditioner:
         self,
         state: dict,
         p_inv_root: float,
-        eps: float = 1e-8,
+        eps: float,
     ) -> None:
         self.kronecker_factor_pair = shampoo_base.TensorPair(state["L"], state["R"])
         self.p_inv_root = p_inv_root
@@ -173,6 +173,7 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         lr: Learning rate.
         momentum: Momentum EMA coefficient.
         shampoo_beta: Kronecker factor EMA coefficient.
+        eps: Numerical epsilon
         weight_decay: Decoupled weight decay coefficient.
         p_inv_root: Inverse root order applied to each Kronecker factor.
 
@@ -189,15 +190,19 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         lr: float,
         momentum: float = 0.9,
         shampoo_beta: float = 0.95,
+        eps: float = 1e-8,
         weight_decay: float = 0.01,
         *,
         p_inv_root: float = 4,
     ) -> None:
+        self.eps = eps
         self.weight_decay_method = "decoupled"
         self.p_inv_root = p_inv_root
 
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
+        if p_inv_root <= 0 or round(p_inv_root) != p_inv_root:
+            raise ValueError(f"p_inv_root must be positive integer, got {p_inv_root}")
 
         defaults = {
             "lr": lr,
@@ -244,7 +249,7 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
             skip_non_grad_params: Whether to skip parameters with no gradients.
 
         Raises:
-            TypeError: If the parameter is not a 2D CUDA tensor.
+            TypeError: If the parameter is not a 2D tensor.
         """
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
@@ -252,8 +257,6 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
 
             if p.dim() != 2:
                 raise TypeError(f"{type(self).__name__} is only supported for 2D tensors")
-            if not p.is_cuda:
-                raise TypeError(f"{type(self).__name__} only supports CUDA tensors")
 
             state = self.state[p]
 
@@ -279,7 +282,7 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         Args:
             closure: Unsupported; must be ``None``.
 
-        Raises:
+        Raises:f
             ValueError: If ``closure`` is not ``None``.
         """
         if closure is not None:
@@ -296,7 +299,7 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
                 grad = p.grad.to(torch.float32)
                 state = self.state[p]
 
-                preconditioner = self.PreconditionerCls(state, self.p_inv_root)
+                preconditioner = self.PreconditionerCls(state, self.p_inv_root, self.eps)
 
                 scalar_update = self._scalar_update(grad, state["exp_avg"], momentum=group["momentum"])
 
