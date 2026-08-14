@@ -75,7 +75,7 @@ class KlSoapPreconditioner:
             The state entries owned by this preconditioner, keyed as :meth:`rebind_state` expects them.
 
         Raises:
-            ValueError: If ``shape`` is not 2D.
+            TypeError: If ``shape`` is not 2D.
         """
         if len(shape) != 2:
             raise TypeError(f"KlSoapPreconditioner is only supported for 2D tensors, got shape {tuple(shape)}")
