@@ -318,6 +318,23 @@ class ShampooTest(parameterized.TestCase):
         self.assertEqual(state["step"], 3)
         self.assertCountEqual(state, {"step", "exp_avg", "L", "R"})
 
+    @parameterized.parameters(True, False)
+    def test_init_group_skip_non_grad_params(self, skip_non_grad_params: bool) -> None:
+        with_grad = torch.nn.Parameter(torch.randn(4, 3, device=self.device))
+        without_grad = torch.nn.Parameter(torch.randn(5, 2, device=self.device))
+        with_grad.grad = torch.randn_like(with_grad)
+        optimizer = Shampoo([with_grad, without_grad], lr=1e-3)
+
+        optimizer._init_group(optimizer.param_groups[0], skip_non_grad_params=skip_non_grad_params)
+
+        self.assertCountEqual(optimizer.state[with_grad], {"step", "exp_avg", "L", "R"})
+        if skip_non_grad_params:
+            self.assertEmpty(optimizer.state[without_grad])
+        else:
+            self.assertCountEqual(optimizer.state[without_grad], {"step", "exp_avg", "L", "R"})
+            self.assertEqual(optimizer.state[without_grad]["L"].shape, (5, 5))
+            self.assertEqual(optimizer.state[without_grad]["R"].shape, (2, 2))
+
     def test_zero_grad_applies_only_weight_decay(self) -> None:
         lr, weight_decay = 0.1, 0.05
         p = torch.nn.Parameter(torch.randn(5, 5, device=self.device))
