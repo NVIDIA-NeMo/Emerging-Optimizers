@@ -24,7 +24,7 @@ from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry
-from emerging_optimizers.shampoo import shampoo_base
+from emerging_optimizers.shampoo import precond_base
 from emerging_optimizers.utils import eig as eig_utils
 
 
@@ -50,7 +50,7 @@ class ShampooPreconditioner:
         p_inv_root: float,
         eps: float,
     ) -> None:
-        self.kronecker_factor_pair = shampoo_base.TensorPair(state["L"], state["R"])
+        self.kronecker_factor_pair = precond_base.TensorPair(state["L"], state["R"])
         self.p_inv_root = p_inv_root
         self.eps = eps
 
@@ -150,7 +150,7 @@ class ShampooPreconditioner:
         Returns:
             The preconditioned matrix, in the parameter basis.
         """
-        inverse_root_pair = shampoo_base.TensorPair(
+        inverse_root_pair = precond_base.TensorPair(
             self._get_root_inverse(self.kronecker_factor_pair.L),
             self._get_root_inverse(self.kronecker_factor_pair.R),
         )
@@ -182,7 +182,7 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
             allocated by :meth:`_init_group`. Subclasses set it to change how the factors are maintained.
     """
 
-    PreconditionerCls: ClassVar[type[shampoo_base.ShampooPreconditionerProtocol]]
+    PreconditionerCls: ClassVar[type[precond_base.ShampooPreconditionerProtocol]]
 
     def __init__(
         self,
@@ -327,7 +327,7 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
 class Shampoo(ShampooBase):
     """Shampoo with EMA momentum as the inner scalar optimizer."""
 
-    PreconditionerCls: ClassVar[type[shampoo_base.ShampooPreconditionerProtocol]] = ShampooPreconditioner
+    PreconditionerCls: ClassVar[type[precond_base.ShampooPreconditionerProtocol]] = ShampooPreconditioner
 
     @torch.compile
     @override
