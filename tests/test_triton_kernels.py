@@ -19,6 +19,7 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import triton_kernels
+from emerging_optimizers.triton_kernels.batched_syrk import prune_invalid_batched_configs
 from emerging_optimizers.triton_kernels.syrk import prune_invalid_configs, prune_invalid_configs_for_small_matrix
 
 
@@ -37,6 +38,16 @@ def setUpModule() -> None:
 
 def _make_config(tile_m: int, tile_n: int, tile_k: int) -> triton.Config:
     return triton.Config({"TILE_M": tile_m, "TILE_N": tile_n, "TILE_K": tile_k})
+
+
+def _make_batched_config(
+    tile_m: int, tile_n: int, tile_k: int, num_warps: int, num_stages: int, warp_specialize: bool = False
+) -> triton.Config:
+    return triton.Config(
+        {"TILE_M": tile_m, "TILE_N": tile_n, "TILE_K": tile_k, "WARP_SPECIALIZE": warp_specialize},
+        num_warps=num_warps,
+        num_stages=num_stages,
+    )
 
 
 class PruneInvalidConfigsTest(parameterized.TestCase):
@@ -75,6 +86,49 @@ class PruneInvalidConfigsForSmallMatrixTest(parameterized.TestCase):
         result = prune_invalid_configs_for_small_matrix(triton_configs, {"N": n})
         result_tuples = [(c.kwargs["TILE_M"], c.kwargs["TILE_N"], c.kwargs["TILE_K"]) for c in result]
         self.assertEqual(result_tuples, expected)
+
+
+class PruneInvalidBatchedConfigsTest(parameterized.TestCase):
+    @parameterized.parameters(
+        {
+            "n": 512,
+            "k": 256,
+            "configs": [(64, 64, 64, 4, 3, False), (64, 64, 64, 4, 3, True), (128, 64, 64, 4, 2, False)],
+            "expected": [(64, 64, 64, 4, 3, False)],
+        },
+        {
+            "n": 1024,
+            "k": 128,
+            "configs": [(128, 128, 32, 4, 2, False), (64, 64, 64, 8, 4, True), (64, 64, 128, 4, 2, False)],
+            "expected": [(128, 128, 32, 4, 2, False), (64, 64, 64, 8, 4, True)],
+        },
+        {
+            "n": 2048,
+            "k": 512,
+            "configs": [(128, 128, 128, 4, 4, False), (128, 128, 64, 4, 2, False), (64, 64, 64, 4, 2, False)],
+            "expected": [(128, 128, 64, 4, 2, False)],
+        },
+    )
+    def test_prune_invalid_batched_configs(self, n: int, k: int, configs: list, expected: list):
+        triton_configs = [_make_batched_config(*c) for c in configs]
+        result = prune_invalid_batched_configs(triton_configs, {"N": n, "K": k})
+        result_tuples = [
+            (
+                c.kwargs["TILE_M"],
+                c.kwargs["TILE_N"],
+                c.kwargs["TILE_K"],
+                c.num_warps,
+                c.num_stages,
+                c.kwargs["WARP_SPECIALIZE"],
+            )
+            for c in result
+        ]
+        self.assertEqual(result_tuples, expected)
+
+    def test_prune_invalid_batched_configs_falls_back_when_all_pruned(self):
+        triton_configs = [_make_batched_config(128, 64, 64, 4, 2), _make_batched_config(64, 128, 64, 4, 2)]
+        result = prune_invalid_batched_configs(triton_configs, {"N": 512, "K": 128})
+        self.assertEqual(result, triton_configs)
 
 
 class TsyrkTest(parameterized.TestCase):
@@ -307,6 +361,123 @@ class TsyrkIntegerInputTest(parameterized.TestCase):
         _ = triton_kernels.tsyrk_ex_small_matrix(a_warmup, a_warmup, alpha=alpha, beta=beta)
         c = triton_kernels.tsyrk_ex_small_matrix(a, a, alpha=alpha, beta=beta)
         assert_equal(c, ref)
+
+
+class BatchedTsyrkExValidationTest(parameterized.TestCase):
+    """Tests for input validation in batched_tsyrk_ex and can_use_batched_tsyrk."""
+
+    def setUp(self):
+        self.device = FLAGS.device
+
+    def test_batched_tsyrk_ex_non_bf16_raises_type_error(self) -> None:
+        a = torch.randn(2, 16, 16, device=self.device, dtype=torch.float32)
+        with self.assertRaisesRegex(TypeError, "must be bfloat16"):
+            triton_kernels.batched_tsyrk_ex(a)
+
+    def test_batched_tsyrk_ex_non_3d_raises_type_error(self) -> None:
+        a = torch.randn(16, 16, device=self.device, dtype=torch.bfloat16)
+        with self.assertRaisesRegex(TypeError, "must be 3D"):
+            triton_kernels.batched_tsyrk_ex(a)
+
+    def test_batched_tsyrk_ex_non_contiguous_raises_type_error(self) -> None:
+        a = torch.randn(2, 16, 32, device=self.device, dtype=torch.bfloat16)[:, :, ::2]
+        with self.assertRaisesRegex(TypeError, "must be contiguous"):
+            triton_kernels.batched_tsyrk_ex(a)
+
+    @parameterized.parameters(
+        (2, 12, 16),
+        (2, 16, 12),
+    )
+    def test_batched_tsyrk_ex_unaligned_shape_raises_runtime_error(self, b: int, n: int, k: int) -> None:
+        a = torch.randn(b, n, k, device=self.device, dtype=torch.bfloat16)
+        with self.assertRaisesRegex(RuntimeError, "must be multiples of 8"):
+            triton_kernels.batched_tsyrk_ex(a)
+
+    def test_batched_tsyrk_ex_c_wrong_shape_raises_runtime_error(self) -> None:
+        a = torch.randn(2, 16, 16, device=self.device, dtype=torch.bfloat16)
+        c = torch.randn(2, 8, 8, device=self.device, dtype=torch.bfloat16)
+        with self.assertRaisesRegex(RuntimeError, r"c must be of shape \(B, N, N\)"):
+            triton_kernels.batched_tsyrk_ex(a, c, beta=1.0)
+
+    def test_batched_tsyrk_ex_c_non_contiguous_raises_runtime_error(self) -> None:
+        a = torch.randn(2, 16, 16, device=self.device, dtype=torch.bfloat16)
+        c = torch.randn(2, 32, 32, device=self.device, dtype=torch.bfloat16)[:, ::2, ::2]
+        with self.assertRaisesRegex(RuntimeError, "c or c.mT must be contiguous"):
+            triton_kernels.batched_tsyrk_ex(a, c, beta=1.0)
+
+    def test_batched_tsyrk_ex_out_wrong_shape_raises_runtime_error(self) -> None:
+        a = torch.randn(2, 16, 16, device=self.device, dtype=torch.bfloat16)
+        out = torch.empty(2, 8, 8, device=self.device, dtype=torch.bfloat16)
+        with self.assertRaisesRegex(RuntimeError, "out must be same shape/device/dtype"):
+            triton_kernels.batched_tsyrk_ex(a, out=out)
+
+    def test_batched_tsyrk_ex_out_non_contiguous_raises_runtime_error(self) -> None:
+        a = torch.randn(2, 16, 16, device=self.device, dtype=torch.bfloat16)
+        out = torch.empty(2, 32, 32, device=self.device, dtype=torch.bfloat16)[:, ::2, ::2]
+        with self.assertRaisesRegex(RuntimeError, "out must be contiguous"):
+            triton_kernels.batched_tsyrk_ex(a, out=out)
+
+    def test_can_use_batched_tsyrk(self) -> None:
+        a = torch.randn(2, 128, 64, device=self.device, dtype=torch.bfloat16)
+        c = torch.randn(2, 128, 128, device=self.device, dtype=torch.bfloat16)
+        cases = {
+            "contiguous": ((a, None), True),
+            "transposed": ((torch.randn(2, 64, 128, device=self.device, dtype=torch.bfloat16).mT, None), True),
+            "symmetric_c": ((a, c), True),
+            "non_bf16": ((a.float(), None), False),
+            "non_3d": ((a[0], None), False),
+            "unaligned_n": ((torch.randn(2, 12, 64, device=self.device, dtype=torch.bfloat16), None), False),
+            "unaligned_k": ((torch.randn(2, 128, 12, device=self.device, dtype=torch.bfloat16), None), False),
+            "non_contiguous": ((c[:, :, ::2], None), False),
+            "c_wrong_shape": ((a, torch.randn(2, 64, 64, device=self.device, dtype=torch.bfloat16)), False),
+            "c_wrong_dtype": ((a, c.float()), False),
+            "c_non_contiguous": (
+                (a, torch.randn(2, 256, 256, device=self.device, dtype=torch.bfloat16)[:, ::2, ::2]),
+                False,
+            ),
+        }
+        for name, ((a_case, c_case), expected) in cases.items():
+            with self.subTest(name):
+                self.assertEqual(triton_kernels.can_use_batched_tsyrk(a_case, c_case), expected)
+
+
+class BatchedTsyrkIntegerInputTest(parameterized.TestCase):
+    def setUp(self):
+        self.device = FLAGS.device
+
+    @parameterized.product(
+        ({"b": 2, "n": 128, "k": 128}, {"b": 4, "n": 256, "k": 64}),
+        ({"trans": False}, {"trans": True}),
+    )
+    def test_batched_tsyrk_ex_match_bmm(self, b: int, n: int, k: int, trans: bool):
+        a = torch.randint(-3, 3, (b, n, k), device=self.device, dtype=torch.bfloat16)
+        a_warmup = torch.randint_like(a, -3, 3)
+        if trans:
+            a = a.mT
+            a_warmup = a_warmup.mT
+        ref = torch.bmm(a, a.mT)
+        # warmup the triton kernel to avoid the wrong result from the first run.
+        _ = triton_kernels.batched_tsyrk_ex(a_warmup)
+        d = triton_kernels.batched_tsyrk_ex(a)
+        assert_equal(d, ref)
+
+    @parameterized.product(
+        ({"b": 2, "n": 128, "alpha": 0.5, "beta": 0.5}, {"b": 4, "n": 256, "alpha": 0.25, "beta": 0.25}),
+        ({"trans": False}, {"trans": True}),
+    )
+    def test_batched_tsyrk_ex_match_baddbmm(self, b: int, n: int, alpha: float, beta: float, trans: bool):
+        a = torch.randint(-3, 3, (b, n, n), device=self.device, dtype=torch.bfloat16)
+        # make symmetric input matrices.
+        a = a + a.mT
+        a_warmup = torch.randint_like(a, -3, 3)
+        ref = torch.baddbmm(a, a, a, alpha=alpha, beta=beta)
+        if trans:
+            a = a.mT
+            a_warmup = a_warmup.mT
+        # warmup the triton kernel to avoid the wrong result from the first run.
+        _ = triton_kernels.batched_tsyrk_ex(a_warmup, a_warmup, alpha=alpha, beta=beta)
+        d = triton_kernels.batched_tsyrk_ex(a, a, alpha=alpha, beta=beta)
+        assert_equal(d, ref)
 
 
 if __name__ == "__main__":
