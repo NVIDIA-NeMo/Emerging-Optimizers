@@ -242,26 +242,30 @@ class TestTensorParallelNewtonSchulz(parameterized.TestCase):
         torch.distributed.all_reduce(x, op=torch.distributed.ReduceOp.SUM)
         local_x = x.chunk(world_size, dim=partition_dim)[rank]
 
-        with utils.fp32_matmul_precision("medium"):
-            muon_utils.newton_schulz_tp(
-                local_x,
-                steps=1,
-                coefficient_type="simple",
-                tp_group=torch.distributed.group.WORLD,
-                partition_dim=partition_dim,
-                tp_mode=tp_mode,
-                use_syrk=False,
-            )
-            with self.assertRaisesRegex(TypeError, "use_syrk does not support"):
-                muon_utils.newton_schulz_tp(
-                    local_x,
-                    steps=1,
-                    coefficient_type="simple",
-                    tp_group=torch.distributed.group.WORLD,
-                    partition_dim=partition_dim,
-                    tp_mode=tp_mode,
-                    use_syrk=True,
-                )
+        seen_use_syrk = []
+        original_newton_schulz = muon_utils.newton_schulz
+
+        def record_use_syrk(*args, **kwargs):
+            seen_use_syrk.append(kwargs["use_syrk"])
+            return original_newton_schulz(*args, **{**kwargs, "use_syrk": False})
+
+        try:
+            muon_utils.newton_schulz = record_use_syrk
+            with utils.fp32_matmul_precision("medium"):
+                for use_syrk in (False, True):
+                    muon_utils.newton_schulz_tp(
+                        local_x,
+                        steps=1,
+                        coefficient_type="simple",
+                        tp_group=torch.distributed.group.WORLD,
+                        partition_dim=partition_dim,
+                        tp_mode=tp_mode,
+                        use_syrk=use_syrk,
+                    )
+        finally:
+            muon_utils.newton_schulz = original_newton_schulz
+
+        self.assertEqual(seen_use_syrk, [False, True])
 
 
 if __name__ == "__main__":

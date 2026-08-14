@@ -347,23 +347,28 @@ class TestNewtonSchulz(parameterized.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid coefficient type.*nonexistent"):
             muon_utils.newton_schulz(x, steps=5, coefficient_type="nonexistent")
 
-    def test_newton_schulz_use_syrk_with_3d_raises_type_error(self) -> None:
-        """Test that newton_schulz raises TypeError for 3D input with use_syrk=True."""
-        x = torch.randn(2, 4, 8, device=self.device, dtype=torch.float32)
-        with utils.fp32_matmul_precision("medium"), self.assertRaisesRegex(TypeError, "use_syrk does not support"):
-            muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic", use_syrk=True)
-
     @parameterized.parameters(
-        (4, 4),
-        (4, 8),
-        (8, 4),
+        ((4, 4),),
+        ((4, 8),),
+        ((8, 4),),
+        ((2, 4, 8),),
+        ((2, 8, 4),),
     )
-    def test_newton_schulz_use_syrk_falls_back_for_non_8_aligned_shape(self, dim1, dim2) -> None:
+    def test_newton_schulz_use_syrk_falls_back_for_non_8_aligned_shape(self, shape) -> None:
         """Test that use_syrk falls back to GEMM for shapes that cannot satisfy bf16 TMA alignment."""
-        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
+        x = torch.randn(shape, device=self.device, dtype=torch.float32)
         gemm_call_count = 0
-        original_gemm_step = muon_utils.newton_schulz_step
-        original_tsyrk_step = muon_utils.newton_schulz_step_tsyrk
+        originals = {
+            name: getattr(muon_utils, name)
+            for name in (
+                "newton_schulz_step",
+                "batched_newton_schulz_step",
+                "newton_schulz_step_tsyrk",
+                "batched_newton_schulz_step_tsyrk",
+            )
+        }
+        gemm_step_name = "newton_schulz_step" if len(shape) == 2 else "batched_newton_schulz_step"
+        original_gemm_step = originals[gemm_step_name]
 
         def record_gemm_call(
             X: torch.Tensor,
@@ -386,13 +391,14 @@ class TestNewtonSchulz(parameterized.TestCase):
             raise AssertionError("SYRK step should not be called for non-8-aligned shape")
 
         try:
-            muon_utils.newton_schulz_step = record_gemm_call
+            setattr(muon_utils, gemm_step_name, record_gemm_call)
             muon_utils.newton_schulz_step_tsyrk = fail_if_called
+            muon_utils.batched_newton_schulz_step_tsyrk = fail_if_called
             with utils.fp32_matmul_precision("medium"):
                 muon_utils.newton_schulz(x, steps=1, coefficient_type="simple", use_syrk=True)
         finally:
-            muon_utils.newton_schulz_step = original_gemm_step
-            muon_utils.newton_schulz_step_tsyrk = original_tsyrk_step
+            for name, fn in originals.items():
+                setattr(muon_utils, name, fn)
 
         self.assertEqual(gemm_call_count, 1)
 
@@ -504,6 +510,26 @@ class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):
         test_ref = muon_utils.newton_schulz_step(x, 2**-1, 2**-2, 2**-3)
 
         assert_equal(test_out, test_ref)
+
+    @parameterized.parameters(
+        (2, 32, 32),
+        (4, 32, 64),
+        (8, 16, 128),
+    )
+    def test_batched_match_unbatched_tsyrk_step(self, batch, dim1, dim2):
+        x = torch.randint(-2, 3, (batch, dim1, dim2), device=self.device, dtype=torch.bfloat16)
+        test_out = muon_utils.batched_newton_schulz_step_tsyrk(x, 2**-1, 2**-2, 2**-3)
+        test_ref = torch.stack([muon_utils.newton_schulz_step_tsyrk(x[i], 2**-1, 2**-2, 2**-3) for i in range(batch)])
+
+        assert_equal(test_out, test_ref)
+
+    def test_newton_schulz_3d_use_syrk_matches_gemm_path(self):
+        x = torch.randint(-3, 4, (4, 32, 64), device=self.device, dtype=torch.float32)
+        with utils.fp32_matmul_precision("medium"):
+            test_out = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic", use_syrk=True)
+            test_ref = muon_utils.newton_schulz(x, steps=5, coefficient_type="quintic", use_syrk=False)
+
+        torch.testing.assert_close(test_out, test_ref, atol=1e-2, rtol=1e-2)
 
 
 if __name__ == "__main__":
