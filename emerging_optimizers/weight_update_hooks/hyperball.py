@@ -43,6 +43,7 @@ class HyperballHook:
         norm = torch.linalg.vector_norm(tensor, dtype=torch.float32)
         is_numerical_zero = norm < self.eps
         radius = torch.as_tensor(self.radius, device=tensor.device, dtype=torch.float32)
+        # Intentionally map numerical zero to exact zero because it has no usable direction for projection.
         scale = torch.where(is_numerical_zero, torch.zeros_like(norm), radius / norm.clamp_min(self.eps))
         tensor.mul_(scale.to(dtype=tensor.dtype))
 
