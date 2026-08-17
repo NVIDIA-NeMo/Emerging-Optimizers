@@ -138,8 +138,14 @@ class ShampooPreconditioner:
             The inverse root of the factor.
         """
         eigvals, eigvecs = eig_utils.eigh_with_fallback(kronecker_factor)
-        # Eigh can sometime return negative values for numerical 0, which clamp to eps will also get rid off
-        return (eigvecs * eigvals.clamp_min(self.eps) ** (-1.0 / self.p_inv_root)) @ eigvecs.mT
+
+        # Eigh can sometime return negative values for numerical 0; clamping to 0 removes them
+        eigvals = eigvals.clamp_min(0)
+
+        # Tikhonov regularization
+        exp = 1.0 / self.p_inv_root
+        inv_root_scale = eigvals**exp / (eigvals ** (2 * exp) + self.eps ** (2 * exp))
+        return (eigvecs * inv_root_scale) @ eigvecs.mT
 
     def precondition(self, x: torch.Tensor) -> torch.Tensor:
         """Applies both inverse roots to a matrix in the parameter basis.
@@ -302,6 +308,11 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
                 preconditioner = self.PreconditionerCls(state, self.p_inv_root, self.eps)
 
                 scalar_update = self._scalar_update(grad, state["exp_avg"], momentum=group["momentum"])
+
+                # bias correction on shampoo beta
+                curr_iter_1_based = state["step"] + 1
+                shampoo_beta = group["shampoo_beta"]
+                shampoo_beta = 1 - (1 - shampoo_beta) / (1 - shampoo_beta**curr_iter_1_based)
 
                 if state["step"] == 0:
                     preconditioner.init_step(grad, group["shampoo_beta"])
