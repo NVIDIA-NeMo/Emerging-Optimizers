@@ -391,6 +391,19 @@ class MuonHyperballTest(parameterized.TestCase):
         with self.assertRaises(ValueError):
             muon_hyperball.MuonHyperball([test_param], lr=0.01, hyperball_radius=1.0)
 
+    def test_rejects_weight_update_hook(self) -> None:
+        """MuonHyperball manages its own HyperballHook internally."""
+        test_param = nn.Parameter(torch.randn((5, 7), dtype=torch.float32, device=self.device))
+        hyperball_radius = torch.linalg.vector_norm(test_param).item()
+
+        with self.assertRaisesRegex(KeyError, "does not accept a 'weight_update_hook' argument"):
+            muon_hyperball.MuonHyperball(
+                [test_param],
+                lr=0.01,
+                hyperball_radius=hyperball_radius,
+                weight_update_hook=None,
+            )
+
     def test_radius_mismatch_raises_error(self) -> None:
         """Test that MuonHyperball raises ValueError when a parameter's norm does not match the radius."""
         test_param = nn.Parameter(torch.randn((5, 7), dtype=torch.float32, device=self.device))

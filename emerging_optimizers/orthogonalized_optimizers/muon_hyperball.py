@@ -12,19 +12,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, override
+from typing import Any
 
 import torch
 
 from emerging_optimizers import registry
 from emerging_optimizers.orthogonalized_optimizers import muon
+from emerging_optimizers.weight_update_hooks import HyperballHook
 
 
 __all__ = ["MuonHyperball"]
 
 
 @registry.register_optimizer("muon_hyperball")
-class MuonHyperball(muon.Muon):
+class MuonHyperball(muon.Muon[None]):
     """Muon optimizer with hyperball-style norm-preserving weight updates.
 
     This optimizer extends Muon by performing gradient descent on the sphere manifold
@@ -64,49 +65,31 @@ class MuonHyperball(muon.Muon):
         hyperball_eps: float = 1e-15,
         **kwargs: Any,
     ) -> None:
-        self.hyperball_eps = hyperball_eps
-        self.hyperball_radius = hyperball_radius
+        if "weight_update_hook" in kwargs:
+            raise KeyError(
+                "MuonHyperball does not accept a 'weight_update_hook' argument; "
+                "it manages its own HyperballHook internally."
+            )
+        kwargs["weight_update_hook"] = HyperballHook(radius=hyperball_radius, eps=hyperball_eps)
         super().__init__(*args, **kwargs)
 
         with torch.no_grad():
             for group in self.param_groups:
                 for p in group["params"]:
-                    p_norm = p.norm()
-                    if p_norm <= hyperball_eps:  # p_norm is non-negative, abs() is not needed
+                    p_norm = torch.linalg.vector_norm(p, dtype=torch.float32)
+                    if p_norm < hyperball_eps:  # p_norm is non-negative, abs() is not needed
                         raise ValueError(
                             "MuonHyperball requires all parameters to have non-zero norm. "
                             "Found parameter with almost zero norm."
                         )
                     if not torch.isclose(
                         p_norm,
-                        torch.tensor(self.hyperball_radius, dtype=p_norm.dtype, device=p_norm.device),
+                        torch.tensor(hyperball_radius, dtype=p_norm.dtype, device=p_norm.device),
                         atol=0,
                         rtol=1e-5,
                     ):
                         raise ValueError(
-                            f"hyperball_radius={self.hyperball_radius} was specified but a parameter "
+                            f"hyperball_radius={hyperball_radius} was specified but a parameter "
                             f"has Frobenius norm {p_norm.item()}. Rescale your model parameters to the "
                             f"desired radius before constructing the optimizer."
                         )
-
-    @override
-    def pre_weight_update_fn_inplace(self, p: torch.Tensor, update: torch.Tensor) -> None:
-        """Normalize the update using Frobenius norm, scaled by R.
-
-        Args:
-            p: The parameter tensor.
-            update: The orthogonalized gradient tensor.
-        """
-        update_norm = update.norm().clamp_min(self.hyperball_eps)
-        update.mul_(self.hyperball_radius / update_norm)
-
-    @override
-    def post_weight_update_fn_inplace(self, p: torch.Tensor) -> None:
-        """Normalize the updated weights and scale back to original norm using Frobenius norm.
-
-        Args:
-            p: The parameter tensor (already updated).
-        """
-        # Normalize the result and scale back by R: p = R * (p / ||p||_F) using Frobenius norm.
-        p_norm = p.norm().clamp_min(self.hyperball_eps)
-        p.mul_(self.hyperball_radius / p_norm)

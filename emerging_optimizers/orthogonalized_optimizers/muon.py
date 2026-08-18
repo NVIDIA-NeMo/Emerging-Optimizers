@@ -25,6 +25,8 @@ from emerging_optimizers.orthogonalized_optimizers import muon_utils
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
 from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
 from emerging_optimizers.utils import FP32MatmulPrecT
+from emerging_optimizers.weight_update_hooks import WeightUpdateHook
+from emerging_optimizers.weight_update_hooks.base import HookStateT
 
 
 __all__ = ["Muon", "get_muon_scale_factor"]
@@ -33,7 +35,7 @@ MuonScaleT = Literal["shape_scaling", "spectral", "unit_rms_norm"]
 
 
 @registry.register_optimizer("muon")
-class Muon(OrthogonalizedOptimizer):
+class Muon(OrthogonalizedOptimizer[HookStateT]):
     """Muon: MomentUm Orthogonalized by Newton-schulz
 
     Muon runs EMA-style momentum with optional Nesterov momentum, and then performs an orthogonalization
@@ -86,6 +88,7 @@ class Muon(OrthogonalizedOptimizer):
         scale_mode: MuonScaleT = "spectral",
         extra_scale_factor: float = 1.0,
         use_syrk: bool = False,
+        weight_update_hook: WeightUpdateHook[HookStateT] | None = None,
     ) -> None:
         if num_ns_steps < 1:
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
@@ -131,6 +134,7 @@ class Muon(OrthogonalizedOptimizer):
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
             scaled_orthogonalize_fn=scaled_orthogonalize_fn,
+            weight_update_hook=weight_update_hook,
         )
 
 
