@@ -213,21 +213,24 @@ class _BypassPreconditioner:
         self.p_inv_root = p_inv_root
         self.eps = eps
 
+        # Store shampoo beta for verifing its value recieved in step.
+        self.shampoo_beta = None
+
     @staticmethod
     def init_state(shape: tuple[int, ...], device: torch.device) -> dict[str, torch.Tensor]:
         return {}
 
     def rebind_state(self, state: dict) -> None:
-        pass
+        state["shampoo_beta"] = self.shampoo_beta
 
     def init_step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
-        pass
+        self.shampoo_beta = shampoo_beta
 
     def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float) -> None:
         pass
 
     def step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
-        pass
+        self.shampoo_beta = shampoo_beta
 
     def precondition(self, x: torch.Tensor) -> torch.Tensor:
         return x
@@ -317,6 +320,22 @@ class ShampooTest(parameterized.TestCase):
         state = optimizer.state[p]
         self.assertEqual(state["step"], 3)
         self.assertCountEqual(state, {"step", "exp_avg", "L", "R"})
+
+    def test_shampoo_beta_bias_corrected_over_5steps(self) -> None:
+        shampoo_beta = 0.75
+        p = torch.nn.Parameter(torch.randn(4, 3, device=self.device))
+        optimizer = _SgdShampoo([p], lr=1e-3, shampoo_beta=shampoo_beta)
+
+        for curr_iter_1_based in range(1, 6):
+            p.grad = torch.randn_like(p)
+            optimizer.step()
+
+            geometric_weight_sum = sum(shampoo_beta**i for i in range(curr_iter_1_based))
+            self.assertEqual(
+                optimizer.state[p]["shampoo_beta"],
+                1 - 1 / geometric_weight_sum,
+                msg=f"bias corrected shampoo_beta mismatch at step {curr_iter_1_based}",
+            )
 
     @parameterized.parameters(True, False)
     def test_init_group_skip_non_grad_params(self, skip_non_grad_params: bool) -> None:

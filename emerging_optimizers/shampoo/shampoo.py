@@ -315,9 +315,9 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
                 shampoo_beta = 1 - (1 - shampoo_beta) / (1 - shampoo_beta**curr_iter_1_based)
 
                 if state["step"] == 0:
-                    preconditioner.init_step(grad, group["shampoo_beta"])
+                    preconditioner.init_step(grad, shampoo_beta)
                 else:
-                    preconditioner.step(grad, group["shampoo_beta"])
+                    preconditioner.step(grad, shampoo_beta)
                 preconditioned_update = preconditioner.precondition(scalar_update)
 
                 self._apply_weight_decay_inplace(
