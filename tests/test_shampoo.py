@@ -15,7 +15,7 @@
 from typing import override
 
 import torch
-from _comparison import assert_equal
+from _comparison import assert_close_to_identity, assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
@@ -151,6 +151,20 @@ class ShampooPreconditionerTest(parameterized.TestCase):
             atol=1e-3,
             rtol=1e-3,
         )
+
+    @parameterized.parameters(2, 4)
+    def test_get_root_inverse_tikhonov_eps_effect(self, p_inv_root: int) -> None:
+        eps = 2.0**-4
+        preconditioner = ShampooPreconditioner(
+            {"L": torch.eye(7, device=self.device), "R": torch.eye(7, device=self.device)},
+            p_inv_root=p_inv_root,
+            eps=eps,
+        )
+
+        root_inverse = preconditioner._get_root_inverse(preconditioner.kronecker_factor_pair.L)
+        scale = 1 / (1 + eps ** (2 / p_inv_root))
+
+        assert_close_to_identity(root_inverse / scale)
 
     @parameterized.parameters((6, 4), (4, 6), (5, 5))
     def test_precondition_identity_factors_is_noop(self, m: int, n: int) -> None:
