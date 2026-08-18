@@ -155,7 +155,7 @@ class ShampooPreconditionerTest(parameterized.TestCase):
     @parameterized.parameters((6, 4), (4, 6), (5, 5))
     def test_precondition_identity_factors_is_noop(self, m: int, n: int) -> None:
         preconditioner = ShampooPreconditioner(
-            {"L": torch.eye(m, device=self.device), "R": torch.eye(n, device=self.device)}, p_inv_root=4, eps=1e-8
+            {"L": torch.eye(m, device=self.device), "R": torch.eye(n, device=self.device)}, p_inv_root=4, eps=0
         )
         x = torch.randn(m, n, device=self.device)
 
