@@ -309,9 +309,17 @@ class ShampooBaseTest(parameterized.TestCase):
         with self.assertRaisesRegex(TypeError, "only supported for 2D"):
             optimizer.step()
 
-    def test_negative_lr_raises(self) -> None:
-        with self.assertRaisesRegex(ValueError, "Invalid learning rate"):
-            _SgdShampoo([torch.nn.Parameter(torch.randn(4, 4, device=self.device))], lr=-1.0)
+    @parameterized.parameters(
+        {"kwargs": {"lr": -1.0}, "message": "Invalid learning rate"},
+        {"kwargs": {"lr": 1e-3, "p_inv_root": -2}, "message": "p_inv_root must be positive integer"},
+    )
+    def test_invalid_arguments_raise(self, kwargs: dict, message: str) -> None:
+        with self.assertRaisesRegex(ValueError, message):
+            _SgdShampoo([torch.nn.Parameter(torch.randn(4, 4, device=self.device))], **kwargs)
+
+    @parameterized.parameters(2, 4.0)
+    def test_integral_p_inv_root_accepted(self, p_inv_root: float) -> None:
+        _SgdShampoo([torch.nn.Parameter(torch.randn(4, 4, device=self.device))], lr=1e-3, p_inv_root=p_inv_root)
 
 
 class ShampooTest(parameterized.TestCase):
