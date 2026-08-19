@@ -37,9 +37,9 @@ def setUpModule() -> None:
             torch.cuda.manual_seed_all(FLAGS.seed)
 
 
-def _root_inverse_reference(a: torch.Tensor, p_inv_root: float, eps: float) -> torch.Tensor:
+def _root_inverse_reference(a: torch.Tensor, p_root_inv: float, eps: float) -> torch.Tensor:
     u, s, vh = torch.linalg.svd(a)
-    return (u * s.clamp_min(eps) ** (-1.0 / p_inv_root)) @ vh
+    return (u * s.clamp_min(eps) ** (-1.0 / p_root_inv)) @ vh
 
 
 def gen_signed_permutation(m: int):
@@ -74,7 +74,7 @@ class ShampooPreconditionerTest(parameterized.TestCase):
     @parameterized.parameters((8, 16), (16, 8), (13, 15))
     def test_rebind_state_binds_current_tensors(self, m: int, n: int) -> None:
         state = ShampooPreconditioner.init_state((m, n), self.device)
-        preconditioner = ShampooPreconditioner(state, p_inv_root=4, eps=1e-8)
+        preconditioner = ShampooPreconditioner(state, p_root_inv=4, eps=1e-8)
         preconditioner.step(torch.randn(m, n, device=self.device), 0.95)
         preconditioner.rebind_state(state)
 
@@ -83,7 +83,7 @@ class ShampooPreconditionerTest(parameterized.TestCase):
 
     def test_rebind_state_missing_key_raises(self) -> None:
         state = ShampooPreconditioner.init_state((4, 4), self.device)
-        preconditioner = ShampooPreconditioner(state, p_inv_root=4, eps=1e-8)
+        preconditioner = ShampooPreconditioner(state, p_root_inv=4, eps=1e-8)
         del state["R"]
 
         with self.assertRaisesRegex(KeyError, "missing keys"):
@@ -93,7 +93,7 @@ class ShampooPreconditionerTest(parameterized.TestCase):
     def test_init_step_seeds_eps_identity(self, m: int, n: int) -> None:
         eps = 0.5
         preconditioner = ShampooPreconditioner(
-            ShampooPreconditioner.init_state((m, n), self.device), p_inv_root=4, eps=eps
+            ShampooPreconditioner.init_state((m, n), self.device), p_root_inv=4, eps=eps
         )
         grad = torch.zeros(m, n, device=self.device)
 
@@ -106,7 +106,7 @@ class ShampooPreconditionerTest(parameterized.TestCase):
     def test_update_kronecker_factors_matches_legacy(self, shape: tuple[int, int], shampoo_beta: float) -> None:
         m, n = shape
         preconditioner = ShampooPreconditioner(
-            ShampooPreconditioner.init_state((m, n), self.device), p_inv_root=4, eps=1e-8
+            ShampooPreconditioner.init_state((m, n), self.device), p_root_inv=4, eps=1e-8
         )
         preconditioner.init_step(torch.randn(m, n, device=self.device), shampoo_beta)
 
@@ -126,20 +126,20 @@ class ShampooPreconditionerTest(parameterized.TestCase):
         m, n, shampoo_beta = 6, 4, 0.9
         grad = torch.randn(m, n, device=self.device)
 
-        stepped = ShampooPreconditioner(ShampooPreconditioner.init_state((m, n), self.device), p_inv_root=4, eps=eps)
-        updated = ShampooPreconditioner(ShampooPreconditioner.init_state((m, n), self.device), p_inv_root=4, eps=eps)
+        stepped = ShampooPreconditioner(ShampooPreconditioner.init_state((m, n), self.device), p_root_inv=4, eps=eps)
+        updated = ShampooPreconditioner(ShampooPreconditioner.init_state((m, n), self.device), p_root_inv=4, eps=eps)
         stepped.step(grad, shampoo_beta)
         updated.update_kronecker_factors(grad, shampoo_beta)
 
         assert_equal(stepped.kronecker_factor_pair.L, updated.kronecker_factor_pair.L)
         assert_equal(stepped.kronecker_factor_pair.R, updated.kronecker_factor_pair.R)
 
-    @parameterized.product(m=[4, 9, 16], p_inv_root=[2, 4])
-    def test_get_root_inverse_close_to_svd_reference(self, m: int, p_inv_root: int) -> None:
+    @parameterized.product(m=[4, 9, 16], p_root_inv=[2, 4])
+    def test_get_root_inverse_close_to_svd_reference(self, m: int, p_root_inv: int) -> None:
         x = 2 ** torch.randint(-3, 2, (m, m), device=self.device, dtype=torch.float)
         factor = x @ x.T + 0.125 * torch.eye(m, device=self.device)
         preconditioner = ShampooPreconditioner(
-            ShampooPreconditioner.init_state((m, m), self.device), p_inv_root=p_inv_root, eps=0
+            ShampooPreconditioner.init_state((m, m), self.device), p_root_inv=p_root_inv, eps=0
         )
 
         with utils.fp32_matmul_precision("highest"):
@@ -147,29 +147,29 @@ class ShampooPreconditionerTest(parameterized.TestCase):
 
         torch.testing.assert_close(
             root_inverse,
-            _root_inverse_reference(factor, p_inv_root, 0),
+            _root_inverse_reference(factor, p_root_inv, 0),
             atol=1e-3,
             rtol=1e-3,
         )
 
     @parameterized.parameters(2, 4)
-    def test_get_root_inverse_tikhonov_eps_effect(self, p_inv_root: int) -> None:
+    def test_get_root_inverse_tikhonov_eps_effect(self, p_root_inv: int) -> None:
         eps = 2.0**-4
         preconditioner = ShampooPreconditioner(
             {"L": torch.eye(7, device=self.device), "R": torch.eye(7, device=self.device)},
-            p_inv_root=p_inv_root,
+            p_root_inv=p_root_inv,
             eps=eps,
         )
 
         root_inverse = preconditioner._get_root_inverse(preconditioner.kronecker_factor_pair.L)
-        scale = 1 / (1 + eps ** (2 / p_inv_root))
+        scale = 1 / (1 + eps ** (2 / p_root_inv))
 
         assert_close_to_identity(root_inverse / scale)
 
     @parameterized.parameters((6, 4), (4, 6), (5, 5))
     def test_precondition_identity_factors_is_noop(self, m: int, n: int) -> None:
         preconditioner = ShampooPreconditioner(
-            {"L": torch.eye(m, device=self.device), "R": torch.eye(n, device=self.device)}, p_inv_root=4, eps=0
+            {"L": torch.eye(m, device=self.device), "R": torch.eye(n, device=self.device)}, p_root_inv=4, eps=0
         )
         x = torch.randn(m, n, device=self.device)
 
@@ -193,7 +193,7 @@ class ShampooPreconditionerTest(parameterized.TestCase):
             "R": A.clone(),
         }
         inv_root_kwargs = {
-            "p_inv_root": 2,
+            "p_root_inv": 2,
             "eps": 0,
         }
         preconditioner = ShampooPreconditioner(init_kronecker_factors, **inv_root_kwargs)
@@ -211,7 +211,7 @@ class ShampooPreconditionerTest(parameterized.TestCase):
     def test_precondition_4steps_smoke(self, m: int, n: int) -> None:
         shampoo_beta = 0.95
         preconditioner = ShampooPreconditioner(
-            ShampooPreconditioner.init_state((m, n), self.device), p_inv_root=4, eps=1e-8
+            ShampooPreconditioner.init_state((m, n), self.device), p_root_inv=4, eps=1e-8
         )
         preconditioner.init_step(torch.randn(m, n, device=self.device), shampoo_beta)
         for _ in range(4):
@@ -223,8 +223,8 @@ class ShampooPreconditionerTest(parameterized.TestCase):
 
 
 class _BypassPreconditioner:
-    def __init__(self, state: dict, p_inv_root: float, eps: float) -> None:
-        self.p_inv_root = p_inv_root
+    def __init__(self, state: dict, p_root_inv: float, eps: float) -> None:
+        self.p_root_inv = p_root_inv
         self.eps = eps
 
         # Store shampoo beta for verifing its value recieved in step.
@@ -311,15 +311,15 @@ class ShampooBaseTest(parameterized.TestCase):
 
     @parameterized.parameters(
         {"kwargs": {"lr": -1.0}, "message": "Invalid learning rate"},
-        {"kwargs": {"lr": 1e-3, "p_inv_root": -2}, "message": "p_inv_root must be positive integer"},
+        {"kwargs": {"lr": 1e-3, "p_root_inv": -2}, "message": "p_root_inv must be positive integer"},
     )
     def test_invalid_arguments_raise(self, kwargs: dict, message: str) -> None:
         with self.assertRaisesRegex(ValueError, message):
             _SgdShampoo([torch.nn.Parameter(torch.randn(4, 4, device=self.device))], **kwargs)
 
     @parameterized.parameters(2, 4.0)
-    def test_integral_p_inv_root_accepted(self, p_inv_root: float) -> None:
-        _SgdShampoo([torch.nn.Parameter(torch.randn(4, 4, device=self.device))], lr=1e-3, p_inv_root=p_inv_root)
+    def test_integral_p_root_inv_accepted(self, p_root_inv: float) -> None:
+        _SgdShampoo([torch.nn.Parameter(torch.randn(4, 4, device=self.device))], lr=1e-3, p_root_inv=p_root_inv)
 
 
 class ShampooTest(parameterized.TestCase):

@@ -40,18 +40,18 @@ class ShampooPreconditioner:
 
     Args:
         state: Per-parameter optimizer state holding ``L`` and ``R``.
-        p_inv_root: Inverse root order; each factor is applied as ``A^(-1/p_inv_root)``.
+        p_root_inv: Inverse root order; each factor is applied as ``A^(-1/p_root_inv)``.
         eps: Floor on the eigenvalue magnitudes before inversion.
     """
 
     def __init__(
         self,
         state: dict,
-        p_inv_root: float,
+        p_root_inv: float,
         eps: float,
     ) -> None:
         self.kronecker_factor_pair = precond_base.TensorPair(state["L"], state["R"])
-        self.p_inv_root = p_inv_root
+        self.p_root_inv = p_root_inv
         self.eps = eps
 
     @staticmethod
@@ -129,7 +129,7 @@ class ShampooPreconditioner:
         self.update_kronecker_factors(grad, shampoo_beta)
 
     def _get_root_inverse(self, kronecker_factor: torch.Tensor) -> torch.Tensor:
-        """Computes ``kronecker_factor^(-1/p_inv_root)`` from its eigendecomposition.
+        """Computes ``kronecker_factor^(-1/p_root_inv)`` from its eigendecomposition.
 
         Args:
             kronecker_factor: left or right kronecker factor
@@ -143,7 +143,7 @@ class ShampooPreconditioner:
         eigvals = eigvals.clamp_min(0)
 
         # Tikhonov regularization
-        exp = 1.0 / self.p_inv_root
+        exp = 1.0 / self.p_root_inv
         inv_root_scale = eigvals**exp / (eigvals ** (2 * exp) + self.eps ** (2 * exp))
         return (eigvecs * inv_root_scale) @ eigvecs.mT
 
@@ -181,7 +181,7 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         shampoo_beta: Kronecker factor EMA coefficient.
         eps: Numerical epsilon
         weight_decay: Decoupled weight decay coefficient.
-        p_inv_root: Inverse root order applied to each Kronecker factor.
+        p_root_inv: Inverse root order applied to each Kronecker factor.
 
     Attributes:
         PreconditionerCls: Preconditioner used for every parameter, and the source of the state layout
@@ -199,16 +199,16 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         eps: float = 1e-8,
         weight_decay: float = 0.01,
         *,
-        p_inv_root: float = 4,
+        p_root_inv: float = 4,
     ) -> None:
         self.eps = eps
         self.weight_decay_method = "decoupled"
-        self.p_inv_root = p_inv_root
+        self.p_root_inv = p_root_inv
 
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
-        if p_inv_root <= 0 or round(p_inv_root) != p_inv_root:
-            raise ValueError(f"p_inv_root must be positive integer, got {p_inv_root}")
+        if p_root_inv <= 0 or round(p_root_inv) != p_root_inv:
+            raise ValueError(f"p_root_inv must be positive integer, got {p_root_inv}")
 
         defaults = {
             "lr": lr,
@@ -305,7 +305,7 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
                 grad = p.grad.to(torch.float32)
                 state = self.state[p]
 
-                preconditioner = self.PreconditionerCls(state, self.p_inv_root, self.eps)
+                preconditioner = self.PreconditionerCls(state, self.p_root_inv, self.eps)
 
                 scalar_update = self._scalar_update(grad, state["exp_avg"], momentum=group["momentum"])
 
