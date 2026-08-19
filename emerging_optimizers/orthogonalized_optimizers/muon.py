@@ -140,7 +140,7 @@ class Muon(OrthogonalizedOptimizer):
         return self._num_ns_steps
 
     @num_ns_steps.setter
-    def num_ns_steps(self, value: int) -> None:
+    def num_ns_steps(self, _value: int) -> None:
         raise AttributeError("Cannot set `num_ns_steps` post-initialization.")
 
 
