@@ -21,7 +21,14 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
 from emerging_optimizers.legacy_soap import soap
-from emerging_optimizers.shampoo.shampoo import Shampoo, ShampooBase, ShampooPreconditioner
+from emerging_optimizers.shampoo.shampoo import (
+    KlShampoo,
+    KlShampooPreconditioner,
+    Shampoo,
+    ShampooBase,
+    ShampooPreconditioner,
+    _get_root_inverse_from_eigens,
+)
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -138,12 +145,9 @@ class ShampooPreconditionerTest(parameterized.TestCase):
     def test_get_root_inverse_close_to_svd_reference(self, m: int, p_root_inv: int) -> None:
         x = 2 ** torch.randint(-3, 2, (m, m), device=self.device, dtype=torch.float)
         factor = x @ x.T + 0.125 * torch.eye(m, device=self.device)
-        preconditioner = ShampooPreconditioner(
-            ShampooPreconditioner.init_state((m, m), self.device), p_root_inv=p_root_inv, eps=0
-        )
-
         with utils.fp32_matmul_precision("highest"):
-            root_inverse = preconditioner._get_root_inverse(factor)
+            eigvals, eigvecs = torch.linalg.eigh(factor)
+            root_inverse = _get_root_inverse_from_eigens(eigvals, eigvecs, p_root_inv, eps=0)
 
         torch.testing.assert_close(
             root_inverse,
@@ -155,13 +159,10 @@ class ShampooPreconditionerTest(parameterized.TestCase):
     @parameterized.parameters(2, 4)
     def test_get_root_inverse_tikhonov_eps_effect(self, p_root_inv: int) -> None:
         eps = 2.0**-4
-        preconditioner = ShampooPreconditioner(
-            {"L": torch.eye(7, device=self.device), "R": torch.eye(7, device=self.device)},
-            p_root_inv=p_root_inv,
-            eps=eps,
-        )
+        eigvals = torch.ones(7, device=self.device)
+        eigvecs = torch.eye(7, device=self.device)
 
-        root_inverse = preconditioner._get_root_inverse(preconditioner.kronecker_factor_pair.L)
+        root_inverse = _get_root_inverse_from_eigens(eigvals, eigvecs, p_root_inv, eps)
         scale = 1 / (1 + eps ** (2 / p_root_inv))
 
         assert_close_to_identity(root_inverse / scale)
@@ -220,6 +221,75 @@ class ShampooPreconditionerTest(parameterized.TestCase):
         preconditioned = preconditioner.precondition(torch.randn(m, n, device=self.device))
 
         self.assertEqual(preconditioned.shape, (m, n))
+
+
+class KlShampooPreconditionerTest(parameterized.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.device = torch.device(FLAGS.device)
+
+    @parameterized.parameters((8, 16), (16, 8), (13, 15))
+    def test_init_state_layout(self, m: int, n: int) -> None:
+        state = KlShampooPreconditioner.init_state((m, n), self.device)
+
+        expected_shapes = {
+            "L": (m, m),
+            "R": (n, n),
+            "Q_L": (m, m),
+            "Q_R": (n, n),
+            "eigvals_L": (m,),
+            "eigvals_R": (n,),
+        }
+        self.assertCountEqual(state, expected_shapes)
+        for key, shape in expected_shapes.items():
+            self.assertEqual(state[key].shape, shape, msg=key)
+            self.assertEqual(state[key].dtype, torch.float32, msg=key)
+            self.assertEqual(state[key].device.type, self.device.type, msg=key)
+
+        assert_equal(state["Q_L"], torch.eye(m, device=self.device))
+        assert_equal(state["Q_R"], torch.eye(n, device=self.device))
+
+    @parameterized.product(shape=[(8, 16), (16, 8), (13, 15)], shampoo_beta=[0.5, 0.95])
+    def test_update_kronecker_factors_matches_legacy(self, shape: tuple[int, int], shampoo_beta: float) -> None:
+        m, n = shape
+        preconditioner = KlShampooPreconditioner(
+            KlShampooPreconditioner.init_state(shape, self.device), p_root_inv=2, eps=1e-8
+        )
+        preconditioner.init_step(torch.randn(m, n, device=self.device), shampoo_beta)
+        preconditioner.precondition(torch.randn(m, n, device=self.device))
+
+        reference_factors = [
+            preconditioner.kronecker_factor_pair.L.clone(),
+            preconditioner.kronecker_factor_pair.R.clone(),
+        ]
+        grad = torch.randn(m, n, device=self.device)
+        soap.update_kronecker_factors_kl_shampoo(
+            reference_factors,
+            grad,
+            shampoo_beta,
+            preconditioner.eigenbasis_pair,
+            preconditioner.eigvals_pair,
+            preconditioner.eps,
+        )
+        preconditioner.update_kronecker_factors(grad, shampoo_beta)
+
+        assert_equal(preconditioner.kronecker_factor_pair.L, reference_factors[0])
+        assert_equal(preconditioner.kronecker_factor_pair.R, reference_factors[1])
+
+    def test_precondition_rebinds_current_eigendecomposition(self) -> None:
+        m, n = 6, 4
+        state = KlShampooPreconditioner.init_state((m, n), self.device)
+        preconditioner = KlShampooPreconditioner(state, p_root_inv=2, eps=1e-8)
+        grad = torch.randn(m, n, device=self.device)
+        preconditioner.init_step(grad, shampoo_beta=0)
+
+        preconditioner.precondition(grad)
+        preconditioner.rebind_state(state)
+
+        self.assertIs(state["Q_L"], preconditioner.eigenbasis_pair.L)
+        self.assertIs(state["Q_R"], preconditioner.eigenbasis_pair.R)
+        self.assertIs(state["eigvals_L"], preconditioner.eigvals_pair.L)
+        self.assertIs(state["eigvals_R"], preconditioner.eigvals_pair.R)
 
 
 class _BypassPreconditioner:
@@ -411,6 +481,30 @@ class ShampooTest(parameterized.TestCase):
                 atol=1e-5,
                 rtol=1e-5,
             )
+
+
+class KlShampooTest(parameterized.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.device = torch.device(FLAGS.device)
+
+    @parameterized.parameters((8, 5), (5, 8), (16, 16))
+    def test_3steps_smoke(self, m: int, n: int) -> None:
+        p = torch.nn.Parameter(torch.randn(m, n, device=self.device))
+        initial = p.detach().clone()
+        optimizer = KlShampoo([p], lr=1e-2)
+
+        for _ in range(3):
+            p.grad = torch.randn_like(p)
+            optimizer.step()
+
+        self.assertTrue(torch.isfinite(p).all())
+        self.assertFalse(torch.equal(p.detach(), initial))
+        self.assertEqual(optimizer.p_root_inv, 2)
+        self.assertCountEqual(
+            optimizer.state[p],
+            {"step", "exp_avg", "L", "R", "Q_L", "Q_R", "eigvals_L", "eigvals_R"},
+        )
 
 
 if __name__ == "__main__":

@@ -23,16 +23,34 @@ from torch import optim
 from torch.optim.optimizer import ParamsT
 
 from emerging_optimizers import mixin as opt_mixin
-from emerging_optimizers import registry
+from emerging_optimizers import registry, utils
+from emerging_optimizers.legacy_soap import soap
 from emerging_optimizers.shampoo import precond_base
 from emerging_optimizers.utils import eig as eig_utils
 
 
 __all__ = [
+    "KlShampoo",
+    "KlShampooPreconditioner",
     "Shampoo",
     "ShampooBase",
     "ShampooPreconditioner",
 ]
+
+
+def _get_root_inverse_from_eigens(
+    eigvals: torch.Tensor,
+    eigvecs: torch.Tensor,
+    p_root_inv: float,
+    eps: float,
+) -> torch.Tensor:
+    # Eigh can sometime return negative values for numerical 0; clamping to 0 removes them
+    eigvals = eigvals.clamp_min(0)
+
+    # Tikhonov regularization
+    exp = 1.0 / p_root_inv
+    inv_root_scale = eigvals**exp / (eigvals ** (2 * exp) + eps ** (2 * exp))
+    return (eigvecs * inv_root_scale) @ eigvecs.mT
 
 
 class ShampooPreconditioner:
@@ -128,25 +146,6 @@ class ShampooPreconditioner:
         """
         self.update_kronecker_factors(grad, shampoo_beta)
 
-    def _get_root_inverse(self, kronecker_factor: torch.Tensor) -> torch.Tensor:
-        """Computes ``kronecker_factor^(-1/p_root_inv)`` from its eigendecomposition.
-
-        Args:
-            kronecker_factor: left or right kronecker factor
-
-        Returns:
-            The inverse root of the factor.
-        """
-        eigvals, eigvecs = eig_utils.eigh_with_fallback(kronecker_factor)
-
-        # Eigh can sometime return negative values for numerical 0; clamping to 0 removes them
-        eigvals = eigvals.clamp_min(0)
-
-        # Tikhonov regularization
-        exp = 1.0 / self.p_root_inv
-        inv_root_scale = eigvals**exp / (eigvals ** (2 * exp) + self.eps ** (2 * exp))
-        return (eigvecs * inv_root_scale) @ eigvecs.mT
-
     def precondition(self, x: torch.Tensor) -> torch.Tensor:
         """Applies both root inverse to a matrix in the parameter basis.
 
@@ -156,10 +155,89 @@ class ShampooPreconditioner:
         Returns:
             The preconditioned matrix, in the parameter basis.
         """
-        root_inv_L = self._get_root_inverse(self.kronecker_factor_pair.L)
-        root_inv_R = self._get_root_inverse(self.kronecker_factor_pair.R)
+        eigvals_L, eigvecs_L = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.L)
+        eigvals_R, eigvecs_R = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.R)
 
-        return root_inv_L @ x @ root_inv_R
+        inverse_root_pair = precond_base.TensorPair(
+            _get_root_inverse_from_eigens(eigvals_L, eigvecs_L, self.p_root_inv, self.eps),
+            _get_root_inverse_from_eigens(eigvals_R, eigvecs_R, self.p_root_inv, self.eps),
+        )
+
+        return inverse_root_pair.L @ x @ inverse_root_pair.R
+
+
+class KlShampooPreconditioner(ShampooPreconditioner):
+    """Shampoo preconditioner with the KL-corrected Kronecker factor update."""
+
+    def __init__(
+        self,
+        state: dict,
+        p_root_inv: float,
+        eps: float,
+    ) -> None:
+        super().__init__(state, p_root_inv, eps)
+        self.eigenbasis_pair = precond_base.TensorPair(state["Q_L"], state["Q_R"])
+        self.eigvals_pair = precond_base.TensorPair(state["eigvals_L"], state["eigvals_R"])
+
+    @staticmethod
+    @override
+    def init_state(
+        shape: tuple[int, ...],
+        device: torch.device,
+    ) -> dict[str, torch.Tensor]:
+        state = ShampooPreconditioner.init_state(shape, device)
+        m, n = shape
+        state.update(
+            {
+                "Q_L": torch.eye(m, device=device),
+                "Q_R": torch.eye(n, device=device),
+                "eigvals_L": torch.zeros(m, device=device),
+                "eigvals_R": torch.zeros(n, device=device),
+            }
+        )
+        return state
+
+    @override
+    def rebind_state(self, state: dict) -> None:
+        updates = {
+            "L": self.kronecker_factor_pair.L,
+            "R": self.kronecker_factor_pair.R,
+            "Q_L": self.eigenbasis_pair.L,
+            "Q_R": self.eigenbasis_pair.R,
+            "eigvals_L": self.eigvals_pair.L,
+            "eigvals_R": self.eigvals_pair.R,
+        }
+        missing = updates.keys() - state.keys()
+        if missing:
+            raise KeyError(f"rebind_state: state missing keys {sorted(missing)}")
+        state.update(updates)
+
+    @override
+    def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float) -> None:
+        with utils.fp32_matmul_precision("highest"):
+            soap.update_kronecker_factors_kl_shampoo(
+                self.kronecker_factor_pair,
+                grad,
+                shampoo_beta,
+                self.eigenbasis_pair,
+                self.eigvals_pair,
+                self.eps,
+            )
+
+    @override
+    def precondition(self, x: torch.Tensor) -> torch.Tensor:
+        eigvals_L, eigvecs_L = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.L)
+        eigvals_R, eigvecs_R = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.R)
+
+        self.eigenbasis_pair = precond_base.TensorPair(eigvecs_L, eigvecs_R)
+        self.eigvals_pair = precond_base.TensorPair(eigvals_L, eigvals_R)
+
+        inverse_root_pair = precond_base.TensorPair(
+            _get_root_inverse_from_eigens(eigvals_L, eigvecs_L, self.p_root_inv, self.eps),
+            _get_root_inverse_from_eigens(eigvals_R, eigvecs_R, self.p_root_inv, self.eps),
+        )
+
+        return inverse_root_pair.L @ x @ inverse_root_pair.R
 
 
 class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
@@ -359,3 +437,31 @@ class Shampoo(ShampooBase):
         """
         exp_avg.lerp_(grad, 1 - momentum)
         return exp_avg
+
+
+@registry.register_optimizer("kl_shampoo")
+class KlShampoo(Shampoo):
+    """Shampoo with KL-corrected Kronecker factors and EMA momentum."""
+
+    PreconditionerCls: ClassVar[type[precond_base.ShampooPreconditionerProtocol]] = KlShampooPreconditioner
+
+    def __init__(
+        self,
+        params: ParamsT,
+        lr: float,
+        momentum: float = 0.9,
+        shampoo_beta: float = 0.95,
+        eps: float = 1e-8,
+        weight_decay: float = 0.01,
+        *,
+        p_root_inv: float = 2,
+    ) -> None:
+        super().__init__(
+            params,
+            lr,
+            momentum,
+            shampoo_beta,
+            eps,
+            weight_decay,
+            p_root_inv=p_root_inv,
+        )
