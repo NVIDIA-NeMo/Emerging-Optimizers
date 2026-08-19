@@ -148,7 +148,7 @@ class ShampooPreconditioner:
         return (eigvecs * inv_root_scale) @ eigvecs.mT
 
     def precondition(self, x: torch.Tensor) -> torch.Tensor:
-        """Applies both inverse roots to a matrix in the parameter basis.
+        """Applies both root inverse to a matrix in the parameter basis.
 
         Args:
             x: Matrix in the parameter basis.
@@ -156,12 +156,10 @@ class ShampooPreconditioner:
         Returns:
             The preconditioned matrix, in the parameter basis.
         """
-        inverse_root_pair = precond_base.TensorPair(
-            self._get_root_inverse(self.kronecker_factor_pair.L),
-            self._get_root_inverse(self.kronecker_factor_pair.R),
-        )
+        root_inv_L = self._get_root_inverse(self.kronecker_factor_pair.L)
+        root_inv_R = self._get_root_inverse(self.kronecker_factor_pair.R)
 
-        return inverse_root_pair.L @ x @ inverse_root_pair.R
+        return root_inv_L @ x @ root_inv_R
 
 
 class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
