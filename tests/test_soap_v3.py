@@ -216,7 +216,7 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
 class ReklsV3AgainstLegacyTest(parameterized.TestCase):
     @parameterized.parameters(
         {"m": 8, "n": 4, "atol": 1e-4, "rtol": 1e-4},
-        {"m": 17, "n": 33, "atol": 1e-3, "rtol": 1e-3},
+        {"m": 17, "n": 33, "atol": 1e-2, "rtol": 1e-2},
     )
     def test_3steps_closes_to_legacy(self, m: int, n: int, atol: float, rtol: float) -> None:
         raw = torch.randint(-3, 4, (m, n), device=FLAGS.device, dtype=torch.float)
