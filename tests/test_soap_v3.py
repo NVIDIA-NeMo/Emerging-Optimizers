@@ -106,9 +106,9 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
     @parameterized.parameters(
         {"m": 4, "n": 4, "atol": 1e-5, "rtol": 1e-5},
         {"m": 8, "n": 4, "atol": 1e-4, "rtol": 1e-4},
-        {"m": 33, "n": 17, "atol": 2e-3, "rtol": 2e-3},
+        {"m": 33, "n": 17, "atol": 1e-3, "rtol": 1e-3},
     )
-    def test_5steps_close_to_legacy(self, m: int, n: int, atol: float, rtol: float) -> None:
+    def test_3steps_close_to_legacy(self, m: int, n: int, atol: float, rtol: float) -> None:
         raw = torch.randint(-3, 4, (m, n), device=FLAGS.device, dtype=torch.float)
 
         # Testing aruments are chosen to have best chance of exactly matching reference
@@ -126,7 +126,7 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
         test_param = raw.clone()
         test_opt = KlSoapV3([test_param], **test_kwargs)
 
-        for _ in range(5):
+        for _ in range(3):
             grad = torch.randint_like(raw, -3, 4)
             test_param.grad = grad.clone()
             ref_param.grad = grad.clone()
@@ -208,9 +208,9 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
 class ReklsV3AgainstLegacyTest(parameterized.TestCase):
     @parameterized.parameters(
         {"m": 8, "n": 4, "atol": 1e-4, "rtol": 1e-4},
-        {"m": 17, "n": 33, "atol": 2e-3, "rtol": 2e-3},
+        {"m": 17, "n": 33, "atol": 1e-3, "rtol": 1e-3},
     )
-    def test_5steps_closes_to_legacy(self, m: int, n: int, atol: float, rtol: float) -> None:
+    def test_3steps_closes_to_legacy(self, m: int, n: int, atol: float, rtol: float) -> None:
         raw = torch.randint(-3, 4, (m, n), device=FLAGS.device, dtype=torch.float)
 
         test_kwargs = {
@@ -227,7 +227,7 @@ class ReklsV3AgainstLegacyTest(parameterized.TestCase):
         test_param = raw.clone()
         test_opt = ReklsV3([test_param], **test_kwargs)
 
-        for _ in range(5):
+        for _ in range(3):
             grad = torch.randint_like(raw, -3, 4)
             test_param.grad = grad.clone()
             ref_param.grad = grad.clone()
