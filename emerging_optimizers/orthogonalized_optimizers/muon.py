@@ -93,6 +93,11 @@ class Muon(OrthogonalizedOptimizer[HookStateT]):
         if num_ns_steps < 1:
             raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
 
+        self._num_ns_steps = num_ns_steps
+        self._coefficient_type = coefficient_type
+        self._scale_mode = scale_mode
+        self._extra_scale_factor = extra_scale_factor
+
         if use_syrk:
             if torch.cuda.is_available():
                 sm_version = torch.cuda.get_device_capability()
@@ -107,6 +112,7 @@ class Muon(OrthogonalizedOptimizer[HookStateT]):
                     sm_version,
                 )
                 use_syrk = False
+        self._use_syrk = use_syrk
 
         def scaled_orthogonalize_fn(grad: torch.Tensor) -> torch.Tensor:
             logging.debug(
@@ -136,6 +142,46 @@ class Muon(OrthogonalizedOptimizer[HookStateT]):
             scaled_orthogonalize_fn=scaled_orthogonalize_fn,
             weight_update_hook=weight_update_hook,
         )
+
+    @property
+    def num_ns_steps(self) -> int:
+        return self._num_ns_steps
+
+    @num_ns_steps.setter
+    def num_ns_steps(self, _value: int) -> None:
+        raise AttributeError("Cannot set `num_ns_steps` post-initialization.")
+
+    @property
+    def coefficient_type(self) -> NSCoeffT:
+        return self._coefficient_type
+
+    @coefficient_type.setter
+    def coefficient_type(self, _value: NSCoeffT) -> None:
+        raise AttributeError("Cannot set `coefficient_type` post-initialization.")
+
+    @property
+    def scale_mode(self) -> MuonScaleT:
+        return self._scale_mode
+
+    @scale_mode.setter
+    def scale_mode(self, _value: MuonScaleT) -> None:
+        raise AttributeError("Cannot set `scale_mode` post-initialization.")
+
+    @property
+    def extra_scale_factor(self) -> float:
+        return self._extra_scale_factor
+
+    @extra_scale_factor.setter
+    def extra_scale_factor(self, _value: float) -> None:
+        raise AttributeError("Cannot set `extra_scale_factor` post-initialization.")
+
+    @property
+    def use_syrk(self) -> bool:
+        return self._use_syrk
+
+    @use_syrk.setter
+    def use_syrk(self, _value: bool) -> None:
+        raise AttributeError("Cannot set `use_syrk` post-initialization.")
 
 
 Muon.__doc__ = Muon.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]

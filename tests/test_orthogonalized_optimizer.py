@@ -248,6 +248,38 @@ class MuonTest(parameterized.TestCase):
         muon_opt = muon.Muon([test_param], weight_decay_method=weight_decay_method, nesterov=nesterov)
         muon_opt.step()
 
+    def test_read_only_attributes(self) -> None:
+        """Smoke test Muon optimizer attribute access.
+        Most functionality of muon is tested in muon_utils. This test only entures everything run through
+        the optimizer class.
+        """
+        test_param = nn.Parameter(torch.randn(5, 7, dtype=torch.float32, device=self.device))
+
+        num_ns_steps = 5
+        coefficient_type = "quintic"
+        scale_mode = "spectral"
+        extra_scale_factor = 1.0
+        use_syrk = False
+
+        muon_opt = muon.Muon([test_param])
+
+        self.assertEqual(muon_opt.num_ns_steps, num_ns_steps)
+        self.assertEqual(muon_opt.coefficient_type, coefficient_type)
+        self.assertEqual(muon_opt.scale_mode, scale_mode)
+        self.assertEqual(muon_opt.extra_scale_factor, extra_scale_factor)
+        self.assertEqual(muon_opt.use_syrk, use_syrk)
+
+        with self.assertRaisesRegex(AttributeError, "Cannot set `num_ns_steps`"):
+            muon_opt.num_ns_steps = num_ns_steps
+        with self.assertRaisesRegex(AttributeError, "Cannot set `coefficient_type`"):
+            muon_opt.coefficient_type = coefficient_type
+        with self.assertRaisesRegex(AttributeError, "Cannot set `scale_mode`"):
+            muon_opt.scale_mode = scale_mode
+        with self.assertRaisesRegex(AttributeError, "Cannot set `extra_scale_factor`"):
+            muon_opt.extra_scale_factor = extra_scale_factor
+        with self.assertRaisesRegex(AttributeError, "Cannot set `use_syrk`"):
+            muon_opt.use_syrk = use_syrk
+
     def test_use_syrk_match_without_syrk(self) -> None:
         shape = (32, 32)
         test_param = nn.Parameter(torch.randint(-5, 5, shape, dtype=torch.float32, device=self.device))
