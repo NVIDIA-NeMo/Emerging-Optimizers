@@ -60,7 +60,7 @@ class KlSoapPreconditionerTest(parameterized.TestCase):
         assert_equal(state["Q_R"], torch.eye(n, device=FLAGS.device))
 
     def test_init_state_rejects_non_2d(self) -> None:
-        with self.assertRaisesRegex(ValueError, "only supported for 2D"):
+        with self.assertRaisesRegex(TypeError, "only supported for 2D"):
             KlSoapPreconditioner.init_state((2, 3, 4), torch.device(FLAGS.device))
 
     @parameterized.parameters((8, 16), (16, 8), (12, 12))

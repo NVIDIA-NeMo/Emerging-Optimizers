@@ -27,7 +27,7 @@ from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry, utils
 from emerging_optimizers.legacy_soap import soap
 from emerging_optimizers.scalar_optimizers import update_functions
-from emerging_optimizers.shampoo import shampoo_base
+from emerging_optimizers.shampoo.precond_base import SoapPreconditionerProtocol, TensorPair
 from emerging_optimizers.utils import eig as eig_utils
 
 
@@ -54,9 +54,9 @@ class KlSoapPreconditioner:
         state: dict,
         eps: float,
     ) -> None:
-        self.kronecker_factor_pair = shampoo_base.TensorPair(state["L"], state["R"])
-        self.eigenbasis_pair = shampoo_base.TensorPair(state["Q_L"], state["Q_R"])
-        self.eigvals_pair = shampoo_base.TensorPair(state["eigvals_L"], state["eigvals_R"])
+        self.kronecker_factor_pair = TensorPair(state["L"], state["R"])
+        self.eigenbasis_pair = TensorPair(state["Q_L"], state["Q_R"])
+        self.eigvals_pair = TensorPair(state["eigvals_L"], state["eigvals_R"])
         self.exp_avg, self.exp_avg_sq = state["exp_avg"], state["exp_avg_sq"]
         self.eps = eps
 
@@ -75,10 +75,10 @@ class KlSoapPreconditioner:
             The state entries owned by this preconditioner, keyed as :meth:`rebind_state` expects them.
 
         Raises:
-            ValueError: If ``shape`` is not 2D.
+            TypeError: If ``shape`` is not 2D.
         """
         if len(shape) != 2:
-            raise ValueError(f"KlSoapPreconditioner is only supported for 2D tensors, got shape {tuple(shape)}")
+            raise TypeError(f"KlSoapPreconditioner is only supported for 2D tensors, got shape {tuple(shape)}")
         m, n = shape
         return {
             "exp_avg": torch.zeros(m, n, device=device),
@@ -124,8 +124,8 @@ class KlSoapPreconditioner:
             self.update_kronecker_factors(grad, shampoo_beta)
         eigvals_L, Q_L = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.L)
         eigvals_R, Q_R = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.R)
-        self.eigenbasis_pair = shampoo_base.TensorPair(Q_L, Q_R)
-        self.eigvals_pair = shampoo_base.TensorPair(eigvals_L, eigvals_R)
+        self.eigenbasis_pair = TensorPair(Q_L, Q_R)
+        self.eigvals_pair = TensorPair(eigvals_L, eigvals_R)
 
     def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float) -> None:
         """Accumulates the gradient into the kronecker factors with the KL-Shampoo correction.
@@ -169,8 +169,8 @@ class KlSoapPreconditioner:
             eigvals_R, Q_R = eig_utils.orthogonal_iteration(
                 self.kronecker_factor_pair.R, self.eigenbasis_pair.R, power_iter_steps=1
             )
-            self.eigenbasis_pair = shampoo_base.TensorPair(Q_L, Q_R)
-            self.eigvals_pair = shampoo_base.TensorPair(eigvals_L, eigvals_R)
+            self.eigenbasis_pair = TensorPair(Q_L, Q_R)
+            self.eigvals_pair = TensorPair(eigvals_L, eigvals_R)
 
             # Project exp_avg to the new eigenbasis using the updated eigenbases
             self.exp_avg = self.project_in(exp_avg)
@@ -223,8 +223,8 @@ class ReklsPreconditioner(KlSoapPreconditioner):
             # Rebuild the eigen bases from the factors rather than refining the previous ones
             eigvals_L, Q_L = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.L)
             eigvals_R, Q_R = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.R)
-            self.eigenbasis_pair = shampoo_base.TensorPair(Q_L, Q_R)
-            self.eigvals_pair = shampoo_base.TensorPair(eigvals_L, eigvals_R)
+            self.eigenbasis_pair = TensorPair(Q_L, Q_R)
+            self.eigvals_pair = TensorPair(eigvals_L, eigvals_R)
 
             # Project exp_avg to the new eigenbasis using the updated eigenbases
             self.exp_avg = self.project_in(exp_avg)
@@ -259,12 +259,12 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
     Attributes:
         PreconditionerCls: Preconditioner used for every parameter. Subclasses set it to change how the
             covariance factors and eigenbases are maintained; it must satisfy
-            :class:`~emerging_optimizers.shampoo.shampoo_base.SoapPreconditionerProtocol`. It is
+            :class:`~emerging_optimizers.shampoo.SoapPreconditionerProtocol`. It is
             also what :meth:`_init_group` allocates state from, so a subclass that swaps it gets that
             preconditioner's state layout.
     """
 
-    PreconditionerCls: ClassVar[type[shampoo_base.SoapPreconditionerProtocol]]
+    PreconditionerCls: ClassVar[type[SoapPreconditionerProtocol]]
 
     def __init__(
         self,
@@ -445,7 +445,7 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
 class KlSoapV3(SoapBase):
     """Implements a variant of KLSOAP algorithm."""
 
-    PreconditionerCls: ClassVar[type[shampoo_base.SoapPreconditionerProtocol]] = KlSoapPreconditioner
+    PreconditionerCls: ClassVar[type[SoapPreconditionerProtocol]] = KlSoapPreconditioner
 
     @override
     def _scalar_update(
@@ -485,14 +485,14 @@ class KlSoapV3(SoapBase):
 class ReklsV3(KlSoapV3):
     """Realtime Eigen KL-Shampoo"""
 
-    PreconditionerCls: ClassVar[type[shampoo_base.SoapPreconditionerProtocol]] = ReklsPreconditioner
+    PreconditionerCls: ClassVar[type[SoapPreconditionerProtocol]] = ReklsPreconditioner
 
 
 @registry.register_optimizer("kl_m_soap")
 class KlMSoap(SoapBase):
     """SOAP with the KL-Shampoo kronecker factor update and MAdam as the inner scalar optimizer."""
 
-    PreconditionerCls: ClassVar[type[shampoo_base.SoapPreconditionerProtocol]] = KlSoapPreconditioner
+    PreconditionerCls: ClassVar[type[SoapPreconditionerProtocol]] = KlSoapPreconditioner
 
     @override
     def _scalar_update(
