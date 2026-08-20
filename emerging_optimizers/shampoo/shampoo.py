@@ -158,12 +158,10 @@ class ShampooPreconditioner:
         eigvals_L, eigvecs_L = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.L)
         eigvals_R, eigvecs_R = eig_utils.eigh_with_fallback(self.kronecker_factor_pair.R)
 
-        inverse_root_pair = precond_base.TensorPair(
-            _get_root_inverse_from_eigens(eigvals_L, eigvecs_L, self.p_root_inv, self.eps),
-            _get_root_inverse_from_eigens(eigvals_R, eigvecs_R, self.p_root_inv, self.eps),
-        )
+        root_inv_L = _get_root_inverse_from_eigens(eigvals_L, eigvecs_L, self.p_root_inv, self.eps)
+        root_inv_R = _get_root_inverse_from_eigens(eigvals_R, eigvecs_R, self.p_root_inv, self.eps)
 
-        return inverse_root_pair.L @ x @ inverse_root_pair.R
+        return root_inv_L @ x @ root_inv_R
 
 
 class KlShampooPreconditioner(ShampooPreconditioner):
@@ -213,6 +211,16 @@ class KlShampooPreconditioner(ShampooPreconditioner):
         state.update(updates)
 
     @override
+    def init_step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
+        """Performs the first step's factor update, before any history exists.
+
+        Args:
+            grad: Gradient of the parameter on the first step.
+            shampoo_beta: EMA coefficient for the Kronecker factor update.
+        """
+        self.update_kronecker_factors(grad, shampoo_beta)
+
+    @override
     def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float) -> None:
         with utils.fp32_matmul_precision("highest"):
             soap.update_kronecker_factors_kl_shampoo(
@@ -232,12 +240,10 @@ class KlShampooPreconditioner(ShampooPreconditioner):
         self.eigenbasis_pair = precond_base.TensorPair(eigvecs_L, eigvecs_R)
         self.eigvals_pair = precond_base.TensorPair(eigvals_L, eigvals_R)
 
-        inverse_root_pair = precond_base.TensorPair(
-            _get_root_inverse_from_eigens(eigvals_L, eigvecs_L, self.p_root_inv, self.eps),
-            _get_root_inverse_from_eigens(eigvals_R, eigvecs_R, self.p_root_inv, self.eps),
-        )
+        root_inv_L = _get_root_inverse_from_eigens(eigvals_L, eigvecs_L, self.p_root_inv, self.eps)
+        root_inv_R = _get_root_inverse_from_eigens(eigvals_R, eigvecs_R, self.p_root_inv, self.eps)
 
-        return inverse_root_pair.L @ x @ inverse_root_pair.R
+        return root_inv_L @ x @ root_inv_R
 
 
 class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
@@ -454,7 +460,7 @@ class KlShampoo(Shampoo):
         eps: float = 1e-8,
         weight_decay: float = 0.01,
         *,
-        p_root_inv: float = 2,
+        p_root_inv: float = 4,
     ) -> None:
         super().__init__(
             params,

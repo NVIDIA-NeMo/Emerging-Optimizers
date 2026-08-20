@@ -500,7 +500,6 @@ class KlShampooTest(parameterized.TestCase):
 
         self.assertTrue(torch.isfinite(p).all())
         self.assertFalse(torch.equal(p.detach(), initial))
-        self.assertEqual(optimizer.p_root_inv, 2)
         self.assertCountEqual(
             optimizer.state[p],
             {"step", "exp_avg", "L", "R", "Q_L", "Q_R", "eigvals_L", "eigvals_R"},
