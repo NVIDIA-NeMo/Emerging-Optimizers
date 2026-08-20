@@ -249,6 +249,28 @@ class KlShampooPreconditionerTest(parameterized.TestCase):
         assert_equal(state["Q_L"], torch.eye(m, device=self.device))
         assert_equal(state["Q_R"], torch.eye(n, device=self.device))
 
+    @parameterized.parameters((8, 3), (3, 8), (15, 17))
+    def test_precondition_matches_signed_permutation_spectrum(self, m: int, n: int) -> None:
+        l_seed = gen_signed_permutation(m).to(self.device)
+        r_seed = gen_signed_permutation(n).to(self.device)
+        eigvals_L = 2 ** torch.randint(-3, 4, (m,), dtype=torch.float32, device=self.device)
+        eigvals_R = 2 ** torch.randint(-3, 4, (n,), dtype=torch.float32, device=self.device)
+
+        state = KlShampooPreconditioner.init_state((m, n), self.device)
+        state["L"] = l_seed * eigvals_L @ l_seed.mT
+        state["R"] = r_seed * eigvals_R @ r_seed.mT
+        preconditioner = KlShampooPreconditioner(state, p_root_inv=1, eps=0)
+
+        x = torch.randint(-3, 4, (m, n), dtype=torch.float32, device=self.device)
+
+        with utils.fp32_matmul_precision("highest"):
+            preconditioned = preconditioner.precondition(x)
+            root_inv_L = (l_seed * eigvals_L.reciprocal()) @ l_seed.mT
+            root_inv_R = (r_seed * eigvals_R.reciprocal()) @ r_seed.mT
+            expected = root_inv_L @ x @ root_inv_R
+
+        assert_equal(preconditioned, expected)
+
     @parameterized.product(shape=[(8, 16), (16, 8), (13, 15)], shampoo_beta=[0.5, 0.95])
     def test_update_kronecker_factors_matches_legacy(self, shape: tuple[int, int], shampoo_beta: float) -> None:
         m, n = shape
