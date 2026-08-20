@@ -190,4 +190,5 @@ exclude_also = [
     "loss = closure",
     "@abstractmethod",
     "if TYPE_CHECKING:",
+    "raise NotImplementedError",
 ]
