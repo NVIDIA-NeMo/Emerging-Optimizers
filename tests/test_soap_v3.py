@@ -77,6 +77,14 @@ class KlSoapPreconditionerTest(parameterized.TestCase):
         self.assertIs(state["eigvals_L"], preconditioner.eigvals_pair.L)
         self.assertIs(state["exp_avg"], preconditioner.exp_avg)
 
+    def test_rebind_state_raise_on_missing_key(self) -> None:
+        state = KlSoapPreconditioner.init_state((8, 16), torch.device(FLAGS.device))
+        preconditioner = KlSoapPreconditioner(state, 1e-8)
+
+        del state["exp_avg"]
+        with self.assertRaisesRegex(KeyError, "missing keys.*exp_avg"):
+            preconditioner.rebind_state(state)
+
     @parameterized.parameters((8, 16), (16, 8), (12, 12))
     def test_update_kronecker_factors_matches_legacy(self, m: int, n: int) -> None:
         state = KlSoapPreconditioner.init_state((m, n), torch.device(FLAGS.device))
@@ -265,6 +273,64 @@ class KlMSoapTest(parameterized.TestCase):
         opt = KlMSoap([p], lr=1e-2)
         with self.assertRaisesRegex(TypeError, "only supported for 2D"):
             opt.step()
+
+
+class SoapV3MultiStreamTest(parameterized.TestCase):
+    """Tests that the v3 optimizers with stream_list produce identical results to without."""
+
+    @classmethod
+    def setUpClass(cls):
+        if FLAGS.device == "cpu":
+            cls.skipTest(cls, "SoapV3MultiStreamTest requires GPU")
+        cls.device = FLAGS.device
+
+    @parameterized.parameters(KlSoapV3, ReklsV3, KlMSoap)  # type: ignore[misc]
+    def test_8streams_matches_no_streams(self, opt_cls):
+        torch.manual_seed(42)
+        num_steps = 10
+        shapes = [(5, 3), (8, 4), (3, 7), (6, 6), (4, 5), (10, 3), (3, 9), (7, 4), (5, 5), (8, 6)]
+
+        common_kwargs = dict(
+            lr=0.001,
+            weight_decay=0.01,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            shampoo_beta=0.95,
+        )
+
+        # Create two sets of identical parameters
+        params_no_stream = [
+            torch.randn(s, requires_grad=True, device=self.device, dtype=torch.bfloat16) for s in shapes
+        ]
+        params_with_stream = [p.clone().detach().requires_grad_(True) for p in params_no_stream]
+
+        opt_no_stream = opt_cls(params_no_stream, **common_kwargs)
+        stream_list = [torch.cuda.Stream() for _ in range(8)]
+        opt_with_stream = opt_cls(params_with_stream, **common_kwargs, stream_list=stream_list)
+
+        grads_per_step = [
+            [torch.randn(s, device=self.device, dtype=torch.bfloat16) for s in shapes] for _ in range(num_steps)
+        ]
+
+        for step in range(num_steps):
+            for p, g in zip(params_no_stream, grads_per_step[step]):
+                p.grad = g.clone()
+            for p, g in zip(params_with_stream, grads_per_step[step]):
+                p.grad = g.clone()
+
+            opt_no_stream.step()
+            opt_with_stream.step()
+            torch.cuda.synchronize()
+
+            for i, (p_no, p_with) in enumerate(zip(params_no_stream, params_with_stream)):
+                assert_equal(
+                    p_with,
+                    p_no,
+                    msg=lambda msg: f"Parameter {i} mismatch at step {step}:\n{msg}",
+                )
+
+            for p in params_no_stream + params_with_stream:
+                p.grad = None
 
 
 if __name__ == "__main__":
