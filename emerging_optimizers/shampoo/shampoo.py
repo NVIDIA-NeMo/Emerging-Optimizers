@@ -370,7 +370,7 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         Args:
             closure: Unsupported; must be ``None``.
 
-        Raises:f
+        Raises:
             ValueError: If ``closure`` is not ``None``.
         """
         if closure is not None:

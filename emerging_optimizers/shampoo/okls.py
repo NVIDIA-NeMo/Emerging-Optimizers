@@ -13,11 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import TYPE_CHECKING, ClassVar, Literal, override
-
-
-if TYPE_CHECKING:
-    pass
+from typing import ClassVar, Literal, override
 
 import torch
 from torch.optim.optimizer import ParamsT
@@ -37,9 +33,13 @@ class OklsPreconditioner:
     def __init__(
         self,
         state: dict,
+        p_root_inv: float,
         eps: float,
         fp32_matmul_prec: Literal["high", "highest"],
     ) -> None:
+        if p_root_inv != 2:
+            raise ValueError(f"OKLS only supports p_root_inv=2, got {p_root_inv}")
+        self.p_root_inv = 2
         self.kronecker_factor_pair = precond_base.TensorPair(state["L"], state["R"])
         self.root_inverse_pair = precond_base.TensorPair(state["P_L"], state["P_R"])
         self.eps = eps
@@ -102,13 +102,15 @@ class OklsPreconditioner:
             self.root_inverse_pair.L @ grad,
         )
 
-        L = self.kronecker_factor_pair.L.addmm_(
+        L = torch.addmm(
+            self.kronecker_factor_pair.L,
             precond_grad_pair.L,
             precond_grad_pair.L.T,
             beta=shampoo_beta,
             alpha=(1 - shampoo_beta) / n,
         )
-        R = self.kronecker_factor_pair.R.addmm_(
+        R = torch.addmm(
+            self.kronecker_factor_pair.R,
             precond_grad_pair.R.T,
             precond_grad_pair.R,
             beta=shampoo_beta,
@@ -126,7 +128,7 @@ class OklsPreconditioner:
         return (self.root_inverse_pair.L @ x @ self.root_inverse_pair.R) * shape_scale
 
 
-@registry.register_optimizer("okls_v3")
+@registry.register_optimizer("okls")
 class OKLS(ShampooBase):
     """Online KL-Shampoo with scaled CANS root inverses."""
 
