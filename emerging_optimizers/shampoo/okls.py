@@ -35,7 +35,7 @@ class OklsPreconditioner:
         state: dict,
         p_root_inv: float,
         eps: float,
-        fp32_matmul_prec: Literal["high", "highest"],
+        fp32_matmul_prec: Literal["high", "highest"] = "high",
     ) -> None:
         if p_root_inv != 2:
             raise ValueError(f"OKLS only supports p_root_inv=2, got {p_root_inv}")
@@ -142,8 +142,6 @@ class OKLS(ShampooBase):
         shampoo_beta: float = 0.9482,
         eps: float = 1e-9,
         weight_decay: float = 0.0,
-        *,
-        cans_fp32_matmul_prec: Literal["high", "highest"] = "high",
     ) -> None:
         if not 0.0 <= momentum < 1.0:
             raise ValueError(f"Invalid momentum: {momentum}")
@@ -154,7 +152,6 @@ class OKLS(ShampooBase):
         if weight_decay < 0.0:
             raise ValueError(f"Invalid weight_decay: {weight_decay}")
 
-        self.cans_fp32_matmul_prec = cans_fp32_matmul_prec
         super().__init__(
             params,
             lr,
