@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 from typing import TYPE_CHECKING, Callable, ClassVar, override
 
 
@@ -243,7 +244,9 @@ class KlShampooPreconditioner(ShampooPreconditioner):
         root_inv_L = _get_root_inverse_from_eigens(eigvals_L, eigvecs_L, self.p_root_inv, self.eps)
         root_inv_R = _get_root_inverse_from_eigens(eigvals_R, eigvecs_R, self.p_root_inv, self.eps)
 
-        return root_inv_L @ x @ root_inv_R
+        m, n = x.shape
+        shape_scale = math.sqrt(m / n) / (math.sqrt(m) + math.sqrt(n))
+        return (root_inv_L @ x @ root_inv_R) * shape_scale
 
 
 class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
