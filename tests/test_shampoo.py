@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 from typing import override
 
 import torch
@@ -267,7 +268,8 @@ class KlShampooPreconditionerTest(parameterized.TestCase):
             preconditioned = preconditioner.precondition(x)
             root_inv_L = (l_seed * eigvals_L.reciprocal()) @ l_seed.mT
             root_inv_R = (r_seed * eigvals_R.reciprocal()) @ r_seed.mT
-            expected = root_inv_L @ x @ root_inv_R
+            shape_scale = math.sqrt(m / n) / (math.sqrt(m) + math.sqrt(n))
+            expected = (root_inv_L @ x @ root_inv_R) * shape_scale
 
         assert_equal(preconditioned, expected)
 
