@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 from typing import TYPE_CHECKING, Callable, ClassVar, override
 
 
@@ -212,13 +213,19 @@ class KlShampooPreconditioner(ShampooPreconditioner):
 
     @override
     def init_step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
-        """Performs the first step's factor update, before any history exists.
+        """Seeds the Kronecker factors from the first gradient.
 
         Args:
             grad: Gradient of the parameter on the first step.
-            shampoo_beta: EMA coefficient for the Kronecker factor update.
+            shampoo_beta: Unused; part of the preconditioner protocol.
         """
-        self.update_kronecker_factors(grad, shampoo_beta)
+        m, n = grad.shape
+        grad_norm = torch.linalg.vector_norm(grad, dtype=torch.float64)
+
+        L = grad @ grad.T * math.sqrt(m / n) / grad_norm
+        R = grad.T @ grad * math.sqrt(n / m) / grad_norm
+
+        self.kronecker_factor_pair = precond_base.TensorPair((L + L.T) * 0.5, (R + R.T) * 0.5)
 
     @override
     def update_kronecker_factors(self, grad: torch.Tensor, shampoo_beta: float) -> None:
@@ -231,6 +238,8 @@ class KlShampooPreconditioner(ShampooPreconditioner):
                 self.eigvals_pair,
                 self.eps,
             )
+            L, R = self.kronecker_factor_pair
+            self.kronecker_factor_pair = precond_base.TensorPair((L + L.T) * 0.5, (R + R.T) * 0.5)
 
     @override
     def precondition(self, x: torch.Tensor) -> torch.Tensor:
@@ -243,7 +252,9 @@ class KlShampooPreconditioner(ShampooPreconditioner):
         root_inv_L = _get_root_inverse_from_eigens(eigvals_L, eigvecs_L, self.p_root_inv, self.eps)
         root_inv_R = _get_root_inverse_from_eigens(eigvals_R, eigvecs_R, self.p_root_inv, self.eps)
 
-        return root_inv_L @ x @ root_inv_R
+        m, n = x.shape
+        shape_scale = math.sqrt(m / n) / (math.sqrt(m) + math.sqrt(n))
+        return (root_inv_L @ x @ root_inv_R) * shape_scale
 
 
 class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
