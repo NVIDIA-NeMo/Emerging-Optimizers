@@ -12,10 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import torch
 from typing import Literal
 
+import torch
+
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT, newton_schulz
+
 
 __all__ = [
     "RetractionT",
@@ -33,6 +35,20 @@ def qr_retraction(
     momentum: torch.Tensor,
     step_size: float,
 ) -> torch.Tensor:
+    """Retract a tangent step back to the Stiefel manifold via reduced QR decomposition.
+
+    Forms the intermediate matrix $X = \text{point} - \text{step\\_size} \times \text{momentum}$,
+    computes its reduced QR factorization, and resolves column phase ambiguity by ensuring
+    positive diagonal elements in $R$.
+
+    Args:
+        point: Current matrix on the Stiefel manifold of shape ``(M, K)``.
+        momentum: Tangent vector or momentum update of shape ``(M, K)``.
+        step_size: Step size scaling the update direction.
+
+    Returns:
+        The retracted orthonormal matrix of shape ``(M, K)`` satisfying $Q^T Q = I_K$.
+    """
     matrix = point - step_size * momentum
     q, r = torch.linalg.qr(matrix, mode="reduced")
     signs = torch.diagonal(r).sign()
@@ -45,6 +61,20 @@ def polar_retraction(
     momentum: torch.Tensor,
     step_size: float,
 ) -> torch.Tensor:
+    """Retract a tangent step back to the Stiefel manifold via the analytical polar factor.
+
+    Computes the closest orthonormal matrix in Frobenius norm to
+    $X = \text{point} - \text{step\\_size} \times \text{momentum}$ using the singular value
+    decomposition $X = U \Sigma V^T \implies \operatorname{polar}(X) = U V^T$.
+
+    Args:
+        point: Current matrix on the Stiefel manifold of shape ``(M, K)``.
+        momentum: Tangent vector or momentum update of shape ``(M, K)``.
+        step_size: Step size scaling the update direction.
+
+    Returns:
+        The retracted orthonormal matrix of shape ``(M, K)`` satisfying $Q^T Q = I_K$.
+    """
     matrix = point - step_size * momentum
     u, _, vh = torch.linalg.svd(matrix, full_matrices=False)
     return u @ vh
@@ -55,6 +85,20 @@ def cayley_retraction(
     momentum: torch.Tensor,
     step_size: float,
 ) -> torch.Tensor:
+    """Retract a tangent step back to the Stiefel manifold via the Cayley transform.
+
+    Constructs a skew-symmetric matrix $A = D X^T - X D^T$ from the update direction
+    $D = -\text{momentum}$ and applies the Padé approximation to the matrix exponential:
+    $(I - \frac{\eta}{2} A)^{-1} (I + \frac{\eta}{2} A) X$.
+
+    Args:
+        point: Current matrix on the Stiefel manifold of shape ``(M, K)``.
+        momentum: Tangent vector or momentum update of shape ``(M, K)``.
+        step_size: Step size scaling the update direction ($\eta$).
+
+    Returns:
+        The retracted orthonormal matrix of shape ``(M, K)`` satisfying $Q^T Q = I_K$.
+    """
     direction = -momentum
     skew = direction @ point.mT - point @ direction.mT
     identity = torch.eye(point.shape[0], dtype=point.dtype, device=point.device)
@@ -70,6 +114,25 @@ def newton_schulz_retraction(
     coefficient_type: NSCoeffT = "polar_express",
     num_ns_steps: int = 8,
 ) -> torch.Tensor:
+    """Retract a tangent step back to the Stiefel manifold via iterative Newton-Schulz iterations.
+
+    Approximates the polar factor / matrix sign function of
+    $X = \text{point} - \text{step\\_size} \times \text{momentum}$ using iterative matrix
+    polynomial evaluations directly on Tensor Cores, avoiding host-device synchronization
+    and LAPACK factorization overhead.
+
+    Args:
+        point: Current matrix on the Stiefel manifold of shape ``(M, K)``.
+        momentum: Tangent vector or momentum update of shape ``(M, K)``.
+        step_size: Step size scaling the update direction.
+        coefficient_type: Polynomial coefficient scheme used for Newton-Schulz steps.
+            Defaults to ``"polar_express"``.
+        num_ns_steps: Number of iterative polynomial steps to perform. Defaults to 8.
+
+    Returns:
+        The retracted approximately orthonormal matrix of shape ``(M, K)`` satisfying
+        $\|Q^T Q - I_K\|_\infty \le \epsilon$.
+    """
     matrix = point - step_size * momentum
     return newton_schulz(
         matrix,
