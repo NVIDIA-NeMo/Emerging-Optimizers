@@ -80,15 +80,8 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
         if weight_decay < 0.0:
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
 
-        defaults = dict(
-            lr=lr,
-            momentum=momentum,
-            weight_decay=weight_decay,
-            dim=dim,
-            eps=eps,
-        )
+        defaults = dict(lr=lr, momentum=momentum, weight_decay=weight_decay, dim=dim, eps=eps, scale_mode=scale_mode)
         self.weight_decay_method = weight_decay_method
-        self._scale_mode = scale_mode
         super().__init__(params, defaults)
 
     if TYPE_CHECKING:
@@ -116,6 +109,7 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
             wd = group["weight_decay"]
             dim = group["dim"]
             eps = group["eps"]
+            scale_mode = group["scale_mode"]
 
             for param in group["params"]:
                 if param.grad is None:
@@ -123,7 +117,7 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
                 if param.ndim != 2:
                     raise ValueError("ObliqueSGD only supports 2D parameters")
 
-                scale = _compute_scale_factor(param, dim, self._scale_mode)
+                scale = _compute_scale_factor(param, dim, scale_mode)
                 grad = param.grad
 
                 # Initialize momentum buffer if needed
@@ -251,9 +245,9 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
             dim=dim,
             eps=eps,
             correct_bias=correct_bias,
+            scale_mode=scale_mode,
         )
         self.weight_decay_method = weight_decay_method
-        self._scale_mode = scale_mode
         super().__init__(params, defaults)
 
     if TYPE_CHECKING:
@@ -282,6 +276,7 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
             dim = group["dim"]
             eps = group["eps"]
             correct_bias = group["correct_bias"]
+            scale_mode = group["scale_mode"]
 
             for param in group["params"]:
                 if param.grad is None:
@@ -293,7 +288,7 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
                 if "step" not in state:
                     state["step"] = 0
 
-                scale = _compute_scale_factor(param, dim, self._scale_mode)
+                scale = _compute_scale_factor(param, dim, scale_mode)
                 grad = param.grad
 
                 # Initialize momentum buffer if needed
@@ -405,8 +400,10 @@ def _compute_scale_factor(param: torch.Tensor, dim: int, scale_mode: ObliqueScal
     if scale_mode == "unit_rms_norm":
         m = param.size(dim)
         scale = m**0.5
-    else:  # unit_l2_norm
+    elif scale_mode == "unit_l2_norm":
         scale = 1.0
+    else:
+        raise ValueError(f"Invalid scale mode: {scale_mode}")
     return scale
 
 

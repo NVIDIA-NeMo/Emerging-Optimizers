@@ -19,7 +19,7 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import registry
-from emerging_optimizers.riemannian_optimizers.normalized_optimizer import (
+from emerging_optimizers.riemannian_optimizers import (
     ObliqueAdam,
     ObliqueSGD,
     ObliqueSteepestAdam,
@@ -236,6 +236,63 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
         opt = opt_cls([param])
         with self.assertRaisesRegex(ValueError, "only supports 2D"):
             opt.step()
+
+    def test_oblique_adam_matches_adamw_oracle(self) -> None:
+        """Verify ObliqueAdam's pre-tangent update matches torch.optim.AdamW bias correction."""
+        torch.manual_seed(42)
+        matrix_size = (4, 4)
+        init_data = torch.randn(matrix_size, dtype=torch.float32, device=self.device)
+        torch.nn.functional.normalize(init_data, p=2.0, dim=0, eps=1e-8, out=init_data)
+        grad = torch.randn(matrix_size, dtype=torch.float32, device=self.device)
+
+        lr = 0.05
+        betas = (0.9, 0.99)
+        eps = 1e-8
+
+        # 1. Run ObliqueAdam for 1 step
+        param_oblique = torch.nn.Parameter(init_data.clone())
+        opt_oblique = ObliqueAdam(
+            [param_oblique],
+            lr=lr,
+            betas=betas,
+            eps=eps,
+            dim=0,
+            scale_mode="unit_l2_norm",
+        )
+        param_oblique.grad = grad.clone()
+        opt_oblique.step()
+
+        # 2. Run PyTorch standard AdamW oracle on identical inputs
+        param_adamw = torch.nn.Parameter(init_data.clone())
+        opt_adamw = torch.optim.AdamW(
+            [param_adamw],
+            lr=lr,
+            betas=betas,
+            eps=eps,
+            weight_decay=0.0,
+        )
+        param_adamw.grad = grad.clone()
+        opt_adamw.step()
+
+        # Ambient descent direction from AdamW: (W_0 - W_1) / lr = m_hat / (sqrt(v_hat) + eps)
+        ambient_adamw_dir = (init_data - param_adamw.data) / lr
+
+        # 3. Project oracle update onto tangent space and retract
+        from emerging_optimizers.riemannian_optimizers.normalized_optimizer import (
+            _compute_riemannian_grad,
+        )
+
+        tangent_dir = _compute_riemannian_grad(init_data, ambient_adamw_dir, dim=0, eps=eps)
+        expected_param = init_data - lr * tangent_dir
+        torch.nn.functional.normalize(expected_param, p=2.0, dim=0, eps=eps, out=expected_param)
+
+        # Must match PyTorch AdamW oracle within float32 precision
+        torch.testing.assert_close(
+            param_oblique.data,
+            expected_param,
+            atol=1e-6,
+            rtol=1e-6,
+        )
 
 
 if __name__ == "__main__":
