@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import TYPE_CHECKING, Callable, override
+from typing import TYPE_CHECKING, Callable, Literal, override
 
 
 if TYPE_CHECKING:
@@ -25,7 +25,15 @@ from emerging_optimizers import mixin as opt_mixin
 from emerging_optimizers import registry
 
 
-__all__ = ["ObliqueSGD", "ObliqueAdam"]
+__all__ = [
+    "ObliqueAdam",
+    "ObliqueScaleT",
+    "ObliqueSGD",
+    "ObliqueSteepestAdam",
+    "ObliqueSteepestSGD",
+]
+
+ObliqueScaleT = Literal["unit_l2_norm", "unit_rms_norm"]
 
 
 @registry.register_optimizer("oblique_sgd")
@@ -50,6 +58,7 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
         weight_decay_method: Method to apply weight decay.
         dim: The dimension to normalize over
         eps: epsilon for numerical stability
+        scale_mode: The type of scale factor to use for the Riemannian gradient and retraction computation. Defaults to "unit_l2_norm" scaling.
     """
 
     def __init__(
@@ -62,6 +71,7 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         dim: int = 0,
         eps: float = 1e-8,
+        scale_mode: ObliqueScaleT = "unit_l2_norm",
     ) -> None:
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
@@ -78,6 +88,7 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
             eps=eps,
         )
         self.weight_decay_method = weight_decay_method
+        self._scale_mode = scale_mode
         super().__init__(params, defaults)
 
     if TYPE_CHECKING:
@@ -111,6 +122,8 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
                     continue
                 if param.ndim != 2:
                     raise ValueError("ObliqueSGD only supports 2D parameters")
+
+                scale = _compute_scale_factor(param, dim, self._scale_mode)
                 grad = param.grad
 
                 # Initialize momentum buffer if needed
@@ -123,15 +136,69 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
                 # theory style momentum
                 torch.add(grad, buf, alpha=mom, out=buf)
 
-                riem_grad = _compute_riemannian_grad(param, buf, dim)
+                riem_grad = self._get_riem_grad(param, buf, dim, scale, eps)
 
                 self._apply_weight_decay_inplace(param, riem_grad, lr, wd)
                 param.add_(riem_grad, alpha=-lr)
 
                 # Retraction back to the manifold, the hyper-sphere
                 torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=eps, out=param)
+                param.mul_(scale)
 
         return None
+
+    @torch.no_grad()
+    def _get_riem_grad(
+        self, param: torch.Tensor, buf: torch.Tensor, dim: int, scale: float, eps: float
+    ) -> torch.Tensor:
+        return _compute_riemannian_grad(param, buf, dim, eps=eps)
+
+
+@registry.register_optimizer("oblique_steepest_sgd")
+class ObliqueSteepestSGD(ObliqueSGD):
+    """Muon-style steepest descent optimizer for parameters on Oblique manifolds.
+
+    Unlike standard Riemannian SGD, this optimizer computes updates using a Linear Minimization
+    Oracle (LMO) with respect to the $l_1 \to \text{RMS}$ norm constraint. Mathematically, this
+    is equivalent to finding the Euclidean descent direction, projecting it onto the tangent space,
+    and normalizing the resulting directional vector.
+
+    This approach effectively strips the magnitude of the gradient, applying uniform step sizes
+    across all dimensions, mirroring the behavior of the Muon optimizer for Stiefel manifolds when the input features are one-hot encoded.
+    """
+
+    def __init__(
+        self,
+        params: list[torch.nn.Parameter],
+        lr: float = 1e-3,
+        momentum: float = 0.9,
+        weight_decay: float = 0.0,
+        *,
+        weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
+        dim: int = 0,
+        eps: float = 1e-8,
+        scale_mode: ObliqueScaleT = "unit_rms_norm",
+    ) -> None:
+        super().__init__(
+            params=params,
+            lr=lr,
+            momentum=momentum,
+            weight_decay=weight_decay,
+            weight_decay_method=weight_decay_method,
+            dim=dim,
+            eps=eps,
+            scale_mode=scale_mode,
+        )
+
+    @override
+    @torch.no_grad()
+    def _get_riem_grad(
+        self, param: torch.Tensor, buf: torch.Tensor, dim: int, scale: float, eps: float
+    ) -> torch.Tensor:
+        riem_grad = _compute_riemannian_grad(param, buf, dim, eps=eps)
+        torch.nn.functional.normalize(riem_grad, p=2.0, dim=dim, eps=eps, out=riem_grad)
+        riem_grad.mul_(scale)
+        return riem_grad
 
 
 @registry.register_optimizer("oblique_adam")
@@ -154,6 +221,7 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
         dim: int = 0,
         eps: float = 1e-8,
         correct_bias: bool = True,
+        scale_mode: ObliqueScaleT = "unit_l2_norm",
     ) -> None:
         """An Adam-like optimizer for Normalized 2d Parameters
 
@@ -165,6 +233,7 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
             dim: The dimension to normalize over.
             eps: The epsilon for numerical stability.
             correct_bias: Whether to correct bias in Adam-like computation.
+            scale_mode: The mode for scaling the Riemannian gradients and manifold retractions.
         """
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
@@ -184,6 +253,7 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
             correct_bias=correct_bias,
         )
         self.weight_decay_method = weight_decay_method
+        self._scale_mode = scale_mode
         super().__init__(params, defaults)
 
     if TYPE_CHECKING:
@@ -223,6 +293,7 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
                 if "step" not in state:
                     state["step"] = 0
 
+                scale = _compute_scale_factor(param, dim, self._scale_mode)
                 grad = param.grad
 
                 # Initialize momentum buffer if needed
@@ -245,35 +316,105 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
                 if correct_bias:
                     # step size correction for ADAM moments EMA
                     bias_correction1 = 1.0 - betas[0] ** step
-                    bias_correction2 = 1.0 - betas[1] ** step
+                    bias_correction2_sqrt = (1.0 - betas[1] ** step) ** 0.5
                 else:
                     bias_correction1 = 1.0
-                    bias_correction2 = 1.0
+                    bias_correction2_sqrt = 1.0
 
-                norm_grad = (exp_avg / bias_correction1) / (exp_avg_sq.sqrt() / bias_correction2 + eps)
+                denom = (exp_avg_sq.sqrt() / bias_correction2_sqrt).add_(eps)
+                norm_grad = (exp_avg / bias_correction1) / denom
 
-                riem_grad = _compute_riemannian_grad(param, norm_grad, dim)
+                riem_grad = self._get_riem_grad(param, norm_grad, dim, scale, eps)
 
                 self._apply_weight_decay_inplace(param, riem_grad, lr, wd)
                 param.add_(riem_grad, alpha=-lr)
 
                 # Retraction back to the manifold, i.e. the hyper-sphere
                 torch.nn.functional.normalize(param, p=2.0, dim=dim, eps=eps, out=param)
+                param.mul_(scale)
 
         return None
 
+    @torch.no_grad()
+    def _get_riem_grad(
+        self, param: torch.Tensor, buf: torch.Tensor, dim: int, scale: float, eps: float
+    ) -> torch.Tensor:
+        return _compute_riemannian_grad(param, buf, dim, eps)
 
-def _compute_riemannian_grad(param: torch.Tensor, grad_like: torch.Tensor, dim: int) -> torch.Tensor:
-    """Compute the Riemannian gradient for the oblique manifold.
 
-    Args:
-        param: Parameter tensor (2D)
-        grad_like: Gradient-like tensor (momentum buffer or gradient)
-        dim: The dimension to normalize over
+@registry.register_optimizer("oblique_steepest_adam")
+class ObliqueSteepestAdam(ObliqueAdam):
+    """Steepest descent Adam optimizer for parameters on Oblique manifolds.
 
-    Returns:
-        The tangent-space projected gradient.
+    This optimizer blends the adaptive momentum estimation of Adam with the Muon-style normalized
+    update direction. It computes the ambient Adam step, projects it onto the tangent space, and
+    then normalizes the resulting vector.
+
+    This guarantees that the final step direction incorporates Adam's historical second-moment
+    scaling, while the actual step size taken is uniformly bounded by the learning rate via the
+    Linear Minimization Oracle (LMO) constraint.
     """
 
-    inner = (param * grad_like).sum(dim=dim, keepdim=True)
-    return torch.add(grad_like, param * inner, alpha=-1)
+    def __init__(
+        self,
+        params: list[torch.nn.Parameter],
+        lr: float = 1e-3,
+        betas: tuple[float, float] = (0.9, 0.99),
+        weight_decay: float = 0.0,
+        *,
+        weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
+        dim: int = 0,
+        eps: float = 1e-8,
+        correct_bias: bool = True,
+        scale_mode: ObliqueScaleT = "unit_rms_norm",
+    ) -> None:
+        super().__init__(
+            params=params,
+            lr=lr,
+            betas=betas,
+            weight_decay=weight_decay,
+            weight_decay_method=weight_decay_method,
+            dim=dim,
+            eps=eps,
+            correct_bias=correct_bias,
+            scale_mode=scale_mode,
+        )
+
+    @override
+    @torch.no_grad()
+    def _get_riem_grad(
+        self, param: torch.Tensor, buf: torch.Tensor, dim: int, scale: float, eps: float
+    ) -> torch.Tensor:
+        riem_grad = _compute_riemannian_grad(param, buf, dim, eps)
+        torch.nn.functional.normalize(riem_grad, p=2.0, dim=dim, eps=eps, out=riem_grad)
+        riem_grad.mul_(scale)
+        return riem_grad
+
+
+def _compute_scale_factor(param: torch.Tensor, dim: int, scale_mode: ObliqueScaleT) -> float:
+    """Compute the scale factor for the Riemannian gradient and retraction.
+
+    Args:
+        param: The parameter tensor.
+        dim: The dimension over which to normalize.
+        scale_mode: The scaling mode, either "unit_l2_norm" or "unit_rms_norm".
+
+    Returns:
+        The Oblique manifold scale factor.
+    """
+    if scale_mode == "unit_rms_norm":
+        m = param.size(dim)
+        scale = m**0.5
+    else:  # unit_l2_norm
+        scale = 1.0
+    return scale
+
+
+def _compute_riemannian_grad(
+    param: torch.Tensor, grad_like: torch.Tensor, dim: int, eps: float = 1e-8
+) -> torch.Tensor:
+    num = (param * grad_like).sum(dim=dim, keepdim=True)
+    den = (param * param).sum(dim=dim, keepdim=True).clamp_min(eps)
+    inner = num / den
+    tangent_proj = torch.add(grad_like, param * inner, alpha=-1.0)
+    return tangent_proj
