@@ -30,11 +30,20 @@ permissions:
   statuses: write
 
 jobs:
+  ephemeral-runner-routing:
+    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_ephemeral_runner_routing.yml@4fe957d4ea5816af1d67fae130bbab4b434c10b3 # v1.9.2
+    with:
+      lane: ${{ vars.NEMO_CI_EPHEMERAL_LANE }}
+      legacy_label: nemo-ci-aws-gpu-x2-ephemeral
+      run_id: ${{ github.run_id }}
+      run_attempt: ${{ github.run_attempt }}
+
   pre-flight:
+    needs: [ephemeral-runner-routing]
     uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_cicd_preflight.yml@cf5acebace78c7c339bc1f804357a991336f1c4d # v1.8.10
     with:
       default_runner_prefix: nemo-ci-aws-gpu-x2
-      non_nvidia_runner_prefix: nemo-ci-aws-gpu-x2-ephemeral
+      non_nvidia_runner_prefix: ${{ needs.ephemeral-runner-routing.outputs.runner_label_base }}
       default_test_data_path: /mnt/datadrive/TestData/nemo-fw/TestData
       non_nvidia_test_data_path: /mnt/datadrive/TestData/nemo-fw/TestData
       default_registry: 766267172432.dkr.ecr.us-east-1.amazonaws.com
@@ -58,7 +67,7 @@ jobs:
 
   cicd-container-build:
     needs: [pre-flight, cicd-wait-in-queue]
-    runs-on: ${{ needs.pre-flight.outputs.runner_prefix }}
+    runs-on: ${{ startsWith(needs.pre-flight.outputs.runner_prefix, 'ephe-v2-') && format('{0}-a{1}', needs.pre-flight.outputs.runner_prefix, github.run_attempt) || needs.pre-flight.outputs.runner_prefix }}
     if: |
       (
         success()
@@ -164,10 +173,10 @@ jobs:
       matrix:
         include:
           - script: L0_Tests_GPU
-            runner: ${{ needs.pre-flight.outputs.runner_prefix }}
+            runner: ${{ startsWith(needs.pre-flight.outputs.runner_prefix, 'ephe-v2-') && format('{0}-a{1}', needs.pre-flight.outputs.runner_prefix, github.run_attempt) || needs.pre-flight.outputs.runner_prefix }}
             timeout: 30
           - script: L0_Tests_CPU
-            runner: ${{ needs.pre-flight.outputs.runner_prefix }}
+            runner: ${{ startsWith(needs.pre-flight.outputs.runner_prefix, 'ephe-v2-') && format('{0}-a{1}', needs.pre-flight.outputs.runner_prefix, github.run_attempt) || needs.pre-flight.outputs.runner_prefix }}
             timeout: 30
             cpu-only: true
     needs: [pre-flight, cicd-container-build]
@@ -205,7 +214,7 @@ jobs:
 
   cicd-nightly-tests:
     needs: [pre-flight, cicd-container-build]
-    runs-on: ${{ needs.pre-flight.outputs.runner_prefix }}
+    runs-on: ${{ startsWith(needs.pre-flight.outputs.runner_prefix, 'ephe-v2-') && format('{0}-a{1}', needs.pre-flight.outputs.runner_prefix, github.run_attempt) || needs.pre-flight.outputs.runner_prefix }}
     name: L1_Tests_GPU
     if: |
       github.event_name == 'schedule'
@@ -225,7 +234,7 @@ jobs:
           timeout: 60
           is_unit_test: "true"
           container-image: ${{ needs.pre-flight.outputs.registry }}/emerging-optimizers:${{ github.sha }}
-          runner: ${{ needs.pre-flight.outputs.runner_prefix }}
+          runner: ${{ startsWith(needs.pre-flight.outputs.runner_prefix, 'ephe-v2-') && format('{0}-a{1}', needs.pre-flight.outputs.runner_prefix, github.run_attempt) || needs.pre-flight.outputs.runner_prefix }}
           test-data-path: ${{ needs.pre-flight.outputs.test_data_path }}
 
       - name: Upload Test Results

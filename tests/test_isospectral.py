@@ -43,8 +43,8 @@ class IsospectralTest(parameterized.TestCase):
         ("polar_wide", "polar", (5, 8)),
         ("cayley_tall", "cayley", (8, 5)),
         ("cayley_wide", "cayley", (5, 8)),
-        ("newton_shultz_tall", "newton_schulz", (8, 5)),
-        ("newton_shultz_wide", "newton_schulz", (5, 8)),
+        ("newton_schulz_tall", "newton_schulz", (8, 5)),
+        ("newton_schulz_wide", "newton_schulz", (5, 8)),
     )
     def test_preserves_singular_values(self, retraction: str, shape: tuple[int, int]) -> None:
         param = torch.nn.Parameter(torch.randn(shape, device=FLAGS.device))
