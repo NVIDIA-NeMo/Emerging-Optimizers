@@ -85,6 +85,21 @@ class EigUtilsTest(BaseTestCase):
         # Test 3: Check that Q_new is different from input (power iteration ran)
         self.assertFalse(torch.allclose(Q_new, eigenbasis))
 
+    def test_orthogonal_iteration_returns_sort_permutation(self) -> None:
+        kronecker_factor = torch.diag(torch.tensor([1.0, 4.0], device=self.device))
+        eigenbasis = torch.eye(2, device=self.device)
+
+        eigvals, Q_new, sort_idx = eig_utils.orthogonal_iteration(
+            kronecker_factor,
+            eigenbasis,
+            power_iter_steps=1,
+            return_sort_idx=True,
+        )
+
+        assert_equal(sort_idx, torch.tensor([1, 0], device=self.device))
+        assert_equal(eigvals, torch.tensor([4.0, 1.0], device=self.device))
+        assert_equal(Q_new, eigenbasis[:, sort_idx])
+
     def test_eigh_with_fallback_descending_order(self) -> None:
         """Tests that eigenvalues are returned in descending order."""
         x = torch.tensor(

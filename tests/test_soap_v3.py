@@ -109,6 +109,29 @@ class KlSoapPreconditionerTest(parameterized.TestCase):
         assert_equal(preconditioner.kronecker_factor_pair.L, reference_factors[0])
         assert_equal(preconditioner.kronecker_factor_pair.R, reference_factors[1])
 
+    def test_qr_basis_permutation_keeps_second_moment_aligned(self) -> None:
+        state = KlSoapPreconditioner.init_state((2, 3), torch.device(FLAGS.device))
+        state["L"] = torch.diag(torch.tensor([1.0, 4.0], device=FLAGS.device))
+        state["R"] = torch.diag(torch.tensor([1.0, 9.0, 4.0], device=FLAGS.device))
+        state["eigvals_L"] = torch.tensor([1.0, 4.0], device=FLAGS.device)
+        state["eigvals_R"] = torch.tensor([1.0, 9.0, 4.0], device=FLAGS.device)
+        initial_exp_avg_sq = torch.tensor([[1.0, 4.0, 9.0], [16.0, 25.0, 36.0]], device=FLAGS.device)
+        state["exp_avg_sq"] = initial_exp_avg_sq.clone()
+        preconditioner = KlSoapPreconditioner(state, 1e-8)
+
+        preconditioner.step(torch.zeros(2, 3, device=FLAGS.device), shampoo_beta=1.0)
+
+        expected = initial_exp_avg_sq.index_select(0, torch.tensor([1, 0], device=FLAGS.device)).index_select(
+            1, torch.tensor([1, 2, 0], device=FLAGS.device)
+        )
+        torch.testing.assert_close(
+            preconditioner.exp_avg_sq,
+            expected,
+            atol=0.0,
+            rtol=0.0,
+            msg=lambda msg: f"KL-SOAP second moment did not follow the sorted eigenbasis columns:\n{msg}",
+        )
+
 
 class SoapV3AgainstLegacyTest(parameterized.TestCase):
     @parameterized.parameters(

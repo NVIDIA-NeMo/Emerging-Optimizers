@@ -13,7 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from collections.abc import Iterable
-from typing import TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
+
+
+if TYPE_CHECKING:
+    from typing import Literal, overload
 
 import torch
 
@@ -78,11 +82,43 @@ def get_eigenbasis_svd(
     return updated_eigenbasis_list
 
 
+if TYPE_CHECKING:
+
+    @overload
+    def get_eigenbasis_qr(
+        kronecker_factor_list: Iterable[torch.Tensor],
+        eigenbasis_list: Iterable[torch.Tensor],
+        power_iter_steps: int = 1,
+        *,
+        return_sort_indices: Literal[False] = False,
+    ) -> tuple[TensorList, TensorList]: ...
+
+    @overload
+    def get_eigenbasis_qr(
+        kronecker_factor_list: Iterable[torch.Tensor],
+        eigenbasis_list: Iterable[torch.Tensor],
+        power_iter_steps: int = 1,
+        *,
+        return_sort_indices: Literal[True],
+    ) -> tuple[TensorList, TensorList, TensorList]: ...
+
+    @overload
+    def get_eigenbasis_qr(
+        kronecker_factor_list: Iterable[torch.Tensor],
+        eigenbasis_list: Iterable[torch.Tensor],
+        power_iter_steps: int = 1,
+        *,
+        return_sort_indices: bool,
+    ) -> tuple[TensorList, TensorList] | tuple[TensorList, TensorList, TensorList]: ...
+
+
 def get_eigenbasis_qr(
     kronecker_factor_list: Iterable[torch.Tensor],
     eigenbasis_list: Iterable[torch.Tensor],
     power_iter_steps: int = 1,
-) -> tuple[TensorList, TensorList]:
+    *,
+    return_sort_indices: bool = False,
+) -> tuple[TensorList, TensorList] | tuple[TensorList, TensorList, TensorList]:
     """Updates the eigenbases of the preconditioner using power iteration and QR.
 
     Args:
@@ -90,20 +126,28 @@ def get_eigenbasis_qr(
         eigenbasis_list: List of current eigenbases (QL and QR).
         power_iter_steps: Number of power iteration steps to perform before QR decomposition.
             More steps can lead to better convergence but increased computation time.
+        return_sort_indices: Also return the column permutation for each updated eigenbasis.
 
     Returns:
         Tuple of (list of approximate eigenvalues in descending order, updated list of orthonormal
-        eigenbases (QL and QR) with columns ordered to match).
+        eigenbases (QL and QR) with columns ordered to match). If ``return_sort_indices`` is True,
+        the list of sorting permutations is returned as the third element.
     """
     updated_eigenbasis_list: TensorList = []
     updated_eigvals_list: TensorList = []
+    sort_idx_list: TensorList = []
     for kronecker_factor, eigenbasis in zip(kronecker_factor_list, eigenbasis_list, strict=True):
-        eigvals, eigenbasis = eig_utils.orthogonal_iteration(
+        eigvals, eigenbasis, sort_idx = eig_utils.orthogonal_iteration(
             kronecker_factor=kronecker_factor,
             eigenbasis=eigenbasis,
             power_iter_steps=power_iter_steps,
+            return_sort_idx=True,
         )
         updated_eigvals_list.append(eigvals)
         updated_eigenbasis_list.append(eigenbasis)
+        sort_idx_list.append(sort_idx)
 
-    return updated_eigvals_list, updated_eigenbasis_list
+    result = updated_eigvals_list, updated_eigenbasis_list
+    if return_sort_indices:
+        return *result, sort_idx_list
+    return result

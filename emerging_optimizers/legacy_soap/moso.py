@@ -225,12 +225,15 @@ def _update_eigenbasis_and_exp_avg_sq(
         _, (updated_eigenbasis,) = soap_utils.get_eigenbasis_eigh([momentum_factor])
     else:
         x = exp_avg_sq if left_preconditioned else exp_avg_sq.mT
-        exp_avg_sq = x if left_preconditioned else x.mT
-        _, (updated_eigenbasis,) = soap_utils.get_eigenbasis_qr(
+        _, (updated_eigenbasis,), (sort_idx,) = soap_utils.get_eigenbasis_qr(
             [momentum_factor],
             [eigenbasis],
             power_iter_steps=power_iter_steps,
+            return_sort_indices=True,
         )
+        # Keep the diagonal second moment aligned with the sorted eigenbasis columns.
+        x = x.index_select(0, sort_idx)
+        exp_avg_sq = x if left_preconditioned else x.mT
 
     return updated_eigenbasis, exp_avg_sq
 

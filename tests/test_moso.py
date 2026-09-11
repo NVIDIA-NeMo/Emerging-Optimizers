@@ -18,6 +18,7 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers import registry
 from emerging_optimizers.legacy_soap import MOSO
+from emerging_optimizers.legacy_soap.moso import _update_eigenbasis_and_exp_avg_sq
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -56,6 +57,35 @@ class MOSOTest(parameterized.TestCase):
 
     def test_registry(self) -> None:
         self.assertIs(registry.get_optimizer_cls("moso"), MOSO)
+
+    @parameterized.parameters(
+        {"left_preconditioned": True},
+        {"left_preconditioned": False},
+    )
+    def test_qr_basis_permutation_keeps_second_moment_aligned(self, left_preconditioned: bool) -> None:
+        momentum_factor = torch.diag(torch.tensor([1.0, 4.0], device=FLAGS.device))
+        eigenbasis = torch.eye(2, device=FLAGS.device)
+        shape = (2, 3) if left_preconditioned else (3, 2)
+        exp_avg_sq = torch.arange(1, 7, device=FLAGS.device, dtype=torch.float).reshape(shape)
+
+        _, updated_exp_avg_sq = _update_eigenbasis_and_exp_avg_sq(
+            momentum_factor,
+            eigenbasis,
+            exp_avg_sq,
+            left_preconditioned,
+            use_eigh=False,
+            power_iter_steps=1,
+        )
+
+        permuted_axis = 0 if left_preconditioned else 1
+        expected = exp_avg_sq.flip((permuted_axis,))
+        torch.testing.assert_close(
+            updated_exp_avg_sq,
+            expected,
+            atol=0.0,
+            rtol=0.0,
+            msg=lambda msg: f"MOSO second moment did not follow the sorted eigenbasis columns:\n{msg}",
+        )
 
     @parameterized.parameters(
         {"shape": (3, 5)},

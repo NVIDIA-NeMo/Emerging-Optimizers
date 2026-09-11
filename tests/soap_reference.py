@@ -378,7 +378,7 @@ class ReferenceSoap(optim.Optimizer):
             exp_avg_sq = state["exp_avg_sq"]
 
         final = []
-        for m, o in zip(matrix, orth_matrix):
+        for ind, (m, o) in enumerate(zip(matrix, orth_matrix)):
             if len(m) == 0:
                 final.append([])
                 continue
@@ -387,6 +387,7 @@ class ReferenceSoap(optim.Optimizer):
             est_eig = (Q.T @ m * Q.T).sum(dim=-1)
             sort_idx = torch.argsort(est_eig, descending=True)
             Q = Q[:, sort_idx]
+            exp_avg_sq = exp_avg_sq.index_select(ind, sort_idx)
 
             if not float_data:
                 Q = Q.to(original_device).type(original_type)

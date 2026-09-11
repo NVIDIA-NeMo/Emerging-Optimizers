@@ -252,6 +252,48 @@ class SoapFunctionsTest(parameterized.TestCase):
             msg="exp_avg norm not preserved after eigenbasis update.",
         )
 
+    def test_qr_basis_permutation_keeps_second_moment_aligned(self) -> None:
+        """A basis relabeling must not change the represented Adam update."""
+        kronecker_factor_list = [
+            torch.diag(torch.tensor([1.0, 4.0], device=self.device)),
+            torch.diag(torch.tensor([1.0, 9.0, 4.0], device=self.device)),
+        ]
+        eigenbasis_list = [torch.eye(2, device=self.device), torch.eye(3, device=self.device)]
+        exp_avg = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], device=self.device)
+        exp_avg_sq = exp_avg.square()
+
+        _, updated_eigenbasis_list, updated_exp_avg, updated_exp_avg_sq = soap.update_eigenbasis_and_exp_avgs(
+            kronecker_factor_list,
+            eigenbasis_list,
+            exp_avg_sq,
+            exp_avg,
+            use_eigh=False,
+        )
+
+        expected_exp_avg_sq = exp_avg_sq.index_select(0, torch.tensor([1, 0], device=self.device)).index_select(
+            1, torch.tensor([1, 2, 0], device=self.device)
+        )
+        torch.testing.assert_close(
+            updated_exp_avg_sq,
+            expected_exp_avg_sq,
+            atol=0.0,
+            rtol=0.0,
+            msg=lambda msg: f"Second moment did not follow the sorted eigenbasis columns:\n{msg}",
+        )
+
+        # Before and after a pure permutation, M / sqrt(V) represents an all-ones update in the original basis.
+        represented_update = soap.project_out(
+            updated_exp_avg / updated_exp_avg_sq.sqrt(),
+            updated_eigenbasis_list,
+        )
+        torch.testing.assert_close(
+            represented_update,
+            torch.ones_like(represented_update),
+            atol=0.0,
+            rtol=0.0,
+            msg=lambda msg: f"Basis relabeling changed the represented Adam update:\n{msg}",
+        )
+
     @parameterized.parameters(
         (4, 5),
         (3, 3),

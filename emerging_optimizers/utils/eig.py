@@ -12,6 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from typing import Literal, overload
+
 import torch
 from absl import logging
 from torch import Tensor
@@ -70,11 +76,43 @@ def eigh_with_fallback(
     return (eigenvalues, eigenvectors)
 
 
+if TYPE_CHECKING:
+
+    @overload
+    def orthogonal_iteration(
+        kronecker_factor: Tensor,
+        eigenbasis: Tensor,
+        power_iter_steps: int,
+        *,
+        return_sort_idx: Literal[False] = False,
+    ) -> tuple[Tensor, Tensor]: ...
+
+    @overload
+    def orthogonal_iteration(
+        kronecker_factor: Tensor,
+        eigenbasis: Tensor,
+        power_iter_steps: int,
+        *,
+        return_sort_idx: Literal[True],
+    ) -> tuple[Tensor, Tensor, Tensor]: ...
+
+    @overload
+    def orthogonal_iteration(
+        kronecker_factor: Tensor,
+        eigenbasis: Tensor,
+        power_iter_steps: int,
+        *,
+        return_sort_idx: bool,
+    ) -> tuple[Tensor, Tensor] | tuple[Tensor, Tensor, Tensor]: ...
+
+
 def orthogonal_iteration(
     kronecker_factor: Tensor,
     eigenbasis: Tensor,
     power_iter_steps: int,
-) -> tuple[Tensor, Tensor]:
+    *,
+    return_sort_idx: bool = False,
+) -> tuple[Tensor, Tensor] | tuple[Tensor, Tensor, Tensor]:
     """Refines an eigenbasis via power iteration with QR re-orthogonalization.
 
     Performs ``power_iter_steps`` rounds of ``Q = QR(kronecker_factor @ Q)`` starting from
@@ -85,10 +123,12 @@ def orthogonal_iteration(
         kronecker_factor: Kronecker factor matrix (symmetric, used as the projector).
         eigenbasis: Starting eigenbasis whose columns will be refined.
         power_iter_steps: Number of power-iteration / QR rounds to perform.
+        return_sort_idx: Also return the column permutation used to sort the refined eigenbasis.
 
     Returns:
         Tuple of (approximate eigenvalues in descending order, refined eigenbasis with columns
-        ordered to match).
+        ordered to match). If ``return_sort_idx`` is True, the sorting permutation is returned as
+        the third element.
     """
     Q = eigenbasis
     for _ in range(power_iter_steps):
@@ -99,7 +139,10 @@ def orthogonal_iteration(
     with utils.fp32_matmul_precision("highest"):
         eigvals = conjugate(kronecker_factor, Q, diag=True)
     sort_idx = torch.argsort(eigvals, descending=True)
-    return eigvals[sort_idx], Q[:, sort_idx]
+    result = eigvals[sort_idx], Q[:, sort_idx]
+    if return_sort_idx:
+        return *result, sort_idx
+    return result
 
 
 def conjugate(a: Tensor, p: Tensor, diag: bool = False) -> Tensor:

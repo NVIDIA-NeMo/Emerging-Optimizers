@@ -163,14 +163,22 @@ class KlSoapPreconditioner:
             exp_avg = self.project_out(self.exp_avg)
 
             # Update eigen bases
-            eigvals_L, Q_L = eig_utils.orthogonal_iteration(
-                self.kronecker_factor_pair.L, self.eigenbasis_pair.L, power_iter_steps=1
+            eigvals_L, Q_L, sort_idx_L = eig_utils.orthogonal_iteration(
+                self.kronecker_factor_pair.L,
+                self.eigenbasis_pair.L,
+                power_iter_steps=1,
+                return_sort_idx=True,
             )
-            eigvals_R, Q_R = eig_utils.orthogonal_iteration(
-                self.kronecker_factor_pair.R, self.eigenbasis_pair.R, power_iter_steps=1
+            eigvals_R, Q_R, sort_idx_R = eig_utils.orthogonal_iteration(
+                self.kronecker_factor_pair.R,
+                self.eigenbasis_pair.R,
+                power_iter_steps=1,
+                return_sort_idx=True,
             )
             self.eigenbasis_pair = TensorPair(Q_L, Q_R)
             self.eigvals_pair = TensorPair(eigvals_L, eigvals_R)
+            # Keep the diagonal second moment aligned with the sorted eigenbasis columns.
+            self.exp_avg_sq = self.exp_avg_sq.index_select(0, sort_idx_L).index_select(1, sort_idx_R)
 
             # Project exp_avg to the new eigenbasis using the updated eigenbases
             self.exp_avg = self.project_in(exp_avg)
