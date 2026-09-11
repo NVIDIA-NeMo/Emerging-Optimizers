@@ -25,14 +25,14 @@ def sinkhorn_balance(
     update: torch.Tensor,
     *,
     eps: float = 1e-20,
-    num_steps: int = 11,
+    num_normalization_steps: int = 11,
     zero_row_threshold: float = 1e-3,
 ) -> torch.Tensor:
     r"""Balance a signed 2D update along its row and column axes.
 
     Given an update ``G`` with row norms ``rho_i = ||G[i, :]||_2``, rows satisfying
     ``rho_i <= zero_row_threshold * mean(rho)`` are first set to zero. Starting from the masked update
-    ``U``, an odd number ``K = num_steps`` of alternating normalizations applies
+    ``U``, an odd number ``K = num_normalization_steps`` of alternating normalizations applies
 
     ``U[i, :] <- U[i, :] / (||U[i, :]||_2 + eps)`` for odd steps, and
     ``U[:, j] <- U[:, j] / (||U[:, j]||_2 + eps)`` for even steps.
@@ -44,7 +44,7 @@ def sinkhorn_balance(
     Args:
         update: Dense signed update with shape ``(num_rows, num_columns)``.
         eps: Numerical stability term added to each row or column norm.
-        num_steps: Total positive odd number of individual axis-normalization steps.
+        num_normalization_steps: Total positive odd number of individual axis-normalization steps.
         zero_row_threshold: Masking threshold relative to the mean pre-balancing row norm.
 
     Returns:
@@ -64,8 +64,8 @@ def sinkhorn_balance(
         raise ValueError(f"sinkhorn_balance only supports bfloat16, float16, and float32 tensors, got {update.dtype}")
     if eps <= 0.0 or not math.isfinite(eps):
         raise ValueError(f"eps must be positive and finite, got {eps}")
-    if num_steps < 1 or num_steps % 2 == 0:
-        raise ValueError(f"num_steps must be a positive odd integer, got {num_steps}")
+    if num_normalization_steps < 1 or num_normalization_steps % 2 == 0:
+        raise ValueError(f"num_normalization_steps must be a positive odd integer, got {num_normalization_steps}")
     if zero_row_threshold < 0.0 or not math.isfinite(zero_row_threshold):
         raise ValueError(f"zero_row_threshold must be nonnegative and finite, got {zero_row_threshold}")
 
@@ -79,7 +79,8 @@ def sinkhorn_balance(
 
     # Apply the first row step separately, then express each remaining iteration as a column/row pair.
     balanced_update.div_(row_norms.add_(eps))
-    for _ in range(num_steps // 2):
+    num_column_row_pairs = (num_normalization_steps - 1) // 2
+    for _ in range(num_column_row_pairs):
         column_norms = torch.linalg.vector_norm(balanced_update, dim=0, keepdim=True)
         balanced_update.div_(column_norms.add_(eps))
 

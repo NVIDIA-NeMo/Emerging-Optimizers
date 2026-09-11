@@ -83,10 +83,11 @@ applies the $\sqrt{n}$ scale that converts unit row L2 norm to unit row-wise RMS
 momentum, Nesterov blending, learning-rate correction, and the final weight update remain the optimizer's
 responsibility.
 
-Near-zero rows are masked before balancing. `num_steps` counts individual axis-normalization steps and
-must be odd: one initial row normalization is followed by column/row pairs. The DeepSeek-V4.1 defaults are
-`num_steps=11`, `zero_row_threshold=1e-3`, and `eps=1e-20`. The function expects the token or vocabulary
-dimension to be first and at least as large as the hidden dimension. Inputs must use BF16, FP16, or FP32.
+Near-zero rows are masked before balancing. `num_normalization_steps` counts individual axis-normalization
+steps and must be odd: one initial row normalization is followed by column/row pairs. The DeepSeek-V4.1
+defaults are `num_normalization_steps=11`, `zero_row_threshold=1e-3`, and `eps=1e-20`. The function expects
+the token or vocabulary dimension to be first and at least as large as the hidden dimension. Inputs must
+use BF16, FP16, or FP32.
 It does not modify its input, performs balancing in an FP32 workspace, and returns a new tensor in the
 input dtype and on the input device. See the
 [DeepSeek-V4.1 technical report](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/DeepSeek_V41_Tech_Report.pdf)

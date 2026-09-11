@@ -39,7 +39,7 @@ def _sinkhorn_balance_serial_cpu_reference(
     update: torch.Tensor,
     *,
     eps: float,
-    num_steps: int,
+    num_normalization_steps: int,
     zero_row_threshold: float,
 ) -> torch.Tensor:
     values = update.detach().to(device="cpu", dtype=torch.float32).tolist()
@@ -52,8 +52,8 @@ def _sinkhorn_balance_serial_cpu_reference(
         if row_norm <= zero_row_threshold * mean_row_norm:
             values[row_index] = [0.0] * num_columns
 
-    for step in range(num_steps):
-        if step % 2 == 0:
+    for normalization_step in range(num_normalization_steps):
+        if normalization_step % 2 == 0:
             for row_index in range(num_rows):
                 row_norm = math.sqrt(sum(value * value for value in values[row_index]))
                 for column_index in range(num_columns):
@@ -74,7 +74,7 @@ class SinkhornBalanceTest(parameterized.TestCase):
         parameters = inspect.signature(sinkhorn_balance).parameters
 
         self.assertEqual(parameters["eps"].default, 1e-20)
-        self.assertEqual(parameters["num_steps"].default, 11)
+        self.assertEqual(parameters["num_normalization_steps"].default, 11)
         self.assertEqual(parameters["zero_row_threshold"].default, 1e-3)
 
     @parameterized.parameters(
@@ -83,19 +83,19 @@ class SinkhornBalanceTest(parameterized.TestCase):
         ((17, 5), torch.bfloat16, 11, 1.0),
         ((6, 6), torch.float32, 7, 0.0),
     )
-    def test_is_close_to_serial_cpu_reference(self, shape, dtype, num_steps, zero_row_threshold) -> None:
+    def test_is_close_to_serial_cpu_reference(self, shape, dtype, num_normalization_steps, zero_row_threshold) -> None:
         update = torch.randn(shape, device=FLAGS.device).to(dtype)
 
         actual = sinkhorn_balance(
             update,
             eps=1e-12,
-            num_steps=num_steps,
+            num_normalization_steps=num_normalization_steps,
             zero_row_threshold=zero_row_threshold,
         )
         expected = _sinkhorn_balance_serial_cpu_reference(
             update,
             eps=1e-12,
-            num_steps=num_steps,
+            num_normalization_steps=num_normalization_steps,
             zero_row_threshold=zero_row_threshold,
         )
 
@@ -104,7 +104,7 @@ class SinkhornBalanceTest(parameterized.TestCase):
     def test_balances_row_and_column_rms(self) -> None:
         update = torch.randn((64, 8), device=FLAGS.device)
 
-        result = sinkhorn_balance(update, eps=1e-12, num_steps=11, zero_row_threshold=0.0)
+        result = sinkhorn_balance(update, eps=1e-12, num_normalization_steps=11, zero_row_threshold=0.0)
 
         torch.testing.assert_close(
             result.square().mean(dim=1),
@@ -163,8 +163,18 @@ class SinkhornBalanceTest(parameterized.TestCase):
             ),
             ("non_positive_eps", valid_update, {"eps": 0.0}, "eps must be positive and finite"),
             ("non_finite_eps", valid_update, {"eps": float("nan")}, "eps must be positive and finite"),
-            ("non_positive_num_steps", valid_update, {"num_steps": 0}, "positive odd integer"),
-            ("even_num_steps", valid_update, {"num_steps": 2}, "positive odd integer"),
+            (
+                "non_positive_num_normalization_steps",
+                valid_update,
+                {"num_normalization_steps": 0},
+                "positive odd integer",
+            ),
+            (
+                "even_num_normalization_steps",
+                valid_update,
+                {"num_normalization_steps": 2},
+                "positive odd integer",
+            ),
             (
                 "negative_zero_row_threshold",
                 valid_update,
