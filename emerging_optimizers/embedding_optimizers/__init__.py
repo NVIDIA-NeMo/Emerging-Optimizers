@@ -36,16 +36,19 @@ def _sinkhorn_balance(
     num_steps: int,
     zero_row_threshold: float,
 ) -> torch.Tensor:
-    work = update.to(torch.float32)
-    row_norms = torch.linalg.vector_norm(work, dim=1, keepdim=True)
-    work.masked_fill_(row_norms <= zero_row_threshold * row_norms.mean(), 0.0)
+    balanced_update = update.to(torch.float32)
+    row_norms = torch.linalg.vector_norm(balanced_update, dim=1, keepdim=True)
+    balanced_update.masked_fill_(row_norms <= zero_row_threshold * row_norms.mean(), 0.0)
 
-    for step in range(num_steps):
-        dim = 1 if step % 2 == 0 else 0
-        norms = torch.linalg.vector_norm(work, dim=dim, keepdim=True)
-        work.div_(norms.add_(eps))
+    for _ in range(num_steps // 2):
+        row_norms = torch.linalg.vector_norm(balanced_update, dim=1, keepdim=True)
+        balanced_update.div_(row_norms.add_(eps))
+        column_norms = torch.linalg.vector_norm(balanced_update, dim=0, keepdim=True)
+        balanced_update.div_(column_norms.add_(eps))
 
-    return work.mul_(math.sqrt(update.size(1))).to(update.dtype)
+    row_norms = torch.linalg.vector_norm(balanced_update, dim=1, keepdim=True)
+    balanced_update.div_(row_norms.add_(eps))
+    return balanced_update.mul_(math.sqrt(update.size(1))).to(update.dtype)
 
 
 @registry.register_optimizer("sinkhorn")
