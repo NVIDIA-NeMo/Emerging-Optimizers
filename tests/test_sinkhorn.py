@@ -44,6 +44,14 @@ class SinkhornTest(parameterized.TestCase):
         self.assertEqual(group["zero_row_threshold"], 1e-3)
         self.assertEqual(group["lr_correction"], 0.18)
 
+    def test_rejects_float64_parameters(self) -> None:
+        param = torch.nn.Parameter(torch.zeros((8, 4), device=FLAGS.device, dtype=torch.float64))
+        param.grad = torch.ones_like(param)
+        optimizer = Sinkhorn([param])
+
+        with self.assertRaisesRegex(ValueError, "only supports bfloat16, float16, and float32"):
+            optimizer.step()
+
     @parameterized.parameters((64, 8), (128, 16))
     def test_balances_row_and_column_rms(self, num_rows, num_cols) -> None:
         lr = 0.125

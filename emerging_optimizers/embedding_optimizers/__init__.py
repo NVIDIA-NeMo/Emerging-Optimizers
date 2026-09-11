@@ -54,7 +54,9 @@ class Sinkhorn(Optimizer):
 
     The optimizer maintains an EMA first moment, forms a Nesterov update, masks near-zero rows, and
     alternates row and column L2 normalization. The final update is scaled by the square root of the
-    hidden dimension, while the effective learning rate is scaled by ``lr_correction``.
+    hidden dimension, while the effective learning rate is scaled by ``lr_correction``. Parameters must
+    use ``torch.bfloat16``, ``torch.float16``, or ``torch.float32``; the balancing workspace uses
+    ``torch.float32`` for all supported parameter dtypes.
 
     Args:
         params: Iterable of parameters to optimize or dictionaries defining parameter groups.
@@ -122,6 +124,10 @@ class Sinkhorn(Optimizer):
                     raise ValueError("Sinkhorn only supports 2D parameters")
                 if param.size(0) < param.size(1):
                     raise ValueError("Sinkhorn expects rows to be the larger matrix dimension")
+                if param.dtype not in (torch.bfloat16, torch.float16, torch.float32):
+                    raise ValueError(
+                        f"Sinkhorn only supports bfloat16, float16, and float32 parameters, got {param.dtype}"
+                    )
                 if param.grad.is_sparse:
                     raise ValueError("Sinkhorn does not support sparse gradients")
 
