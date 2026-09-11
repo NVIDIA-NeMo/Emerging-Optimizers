@@ -18,7 +18,7 @@ import torch
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.embedding_optimizers import sinkhorn_balance
+from emerging_optimizers.orthogonalized_optimizers.sinkhorn_utils import sinkhorn_balance
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
