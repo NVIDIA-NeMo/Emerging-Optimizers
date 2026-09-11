@@ -145,6 +145,15 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
     def _get_riem_grad(
         self, param: torch.Tensor, buf: torch.Tensor, dim: int, scale: float, eps: float
     ) -> torch.Tensor:
+        """Compute the Riemannian update direction from an ambient update buffer.
+
+        This method defines how momentum buffers are mapped
+        to the tangent space of the oblique manifold across optimizer variants:
+
+        Projects the momentum buffer onto the tangent space T_W(OB) via Euclidean projection:
+        proj_{T_W}(G) = G - W * (<W, G> / ||W||^2). The step magnitude remains proportional
+        to the raw momentum norm.
+        """
         return _compute_riemannian_grad(param, buf, dim, eps=eps)
 
 
@@ -189,6 +198,16 @@ class ObliqueSteepestSGD(ObliqueSGD):
     def _get_riem_grad(
         self, param: torch.Tensor, buf: torch.Tensor, dim: int, scale: float, eps: float
     ) -> torch.Tensor:
+        """Compute the Riemannian update direction from an ambient update buffer.
+
+        This method defines how momentum buffers are mapped
+        to the tangent space of the oblique manifold across optimizer variants:
+
+        Projects onto the tangent space and then normalizes each slice along `dim` to unit
+        RMS (or L2) norm: normalize(proj_{T_W}(G)) * scale. This solves the L1 -> RMS Linear
+        Minimization Oracle (LMO), stripping update magnitude variations across slices and
+        enforcing uniform angular step sizes in the chosen dimension.
+        """
         riem_grad = _compute_riemannian_grad(param, buf, dim, eps=eps)
         torch.nn.functional.normalize(riem_grad, p=2.0, dim=dim, eps=eps, out=riem_grad)
         riem_grad.mul_(scale)
@@ -334,6 +353,15 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
     def _get_riem_grad(
         self, param: torch.Tensor, buf: torch.Tensor, dim: int, scale: float, eps: float
     ) -> torch.Tensor:
+        """Compute the Riemannian update direction from an ambient update buffer.
+
+        This method defines how Adam moments are mapped
+        to the tangent space of the oblique manifold across optimizer variants:
+
+        Projects the Adam moments onto the tangent space T_W(OB) via Euclidean projection:
+        proj_{T_W}(G) = G - W * (<W, G> / ||W||^2). The step magnitude remains proportional
+        to the Adam update norm.
+        """
         return _compute_riemannian_grad(param, buf, dim, eps)
 
 
@@ -380,6 +408,16 @@ class ObliqueSteepestAdam(ObliqueAdam):
     def _get_riem_grad(
         self, param: torch.Tensor, buf: torch.Tensor, dim: int, scale: float, eps: float
     ) -> torch.Tensor:
+        """Compute the Riemannian update direction from an ambient update buffer.
+
+        This method defines how Adam moments are mapped
+        to the tangent space of the oblique manifold across optimizer variants:
+
+        Projects onto the tangent space and then normalizes each slice along `dim` to unit
+        RMS (or L2) norm: normalize(proj_{T_W}(G)) * scale. This solves the L1 -> RMS Linear
+        Minimization Oracle (LMO), stripping update magnitude variations across slices and
+        enforcing uniform angular step sizes in the chosen dimension.
+        """
         riem_grad = _compute_riemannian_grad(param, buf, dim, eps)
         torch.nn.functional.normalize(riem_grad, p=2.0, dim=dim, eps=eps, out=riem_grad)
         riem_grad.mul_(scale)
