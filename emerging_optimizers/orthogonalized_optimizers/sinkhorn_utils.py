@@ -80,11 +80,9 @@ def sinkhorn_balance(
     # Apply the first row step separately, then express each remaining iteration as a column/row pair.
     balanced_update.div_(row_norms.add_(eps))
     for _ in range(num_steps // 2):
-        # Normalize columns along the row/token dimension.
         column_norms = torch.linalg.vector_norm(balanced_update, dim=0, keepdim=True)
         balanced_update.div_(column_norms.add_(eps))
 
-        # Normalize rows along the column/feature dimension.
         row_norms = torch.linalg.vector_norm(balanced_update, dim=1, keepdim=True)
         balanced_update.div_(row_norms.add_(eps))
 
