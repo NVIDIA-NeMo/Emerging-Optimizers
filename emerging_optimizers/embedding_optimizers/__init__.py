@@ -39,15 +39,14 @@ def _sinkhorn_balance(
     balanced_update = update.to(torch.float32)
     row_norms = torch.linalg.vector_norm(balanced_update, dim=1, keepdim=True)
     balanced_update.masked_fill_(row_norms <= zero_row_threshold * row_norms.mean(), 0.0)
+    balanced_update.div_(row_norms.add_(eps))
 
     for _ in range(num_steps // 2):
-        row_norms = torch.linalg.vector_norm(balanced_update, dim=1, keepdim=True)
-        balanced_update.div_(row_norms.add_(eps))
         column_norms = torch.linalg.vector_norm(balanced_update, dim=0, keepdim=True)
         balanced_update.div_(column_norms.add_(eps))
+        row_norms = torch.linalg.vector_norm(balanced_update, dim=1, keepdim=True)
+        balanced_update.div_(row_norms.add_(eps))
 
-    row_norms = torch.linalg.vector_norm(balanced_update, dim=1, keepdim=True)
-    balanced_update.div_(row_norms.add_(eps))
     return balanced_update.mul_(math.sqrt(update.size(1))).to(update.dtype)
 
 
@@ -66,7 +65,8 @@ class Sinkhorn(Optimizer):
         lr: Base learning rate.
         momentum: EMA momentum coefficient.
         eps: Numerical stability term added to row and column norms.
-        num_steps: Positive odd number of alternating normalization steps.
+        num_steps: Total positive odd number of individual row or column normalization steps. The first
+            step normalizes rows, and each subsequent iteration normalizes columns then rows.
         zero_row_threshold: Rows whose norm is at most this factor times the mean row norm are masked.
         lr_correction: Multiplier applied to the base learning rate.
     """
