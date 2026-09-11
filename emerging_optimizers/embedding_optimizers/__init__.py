@@ -36,18 +36,50 @@ def _sinkhorn_balance(
     num_steps: int,
     zero_row_threshold: float,
 ) -> torch.Tensor:
+    r"""Balance a signed 2D update along its row and column axes.
+
+    Given an update ``G`` with row norms ``rho_i = ||G[i, :]||_2``, rows satisfying
+    ``rho_i <= zero_row_threshold * mean(rho)`` are first set to zero. Starting from the masked update
+    ``U``, an odd number ``K = num_steps`` of alternating normalizations applies
+
+    ``U[i, :] <- U[i, :] / (||U[i, :]||_2 + eps)`` for odd steps, and
+    ``U[:, j] <- U[:, j] / (||U[:, j]||_2 + eps)`` for even steps.
+
+    The returned update is ``Delta = sqrt(n) * U``, where ``n`` is the number of columns. This
+    approximately targets ``(1 / n) * sum_j Delta[i, j]^2 = 1`` for every row and
+    ``(1 / m) * sum_i Delta[i, j]^2 = 1`` for every column, where ``m`` is the number of rows.
+
+    Args:
+        update: Signed Nesterov update with shape ``(num_rows, num_columns)``.
+        eps: Numerical stability term added to each row or column norm.
+        num_steps: Total positive odd number of individual axis-normalization steps.
+        zero_row_threshold: Masking threshold relative to the mean pre-balancing row norm.
+
+    Returns:
+        Sinkhorn-balanced update in the input dtype.
+    """
     balanced_update = update.to(torch.float32)
+
+    # DeepSeek Algorithm 1 measures each row norm before balancing and masks rows whose norm is at most
+    # zero_row_threshold times the mean row norm. This keeps inactive or near-zero token rows at zero
+    # instead of amplifying their numerical noise during normalization.
     row_norms = torch.linalg.vector_norm(balanced_update, dim=1, keepdim=True)
     balanced_update.masked_fill_(row_norms <= zero_row_threshold * row_norms.mean(), 0.0)
-    balanced_update.div_(row_norms.add_(eps))
 
+    # Apply the first row step separately, then express each remaining iteration as a column/row pair.
+    balanced_update.div_(row_norms.add_(eps))
     for _ in range(num_steps // 2):
+        # Normalize columns along the row/token dimension.
         column_norms = torch.linalg.vector_norm(balanced_update, dim=0, keepdim=True)
         balanced_update.div_(column_norms.add_(eps))
+
+        # Normalize rows along the column/feature dimension.
         row_norms = torch.linalg.vector_norm(balanced_update, dim=1, keepdim=True)
         balanced_update.div_(row_norms.add_(eps))
 
-    return balanced_update.mul_(math.sqrt(update.size(1))).to(update.dtype)
+    # A unit-L2 row has RMS 1 / sqrt(n); this scale converts the balanced update to unit row-wise RMS.
+    balanced_update.mul_(math.sqrt(update.size(1)))
+    return balanced_update.to(update.dtype)
 
 
 @registry.register_optimizer("sinkhorn")
