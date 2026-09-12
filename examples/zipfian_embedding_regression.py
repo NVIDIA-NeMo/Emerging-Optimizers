@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-from collections import deque
 from functools import partial
 from statistics import fmean, pstdev
 from typing import Callable, Iterator, override
@@ -179,10 +178,13 @@ def train(
     batches: torch.Tensor,
     target_embeddings: torch.Tensor,
 ) -> float:
-    """Train the model over the pre-generated batch stream and return the mean tail loss."""
-    recent_losses: deque[float] = deque(maxlen=100)
+    """Train the model over the pre-generated batch stream asynchronously without CUDA syncs."""
+    total_steps = batches.size(0)
+    tail_window = min(100, total_steps)
+    start_tail_step = total_steps - tail_window
+    tail_losses = torch.empty(tail_window, device=batches.device, dtype=torch.float32)
 
-    for tokens in batches:
+    for step_idx, tokens in enumerate(batches):
         optimizer.zero_grad(set_to_none=True)
 
         predictions = model(tokens)
@@ -193,9 +195,19 @@ def train(
         optimizer.step()
         scheduler.step()
 
-        recent_losses.append(loss.item())
+        # Asynchronous device assignment: avoids calling loss.item() inside the hot loop
+        if step_idx >= start_tail_step:
+            tail_losses[step_idx - start_tail_step] = loss.detach()
 
-    return fmean(recent_losses)
+    return tail_losses.mean().item()
+
+
+def _safe_masked_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Compute the mean of masked values safely on device without Python branching or NaNs."""
+    float_mask = mask.to(dtype=values.dtype)
+    count = float_mask.sum()
+    masked_sum = (values * float_mask).sum()
+    return torch.where(count > 0, masked_sum / count.clamp_min(1.0), torch.zeros_like(masked_sum))
 
 
 @torch.no_grad()
@@ -206,7 +218,7 @@ def evaluate(
     token_counts: torch.Tensor,
     vocab_size: int,
 ) -> dict[str, float]:
-    """Evaluate full-vocabulary and tail-token reconstruction metrics."""
+    """Evaluate full-vocabulary and tail-token reconstruction metrics using a single D2H transfer."""
     weights = model.emb.weight
 
     row_mse = (weights - target_embeddings).square().mean(dim=1)
@@ -220,15 +232,38 @@ def evaluate(
     seen_tail_mask = seen_mask & tail_mask
     unseen_mask = ~seen_mask
 
-    return {
-        "expected_mse": (row_mse * token_probabilities).sum().item(),
-        "head_mse": row_mse[head_mask].mean().item(),
-        "tail_mse": row_mse[tail_mask].mean().item(),
-        "seen_tail_mse": row_mse[seen_tail_mask].mean().item(),
-        "seen_tail_cosine": row_cosine[seen_tail_mask].mean().item(),
-        "unseen_mse": row_mse[unseen_mask].mean().item() if unseen_mask.any() else 0.0,
-        "mean_weight_rms": weight_rms.mean().item(),
-    }
+    # Vectorized computations on device; handles empty masks without NaNs or syncs
+    expected_mse = (row_mse * token_probabilities).sum()
+    head_mse = _safe_masked_mean(row_mse, head_mask)
+    tail_mse = _safe_masked_mean(row_mse, tail_mask)
+    seen_tail_mse = _safe_masked_mean(row_mse, seen_tail_mask)
+    seen_tail_cosine = _safe_masked_mean(row_cosine, seen_tail_mask)
+    unseen_mse = _safe_masked_mean(row_mse, unseen_mask)
+    mean_weight_rms = weight_rms.mean()
+
+    metric_keys = [
+        "expected_mse",
+        "head_mse",
+        "tail_mse",
+        "seen_tail_mse",
+        "seen_tail_cosine",
+        "unseen_mse",
+        "mean_weight_rms",
+    ]
+    # Single batched device-to-host transfer
+    metric_values = torch.stack(
+        [
+            expected_mse,
+            head_mse,
+            tail_mse,
+            seen_tail_mse,
+            seen_tail_cosine,
+            unseen_mse,
+            mean_weight_rms,
+        ]
+    ).tolist()
+
+    return dict(zip(metric_keys, metric_values, strict=True))
 
 
 def run_seed(
