@@ -20,10 +20,10 @@ from absl.testing import absltest, parameterized
 from torch.utils.data import DataLoader, TensorDataset
 
 from emerging_optimizers.riemannian_optimizers.normalized_optimizer import (
-    ObliqueAdam, 
-    ObliqueSGD, 
-    ObliqueSteepestAdam, 
-    ObliqueSteepestSGD
+    ObliqueAdam,
+    ObliqueSGD,
+    ObliqueSteepestAdam,
+    ObliqueSteepestSGD,
 )
 
 
@@ -192,14 +192,17 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
 
         # Check norm preservation
         self._verify_norms_preserved(model)
-        
+
     def test_oblique_steepest_sgd_convergence(self) -> None:
         """Test that ObliqueSteepestSGD can train a simple MLP and maintain norms."""
         model = SimpleMLP(input_size=784, hidden_size=64, num_classes=10).to(self.device)
 
         # Train with ObliqueSteepestSGD
         initial_loss, final_loss, final_accuracy = self._train_model(
-            model, ObliqueSteepestSGD, {"lr": 0.01, "momentum": 0.9, "dim": 0, "scale_mode": "unit_l2_norm"}, num_epochs=10
+            model,
+            ObliqueSteepestSGD,
+            {"lr": 0.01, "momentum": 0.9, "dim": 0, "scale_mode": "unit_l2_norm"},
+            num_epochs=10,
         )
 
         # Check convergence
@@ -208,14 +211,17 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
 
         # Check norm preservation
         self._verify_norms_preserved(model)
-        
+
     def test_oblique_steepest_adam_convergence(self) -> None:
         """Test that ObliqueSteepestAdam can train a simple MLP and maintain norms."""
         model = SimpleMLP(input_size=784, hidden_size=64, num_classes=10).to(self.device)
 
         # Train with ObliqueSteepestAdam
         initial_loss, final_loss, final_accuracy = self._train_model(
-            model, ObliqueSteepestAdam, {"lr": 0.001, "betas": (0.9, 0.999), "dim": 0, "scale_mode": "unit_l2_norm"}, num_epochs=10
+            model,
+            ObliqueSteepestAdam,
+            {"lr": 0.001, "betas": (0.9, 0.999), "dim": 0, "scale_mode": "unit_l2_norm"},
+            num_epochs=10,
         )
 
         # Check convergence
@@ -228,12 +234,28 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
     @parameterized.named_parameters(
         ("sgd_col", ObliqueSGD, {"lr": 0.1, "momentum": 0.75, "weight_decay": 0.1, "dim": 0}),
         ("sgd_row", ObliqueSGD, {"lr": 0.1, "momentum": 0.75, "weight_decay": 0.1, "dim": 1}),
-        ("sgd_steepest_col", ObliqueSteepestSGD, {"lr": 0.01, "momentum": 0.75, "weight_decay": 0.1, "dim": 0, "scale_mode": "unit_l2_norm"}),
-        ("sgd_steepest_row", ObliqueSteepestSGD, {"lr": 0.01, "momentum": 0.75, "weight_decay": 0.1, "dim": 1, "scale_mode": "unit_l2_norm"}),
+        (
+            "sgd_steepest_col",
+            ObliqueSteepestSGD,
+            {"lr": 0.01, "momentum": 0.75, "weight_decay": 0.1, "dim": 0, "scale_mode": "unit_l2_norm"},
+        ),
+        (
+            "sgd_steepest_row",
+            ObliqueSteepestSGD,
+            {"lr": 0.01, "momentum": 0.75, "weight_decay": 0.1, "dim": 1, "scale_mode": "unit_l2_norm"},
+        ),
         ("adam_col", ObliqueAdam, {"lr": 0.01, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 0}),
         ("adam_row", ObliqueAdam, {"lr": 0.01, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 1}),
-        ("adam_steepest_col", ObliqueSteepestAdam, {"lr": 0.01, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 0, "scale_mode": "unit_l2_norm"}),
-        ("adam_steepest_row", ObliqueSteepestAdam, {"lr": 0.01, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 1, "scale_mode": "unit_l2_norm"}),
+        (
+            "adam_steepest_col",
+            ObliqueSteepestAdam,
+            {"lr": 0.01, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 0, "scale_mode": "unit_l2_norm"},
+        ),
+        (
+            "adam_steepest_row",
+            ObliqueSteepestAdam,
+            {"lr": 0.01, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 1, "scale_mode": "unit_l2_norm"},
+        ),
     )
     def test_optimizer_modes_convergence(self, optimizer_class: torch.optim.Optimizer, optimizer_kwargs: dict) -> None:
         """Test that both row and column modes work for both optimizers."""
