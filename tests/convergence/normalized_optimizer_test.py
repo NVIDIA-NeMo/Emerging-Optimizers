@@ -19,7 +19,12 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 from torch.utils.data import DataLoader, TensorDataset
 
-from emerging_optimizers.riemannian_optimizers.normalized_optimizer import ObliqueAdam, ObliqueSGD
+from emerging_optimizers.riemannian_optimizers.normalized_optimizer import (
+    ObliqueAdam, 
+    ObliqueSGD, 
+    ObliqueSteepestAdam, 
+    ObliqueSteepestSGD
+)
 
 
 flags.DEFINE_enum("device", "cuda", ["cuda"], "Device to run tests on")
@@ -191,8 +196,12 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
     @parameterized.named_parameters(
         ("sgd_col", ObliqueSGD, {"lr": 0.1, "momentum": 0.75, "weight_decay": 0.1, "dim": 0}),
         ("sgd_row", ObliqueSGD, {"lr": 0.1, "momentum": 0.75, "weight_decay": 0.1, "dim": 1}),
-        ("adam_col", ObliqueAdam, {"lr": 0.1, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 0}),
-        ("adam_row", ObliqueAdam, {"lr": 0.1, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 1}),
+        ("sgd_steepest_col", ObliqueSteepestSGD, {"lr": 0.01, "momentum": 0.75, "weight_decay": 0.1, "dim": 0, "scale_mode": "unit_l2_norm"}),
+        ("sgd_steepest_row", ObliqueSteepestSGD, {"lr": 0.01, "momentum": 0.75, "weight_decay": 0.1, "dim": 1, "scale_mode": "unit_l2_norm"}),
+        ("adam_col", ObliqueAdam, {"lr": 0.01, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 0}),
+        ("adam_row", ObliqueAdam, {"lr": 0.01, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 1}),
+        ("adam_steepest_col", ObliqueSteepestAdam, {"lr": 0.01, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 0, "scale_mode": "unit_l2_norm"}),
+        ("adam_steepest_row", ObliqueSteepestAdam, {"lr": 0.01, "betas": (0.9, 0.999), "weight_decay": 0.1, "dim": 1, "scale_mode": "unit_l2_norm"}),
     )
     def test_optimizer_modes_convergence(self, optimizer_class: torch.optim.Optimizer, optimizer_kwargs: dict) -> None:
         """Test that both row and column modes work for both optimizers."""
