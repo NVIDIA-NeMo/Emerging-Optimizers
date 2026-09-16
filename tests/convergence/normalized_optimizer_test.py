@@ -192,6 +192,38 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
 
         # Check norm preservation
         self._verify_norms_preserved(model)
+        
+    def test_oblique_steepest_sgd_convergence(self) -> None:
+        """Test that ObliqueSteepestSGD can train a simple MLP and maintain norms."""
+        model = SimpleMLP(input_size=784, hidden_size=64, num_classes=10).to(self.device)
+
+        # Train with ObliqueSteepestSGD
+        initial_loss, final_loss, final_accuracy = self._train_model(
+            model, ObliqueSteepestSGD, {"lr": 0.01, "momentum": 0.9, "dim": 0, "scale_mode": "unit_l2_norm"}, num_epochs=10
+        )
+
+        # Check convergence
+        self.assertLess(final_loss, initial_loss, "Loss should decrease during training")
+        self.assertGreater(final_accuracy, 5.0, "Accuracy should be better than random (10%)")
+
+        # Check norm preservation
+        self._verify_norms_preserved(model)
+        
+    def test_oblique_steepest_adam_convergence(self) -> None:
+        """Test that ObliqueSteepestAdam can train a simple MLP and maintain norms."""
+        model = SimpleMLP(input_size=784, hidden_size=64, num_classes=10).to(self.device)
+
+        # Train with ObliqueSteepestAdam
+        initial_loss, final_loss, final_accuracy = self._train_model(
+            model, ObliqueSteepestAdam, {"lr": 0.001, "betas": (0.9, 0.999), "dim": 0, "scale_mode": "unit_l2_norm"}, num_epochs=10
+        )
+
+        # Check convergence
+        self.assertLess(final_loss, initial_loss, "Loss should decrease during training")
+        self.assertGreater(final_accuracy, 5.0, "Accuracy should be better than random (10%)")
+
+        # Check norm preservation
+        self._verify_norms_preserved(model)
 
     @parameterized.named_parameters(
         ("sgd_col", ObliqueSGD, {"lr": 0.1, "momentum": 0.75, "weight_decay": 0.1, "dim": 0}),
