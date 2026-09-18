@@ -25,8 +25,10 @@ def get_spel_scale_factor(size_out: int, size_in: int, mode: SpelScaleT = "unit_
         size_in: The input dimension (columns) of the weight matrix.
         mode: The scaling mode.
             - "unit_spectral_norm": Unscaled Stiefel manifold where W^T W = I.
-            - "unit_rms_to_rms_norm": Scaled Stiefel manifold where W^T W = (m/n)I,
-              preserving the RMS norm of activations across the layer.
+            - "unit_rms_to_rms_norm": Scaled Stiefel manifold preserving the RMS norm
+              of activations across the layer. For tall matrices (size_out >= size_in),
+              W^T W = (size_out / size_in) * I. For wide matrices (size_out < size_in),
+              set the scale factor to 1.0 to avoid losing the RMS norm of activations.
 
     Returns:
         The scalar multiplier for the matrix sign function output.
@@ -34,7 +36,7 @@ def get_spel_scale_factor(size_out: int, size_in: int, mode: SpelScaleT = "unit_
     if mode == "unit_spectral_norm":
         return 1.0
     elif mode == "unit_rms_to_rms_norm":
-        return (size_out / size_in) ** 0.5
+        return max(1.0, (size_out / size_in) ** 0.5)
     else:
         raise ValueError(f"Invalid mode for Spel update scale factor: {mode}")
 
@@ -144,11 +146,24 @@ class Spel(OrthogonalizedOptimizer):
         if grad.ndim != 2:
             raise ValueError("Only 2D parameters are supported.")
 
-        scale = get_spel_scale_factor(p.size(-2), p.size(-1), mode=self._scale_mode)
+        m, n = p.size(-2), p.size(-1)
+        scale = get_spel_scale_factor(m, n, mode=self._scale_mode)
         scale_sq = scale * scale
 
-        pt_grad = torch.matmul(p.transpose(-2, -1), grad)
-        reim_grad = grad - (0.5 / scale_sq) * torch.matmul(p, pt_grad + pt_grad.transpose(-2, -1))
+        # Transpose wide matrices so we only ever solve the tall column-Stiefel projection
+        is_wide = m < n
+        if is_wide:
+            p = p.mT
+            grad = grad.mT
+
+        # Tall column-Stiefel projection: contracts over the larger dimension,
+        # yielding a small (min(m, n) x min(m, n)) symmetric matrix.
+        pt_grad = torch.matmul(p.mT, grad)
+        sym = 0.5 * (pt_grad + pt_grad.mT)
+        reim_grad = grad - (1.0 / scale_sq) * torch.matmul(p, sym)
+
+        if is_wide:
+            reim_grad = reim_grad.mT
 
         return scale * self.scaled_orthogonalize_fn(reim_grad)
 
