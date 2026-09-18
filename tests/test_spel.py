@@ -104,6 +104,8 @@ class SpelTest(parameterized.TestCase):
             momentum=0.0,
             weight_decay=0.0,
             scale_mode=scale_mode,
+            coefficient_type="polar_express",
+            num_ns_steps=8,
         )
 
         for _ in range(5):
