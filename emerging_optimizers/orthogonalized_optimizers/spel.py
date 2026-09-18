@@ -62,9 +62,13 @@ class Spel(OrthogonalizedOptimizer):
     preserve the RMS norm of activations without requiring separate activation normalization layers.
 
     Note:
-        Weight decay acts as a convex-like linear combination before the outer projection, controlling
-        the relative influence of the old parameters versus the update direction while ensuring the
-        final weights remain bound to the manifold constraint.
+        - Parameters are assumed to be initialized on the (scaled) Stiefel manifold (e.g., via
+          orthogonal initialization). If initialized off-manifold, the first step computes an
+          unconstrained/approximate projection, and the post-update retraction guarantees that
+          parameters strictly satisfy the manifold constraint for all subsequent steps (:math:`t \ge 1`).
+        - Weight decay acts as a convex-like linear combination before the outer projection, controlling
+          the relative influence of the old parameters versus the update direction while ensuring the
+          final weights remain bound to the manifold constraint.
 
     References:
         - *Manifold Constrained Steepest Descent.* arXiv:2601.21487 (2026).
@@ -128,12 +132,19 @@ class Spel(OrthogonalizedOptimizer):
     def orthogonalize(self, p: torch.Tensor, grad: torch.Tensor, **kwargs: Any) -> torch.Tensor:
         r"""Projects the gradient onto the tangent space before applying the LMO.
 
-        Computes the orthogonal projection of the Euclidean gradient onto the tangent space of
-        the (potentially scaled) Stiefel manifold at the current weights :math:`p`.
+        Assumes :math:`p` lies on the (scaled) Stiefel manifold. Computes the orthogonal projection
+        of the Euclidean gradient onto the tangent space of the manifold at the current weights :math:`p`.
 
-        The tangent space projection accounts for the metric via:
+        For tall/square matrices (:math:`m \ge n`), column-isometry :math:`p^\top p = \sigma^2 I_n` gives:
         .. math::
             P_{T_p}(G) = G - \frac{1}{\sigma^2} p \, \text{sym}(p^\top G)
+
+        For wide matrices (:math:`m < n`), row-isometry :math:`p p^\top = \sigma^2 I_m` gives:
+        .. math::
+            P_{T_p}(G) = G - \frac{1}{\sigma^2} \text{sym}(G p^\top) p
+
+        The wide case is computed via transposition to match the column-Stiefel contraction over the
+        larger dimension.
 
         Args:
             p: The current parameter tensor.
