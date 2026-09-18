@@ -58,7 +58,7 @@ class Spel(OrthogonalizedOptimizer):
     keeping parameters strictly semi-orthogonal.
 
     By setting `scale_mode="unit_rms_to_rms_norm"`, SPEL optimizes on a scaled Stiefel manifold,
-    adjusting the retraction and tangent projections by :math:`\sigma = \sqrt{{m/n}}` to inherently
+    adjusting the retraction and tangent projections by :math:`\sigma = \max(1.0, \sqrt{{m/n}})` to inherently
     preserve the RMS norm of activations without requiring separate activation normalization layers.
 
     Note:
