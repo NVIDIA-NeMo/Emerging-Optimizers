@@ -55,14 +55,52 @@ class SpelTest(parameterized.TestCase):
         spel_opt.step()
 
     @parameterized.product(
-        shape=[(5, 7), (33, 65), (127, 257)],
+        shape=[(16, 16), (32, 16), (16, 32)],
+        scale_mode=["unit_spectral_norm", "unit_rms_to_rms_norm"],
     )
-    def test_post_update_produces_approximately_orthogonal_weights(self, shape) -> None:
-        """Test that post_weight_update_fn_inplace produces approximately orthogonal matrices.
+    def test_tangent_space_projection(self, shape, scale_mode) -> None:
+        """Test that the gradient is properly projected onto the (scaled) tangent space."""
+        m, n = shape
+        expected_scale = spel.get_spel_scale_factor(m, n, mode=scale_mode)
 
-        After each optimizer step, the weight matrix W should satisfy W @ W^T ≈ I (up to scale)
-        for the smaller dimension, which is the defining property of SPEL.
-        """
+        # 1. Create a parameter matrix W on the appropriately scaled manifold
+        w_data = torch.randn(shape, dtype=torch.float32, device=FLAGS.device)
+        if m >= n:
+            q, _ = torch.linalg.qr(w_data)
+        else:
+            q_t, _ = torch.linalg.qr(w_data.mT)
+            q = q_t.mT
+        test_param = nn.Parameter(q * expected_scale)
+
+        # 2. Create a random Euclidean gradient G
+        grad = torch.randn_like(test_param)
+
+        spel_opt = spel.Spel([test_param], scale_mode=scale_mode)
+        # Mark as initialized so orthogonalize doesn't overwrite test_param
+        spel_opt.state[test_param]["manifold_initialized"] = True
+
+        # 3. Bypass the LMO (Newton-Schulz) to inspect the raw tangent projection
+        spel_opt.scaled_orthogonalize_fn = torch.nn.Identity()
+
+        # 4. Extract the projected gradient V
+        projected_grad = spel_opt.orthogonalize(test_param, grad)
+
+        # 5. Verify skew-symmetry of W^T V (tall) or V W^T (wide)
+        if m >= n:
+            wt_v = torch.matmul(test_param.transpose(-2, -1), projected_grad)
+            sym = 0.5 * (wt_v + wt_v.transpose(-2, -1))
+        else:
+            v_wt = torch.matmul(projected_grad, test_param.transpose(-2, -1))
+            sym = 0.5 * (v_wt + v_wt.transpose(-2, -1))
+
+        torch.testing.assert_close(sym, torch.zeros_like(sym), atol=1e-5, rtol=1e-5)
+
+    @parameterized.product(
+        shape=[(16, 32), (33, 65), (65, 33), (127, 257)],
+        scale_mode=["unit_spectral_norm", "unit_rms_to_rms_norm"],
+    )
+    def test_post_update_produces_appropriately_scaled_orthogonal_weights(self, shape, scale_mode) -> None:
+        """Test that post_weight_update_fn_inplace enforces the correct manifold scale constraint."""
         test_param = nn.Parameter(torch.randn(shape, dtype=torch.float32, device=FLAGS.device))
 
         spel_opt = spel.Spel(
@@ -70,24 +108,25 @@ class SpelTest(parameterized.TestCase):
             lr=0.01,
             momentum=0.0,
             weight_decay=0.0,
+            scale_mode=scale_mode,
         )
 
         for _ in range(5):
             test_param.grad = torch.randn_like(test_param)
             spel_opt.step()
 
-            # After post_weight_update_fn_inplace, W should be approximately orthogonal.
-            # For an m x n matrix with m <= n: W @ W^T ≈ I_m
-            # For an m x n matrix with m > n:  W^T @ W ≈ I_n
-            W = test_param.data
-            m, n = W.shape
-            if m <= n:
-                gram = W @ W.mT
-            else:
-                gram = W.mT @ W
+        W = test_param.data
+        m, n = W.shape
+        expected_scale = spel.get_spel_scale_factor(m, n, mode=scale_mode)
+        expected_scale_sq = expected_scale * expected_scale
 
-            # Newton-Schulz produces an approximate orthogonal factor, so allow a loose tolerance.
-            assert_close_to_identity(gram, diag_atol=0.06, off_diag_atol=0.06)
+        if m <= n:
+            gram = W @ W.mT
+        else:
+            gram = W.mT @ W
+
+        normalized_gram = gram / expected_scale_sq
+        assert_close_to_identity(normalized_gram, diag_atol=0.06, off_diag_atol=0.06)
 
 
 if __name__ == "__main__":

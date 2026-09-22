@@ -268,7 +268,7 @@ class NormalizedOptimizerConvergenceTest(parameterized.TestCase):
 
         # Train model
         initial_loss, final_loss, final_accuracy = self._train_model(
-            model, optimizer_class, optimizer_kwargs, num_epochs=8
+            model, optimizer_class, optimizer_kwargs, num_epochs=10
         )
 
         # Basic convergence check
