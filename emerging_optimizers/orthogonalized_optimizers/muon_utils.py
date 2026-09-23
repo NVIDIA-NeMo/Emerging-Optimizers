@@ -141,9 +141,9 @@ def distributed_normalize_p2(
     x_sq_sum = (x_sq * x_sq).sum()
     torch.distributed.all_reduce(x_sq_sum, op=torch.distributed.ReduceOp.SUM, group=group)
     norm = torch.sqrt(x_sq_sum).to(x.dtype)
-    if not normalize_in_double:
-        norm.clamp_min_(eps)
-    return x / norm
+    if normalize_in_double:
+        return x / (1.01 * norm)
+    return x / (1.01 * norm + eps)
 
 
 def newton_schulz(
@@ -213,13 +213,14 @@ def newton_schulz(
         X = distributed_normalize_p2(x, eps, tp_group, normalize_in_double)
     else:
         if not normalize_in_double:
-            X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)  # type: ignore[arg-type]
+            norm = torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True)
+            X = x / (1.01 * norm + eps)
         else:
             # eps is ignored when normalize in double so that zero division can happen if norm is exact 0.
             # However, if norm is 0 in double precision, it means the entire input is 0, which usually
             # suggests something wrong has happened in training. So we don't guard it here.
             norm = torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True, dtype=torch.float64).to(x.dtype)
-            X = x / norm
+            X = x / (1.01 * norm)
 
     if coefficient_type in _COEFFICIENT_SETS:
         coefficient_sets = _COEFFICIENT_SETS[coefficient_type]

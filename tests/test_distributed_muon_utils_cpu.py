@@ -115,7 +115,7 @@ class DistributedNewtonSchulzCpuTest(parameterized.TestCase):
         local_x = x.chunk(world_size, dim=1)[rank]
 
         dist_out = muon_utils.distributed_normalize_p2(local_x, eps=1e-7, group=torch.distributed.group.WORLD)
-        ref_out = torch.nn.functional.normalize(x, dim=(-2, -1), eps=1e-7)
+        ref_out = x / (1.01 * torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True) + 1e-7)
 
         torch.testing.assert_close(ref_out.chunk(world_size, dim=1)[rank], dist_out)
 

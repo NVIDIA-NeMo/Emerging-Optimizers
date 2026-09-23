@@ -54,7 +54,7 @@ def newton_schulz_ref(x: torch.Tensor, coefficient_sets: list[tuple[float, float
         x = x.mT
 
     # Ensure spectral norm is at most 1
-    X = x / x.norm(dim=(-2, -1), keepdim=True).clamp_min_(1e-7)
+    X = x / (1.01 * x.norm(dim=(-2, -1), keepdim=True) + 1e-15)
 
     # Perform the NS iterations
     for i in range(steps):
@@ -128,7 +128,7 @@ class TestNewtonSchulz(parameterized.TestCase):
         norm_ref = torch.linalg.vector_norm(x, dtype=torch.double)
         assert norm_ref != 0
         out = muon_utils.newton_schulz(x, steps=0, normalize_in_double=True)
-        torch.testing.assert_close(x / norm_ref, out, atol=0, rtol=1e-6)
+        torch.testing.assert_close(x / (1.01 * norm_ref), out, atol=0, rtol=1e-6)
 
     @parameterized.parameters(
         (2, 256, 256),
