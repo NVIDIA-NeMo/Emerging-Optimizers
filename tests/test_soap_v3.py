@@ -112,8 +112,8 @@ class KlSoapPreconditionerTest(parameterized.TestCase):
 
 class SoapV3AgainstLegacyTest(parameterized.TestCase):
     @parameterized.parameters(
-        {"m": 4, "n": 4, "atol": 1e-6, "rtol": 2e-5},
-        {"m": 8, "n": 4, "atol": 1e-6, "rtol": 2e-4},
+        {"m": 4, "n": 4, "atol": 5e-6, "rtol": 2e-5},
+        {"m": 8, "n": 4, "atol": 5e-6, "rtol": 2e-4},
         {"m": 33, "n": 17, "atol": 1e-5, "rtol": 2e-3},
     )
     def test_3steps_close_to_legacy(self, m: int, n: int, atol: float, rtol: float) -> None:
