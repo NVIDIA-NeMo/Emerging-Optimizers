@@ -239,7 +239,16 @@ def newton_schulz(
 
     repeat_last_types = ("polar_express", "cans", "deepseekv4")
     iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in repeat_last_types else "cycle"
-    coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
+    if coefficient_type == "polar_express" and steps > len(coefficient_sets):
+        a, b, c = coefficient_sets[-1]
+        guarded_last = (a / 1.01, b / 1.01**3, c / 1.01**5)
+        coeff_iter = chain(
+            coefficient_sets[:-1],
+            repeat(guarded_last, steps - len(coefficient_sets)),
+            (coefficient_sets[-1],),
+        )
+    else:
+        coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
     ns_step_fn = newton_schulz_step if X.ndim == 2 else batched_newton_schulz_step
     # Perform the NS iterations

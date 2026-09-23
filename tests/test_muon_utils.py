@@ -271,7 +271,9 @@ class TestNewtonSchulz(parameterized.TestCase):
         out_pe9 = muon_utils.newton_schulz(x, steps=9, coefficient_type="polar_express")
 
         coeff = deepcopy(muon_utils._COEFFICIENT_SETS["polar_express"])
-        coeff.append(coeff[-1])
+        a, b, c = coeff[-1]
+        coeff[-1] = (a / 1.01, b / 1.01**3, c / 1.01**5)
+        coeff.append((a, b, c))
         out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
         torch.testing.assert_close(out_pe9, out_ref, atol=2e-6, rtol=1e-7)
 
