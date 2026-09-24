@@ -369,7 +369,9 @@ def newton_schulz_step(
     """
     A = X @ X.mT
     if tp_group is not None:
+        A = A.to(torch.float32)
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
+        A = A.to(X.dtype)
     if c != 0.0:
         B = torch.addmm(A, A, A, alpha=c, beta=b)
         X = torch.addmm(X, B, X, alpha=1.0, beta=a)
@@ -402,7 +404,9 @@ def batched_newton_schulz_step(
     """
     A = X @ X.mT
     if tp_group is not None:
+        A = A.to(torch.float32)
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
+        A = A.to(X.dtype)
     if c != 0.0:
         B = torch.baddbmm(A, A, A, alpha=c, beta=b)
         X = torch.baddbmm(X, B, X, alpha=1.0, beta=a)
@@ -433,7 +437,9 @@ def newton_schulz_step_tsyrk(
     )
     A = triton_kernels.tsyrk_ex(X)  # type: ignore[attr-defined]
     if tp_group is not None:
+        A = A.to(torch.float32)
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
+        A = A.to(X.dtype)
     if c != 0.0:
         B = triton_kernels.tsyrk_ex(A, A, alpha=c, beta=b)  # type: ignore[attr-defined]
         X = torch.addmm(X, B, X, alpha=1.0, beta=a)
@@ -467,7 +473,9 @@ def batched_newton_schulz_step_tsyrk(
     )
     A = triton_kernels.batched_tsyrk_ex(X)  # type: ignore[attr-defined]
     if tp_group is not None:
+        A = A.to(torch.float32)
         torch.distributed.all_reduce(A, op=torch.distributed.ReduceOp.SUM, group=tp_group)
+        A = A.to(X.dtype)
     if c != 0.0:
         B = triton_kernels.batched_tsyrk_ex(A, A, alpha=c, beta=b)  # type: ignore[attr-defined]
         X = torch.baddbmm(X, B, X, alpha=1.0, beta=a)
