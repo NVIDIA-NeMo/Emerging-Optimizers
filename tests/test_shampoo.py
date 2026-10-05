@@ -29,6 +29,7 @@ from emerging_optimizers.shampoo.shampoo import (
     ShampooBase,
     ShampooPreconditioner,
     _get_root_inverse_from_eigens,
+    get_shampoo_scale_factor,
 )
 
 
@@ -268,8 +269,7 @@ class KlShampooPreconditionerTest(parameterized.TestCase):
             preconditioned = preconditioner.precondition(x)
             root_inv_L = (l_seed * eigvals_L.reciprocal()) @ l_seed.mT
             root_inv_R = (r_seed * eigvals_R.reciprocal()) @ r_seed.mT
-            shape_scale = math.sqrt(m / n) / (math.sqrt(m) + math.sqrt(n))
-            expected = (root_inv_L @ x @ root_inv_R) * shape_scale
+            expected = root_inv_L @ x @ root_inv_R
 
         assert_equal(preconditioned, expected)
 
@@ -314,6 +314,54 @@ class KlShampooPreconditionerTest(parameterized.TestCase):
         self.assertIs(state["Q_R"], preconditioner.eigenbasis_pair.R)
         self.assertIs(state["eigvals_L"], preconditioner.eigvals_pair.L)
         self.assertIs(state["eigvals_R"], preconditioner.eigvals_pair.R)
+
+
+class GetShampooScaleFactorTest(parameterized.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.device = torch.device(FLAGS.device)
+
+    @parameterized.product(
+        [
+            {"p_root_inv": 4, "kl_corrected": False, "trace_kind": "none"},
+            {"p_root_inv": 2, "kl_corrected": True, "trace_kind": "none"},
+            {"p_root_inv": 4, "kl_corrected": False, "trace_kind": "float"},
+            {"p_root_inv": 2, "kl_corrected": False, "trace_kind": "float"},
+            {"p_root_inv": 1, "kl_corrected": True, "trace_kind": "float"},
+            {"p_root_inv": 8, "kl_corrected": False, "trace_kind": "tensor"},
+            {"p_root_inv": 4, "kl_corrected": True, "trace_kind": "tensor"},
+        ],
+        shape=[(8, 16), (16, 8), (13, 13)],
+        mode=["shape_scaling", "spectral", "unit_rms_norm"],
+    )
+    def test_smoke(
+        self, p_root_inv: int, kl_corrected: bool, trace_kind: str, shape: tuple[int, int], mode: str
+    ) -> None:
+        m, n = shape
+        factor_traces = {
+            "none": None,
+            "float": (3.0, 5.0),
+            "tensor": (torch.tensor(3.0, device=self.device), torch.tensor(5.0, device=self.device)),
+        }[trace_kind]
+
+        scale = get_shampoo_scale_factor(
+            m, n, p_root_inv, mode, factor_traces=factor_traces, kl_corrected=kl_corrected
+        )
+
+        if trace_kind == "tensor":
+            self.assertIsInstance(scale, torch.Tensor)
+            scale = scale.item()
+        self.assertTrue(math.isfinite(scale))
+        self.assertGreater(scale, 0.0)
+
+    @parameterized.parameters(
+        {"kwargs": {"p_root_inv": 2}, "message": "factor_traces are required"},
+        {"kwargs": {"p_root_inv": 4, "kl_corrected": True}, "message": "factor_traces are required"},
+        {"kwargs": {"p_root_inv": 4, "mode": "bogus"}, "message": "Invalid mode"},
+    )
+    def test_invalid_arguments_raise(self, kwargs: dict, message: str) -> None:
+        with self.assertRaisesRegex(ValueError, message):
+            get_shampoo_scale_factor(8, 16, **kwargs)
 
 
 class _BypassPreconditioner:
@@ -368,7 +416,7 @@ class ShampooBaseTest(parameterized.TestCase):
 
     def test_step_smoke(self) -> None:
         p = torch.nn.Parameter(torch.randn(4, 4, device=self.device))
-        optimizer = _SgdShampoo([p], lr=1e-3)
+        optimizer = _SgdShampoo([p], lr=1e-3, scale_mode=None)
 
         p.grad = torch.randn_like(p)
 
@@ -379,7 +427,13 @@ class ShampooBaseTest(parameterized.TestCase):
         p = torch.nn.Parameter(torch.randn(4, 3, device=self.device))
         expected = p.detach().clone()
         sgd_buffer = torch.zeros_like(expected)
-        optimizer = _SgdShampoo([p], lr=lr, momentum=momentum, weight_decay=weight_decay)
+        optimizer = _SgdShampoo(
+            [p],
+            lr=lr,
+            momentum=momentum,
+            weight_decay=weight_decay,
+            scale_mode=None,
+        )
 
         for _ in range(3):
             grad = torch.randn_like(p)
@@ -398,7 +452,7 @@ class ShampooBaseTest(parameterized.TestCase):
     def test_rejects_non_2d(self) -> None:
         p = torch.nn.Parameter(torch.randn(2, 3, 4, device=self.device))
         p.grad = torch.randn_like(p)
-        optimizer = _SgdShampoo([p], lr=1e-3)
+        optimizer = _SgdShampoo([p], lr=1e-3, scale_mode=None)
 
         with self.assertRaisesRegex(TypeError, "only supported for 2D"):
             optimizer.step()
@@ -440,7 +494,7 @@ class ShampooTest(parameterized.TestCase):
     def test_shampoo_beta_bias_corrected_over_5steps(self) -> None:
         shampoo_beta = 0.75
         p = torch.nn.Parameter(torch.randn(4, 3, device=self.device))
-        optimizer = _SgdShampoo([p], lr=1e-3, shampoo_beta=shampoo_beta)
+        optimizer = _SgdShampoo([p], lr=1e-3, shampoo_beta=shampoo_beta, scale_mode=None)
 
         for curr_iter_1_based in range(1, 6):
             p.grad = torch.randn_like(p)
@@ -487,6 +541,34 @@ class ShampooTest(parameterized.TestCase):
             msg=lambda default: f"A zero gradient should leave only decoupled weight decay\n\n{default}",
         )
 
+    @parameterized.parameters(2, 4)
+    def test_update_scale_matches_closed_form(self, p_root_inv: int) -> None:
+        m, n, lr = 8, 5, 0.1
+        p_scaled = torch.nn.Parameter(torch.randn(m, n, device=self.device))
+        p_unscaled = torch.nn.Parameter(p_scaled.detach().clone())
+        scaled = Shampoo([p_scaled], lr=lr, weight_decay=0.0, p_root_inv=p_root_inv)
+        unscaled = Shampoo([p_unscaled], lr=lr, weight_decay=0.0, p_root_inv=p_root_inv, scale_mode=None)
+
+        for _ in range(3):
+            grad = torch.randn(m, n, device=self.device)
+            p_scaled.grad, p_unscaled.grad = grad.clone(), grad.clone()
+            before_scaled, before_unscaled = p_scaled.detach().clone(), p_unscaled.detach().clone()
+
+            scaled.step()
+            unscaled.step()
+
+            state = unscaled.state[p_unscaled]
+            expected_scale = get_shampoo_scale_factor(
+                m, n, p_root_inv, factor_traces=(state["L"].trace().item(), state["R"].trace().item())
+            )
+            torch.testing.assert_close(
+                p_scaled.detach() - before_scaled,
+                (p_unscaled.detach() - before_unscaled) * expected_scale,
+                atol=1e-6,
+                rtol=1e-4,
+                msg=lambda default: f"p_root_inv={p_root_inv}\n\n{default}",
+            )
+
     @parameterized.parameters(0.0, 0.5, 0.75)
     def test_scalar_update_close_to_sgd(self, momentum: float) -> None:
         p = torch.nn.Parameter(torch.randn(6, 6, device=self.device))
@@ -528,6 +610,38 @@ class KlShampooTest(parameterized.TestCase):
             optimizer.state[p],
             {"step", "exp_avg", "L", "R", "Q_L", "Q_R", "eigvals_L", "eigvals_R"},
         )
+
+    @parameterized.parameters(2, 4)
+    def test_update_scale_matches_closed_form(self, p_root_inv: int) -> None:
+        m, n, lr = 8, 5, 0.1
+        p_scaled = torch.nn.Parameter(torch.randn(m, n, device=self.device))
+        p_unscaled = torch.nn.Parameter(p_scaled.detach().clone())
+        scaled = KlShampoo([p_scaled], lr=lr, weight_decay=0.0, p_root_inv=p_root_inv)
+        unscaled = KlShampoo([p_unscaled], lr=lr, weight_decay=0.0, p_root_inv=p_root_inv, scale_mode=None)
+
+        for _ in range(3):
+            grad = torch.randn(m, n, device=self.device)
+            p_scaled.grad, p_unscaled.grad = grad.clone(), grad.clone()
+            before_scaled, before_unscaled = p_scaled.detach().clone(), p_unscaled.detach().clone()
+
+            scaled.step()
+            unscaled.step()
+
+            state = unscaled.state[p_unscaled]
+            expected_scale = get_shampoo_scale_factor(
+                m,
+                n,
+                p_root_inv,
+                factor_traces=(state["L"].trace().item(), state["R"].trace().item()),
+                kl_corrected=True,
+            )
+            torch.testing.assert_close(
+                p_scaled.detach() - before_scaled,
+                (p_unscaled.detach() - before_unscaled) * expected_scale,
+                atol=1e-6,
+                rtol=1e-4,
+                msg=lambda default: f"p_root_inv={p_root_inv}\n\n{default}",
+            )
 
 
 if __name__ == "__main__":
