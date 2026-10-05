@@ -252,13 +252,13 @@ ShampooScaleT = Literal["shape_scaling", "spectral", "unit_rms_norm"]
 
 
 def get_shampoo_scale_factor(
-    size_out: int,
-    size_in: int,
+    L: torch.Tensor,
+    R: torch.Tensor,
     p_root_inv: float,
     mode: ShampooScaleT = "spectral",
     *,
-    factor_traces: tuple[float | torch.Tensor, float | torch.Tensor] | None = None,
     kl_corrected: bool = False,
+    eps: float,
 ) -> float | torch.Tensor:
     """Get the scale for the Shampoo update.
 
@@ -269,27 +269,25 @@ def get_shampoo_scale_factor(
     ``(size_out * size_in)^(1/p - 1/2) * (tr(L) tr(R))^(1/2 - 1/p)`` with KL-corrected factors, whose Kronecker
     product is calibrated to the gradient covariance rather than to its square. The returned factor is the
     reciprocal. The trace exponent vanishes at ``p_root_inv=4`` for plain factors and at ``p_root_inv=2`` for
-    KL-corrected factors, where the factor is the pure shape constant ``(size_out * size_in)^(1/2 - 1/p)``.
+    KL-corrected factors, where the factor is the pure shape constant ``(size_out * size_in)^(1/2 - 1/p)`` and
+    the traces are not computed.
 
     Args:
-        size_out: The size of the output tensor.
-        size_in: The size of the input tensor.
+        L: Left Kronecker factor, ``size_out x size_out``.
+        R: Right Kronecker factor, ``size_in x size_in``.
         p_root_inv: Inverse root order applied to each Kronecker factor.
         mode: The mode to use for the scale.
-        factor_traces: Traces of the Kronecker factors, ``(tr(L), tr(R))``. Required unless the trace exponent
-            vanishes.
         kl_corrected: Whether the Kronecker factors are KL-corrected.
+        eps: Floor on the factor traces; use the preconditioner's ``eps``.
 
     Returns:
-        The scale factor for the update. A tensor if ``factor_traces`` are tensors.
+        The scale factor for the update: a float when the trace exponent vanishes, otherwise a 0-d tensor.
     """
+    size_out, size_in = L.shape[-1], R.shape[-1]
     trace_exp = 1 / p_root_inv - (0.5 if kl_corrected else 0.25)
     scale: float | torch.Tensor = (size_out * size_in) ** (0.5 - 1 / p_root_inv)
     if trace_exp != 0:
-        if factor_traces is None:
-            raise ValueError(f"factor_traces are required for p_root_inv={p_root_inv}, kl_corrected={kl_corrected}")
-        trace_L, trace_R = factor_traces
-        scale = scale * (trace_L * trace_R) ** trace_exp
+        scale = scale * (L.trace().clamp_min(eps) ** trace_exp) * (R.trace().clamp_min(eps) ** trace_exp)
 
     if mode == "spectral":
         return scale
@@ -466,12 +464,12 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
                 preconditioned_update = preconditioner.precondition(scalar_update)
                 if self.scale_mode is not None:
                     preconditioned_update = preconditioned_update * get_shampoo_scale_factor(
-                        p.shape[0],
-                        p.shape[1],
+                        state["L"],
+                        state["R"],
                         self.p_root_inv,
                         self.scale_mode,
-                        factor_traces=(state["L"].trace(), state["R"].trace()),
                         kl_corrected=self.kl_corrected,
+                        eps=self.eps,
                     )
 
                 self._apply_weight_decay_inplace(

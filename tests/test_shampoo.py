@@ -322,46 +322,47 @@ class GetShampooScaleFactorTest(parameterized.TestCase):
         cls.device = torch.device(FLAGS.device)
 
     @parameterized.product(
-        [
-            {"p_root_inv": 4, "kl_corrected": False, "trace_kind": "none"},
-            {"p_root_inv": 2, "kl_corrected": True, "trace_kind": "none"},
-            {"p_root_inv": 4, "kl_corrected": False, "trace_kind": "float"},
-            {"p_root_inv": 2, "kl_corrected": False, "trace_kind": "float"},
-            {"p_root_inv": 1, "kl_corrected": True, "trace_kind": "float"},
-            {"p_root_inv": 8, "kl_corrected": False, "trace_kind": "tensor"},
-            {"p_root_inv": 4, "kl_corrected": True, "trace_kind": "tensor"},
-        ],
         shape=[(8, 16), (16, 8), (13, 13)],
+        p_root_inv=[1, 2, 4, 8],
         mode=["shape_scaling", "spectral", "unit_rms_norm"],
+        kl_corrected=[False, True],
     )
-    def test_smoke(
-        self, p_root_inv: int, kl_corrected: bool, trace_kind: str, shape: tuple[int, int], mode: str
-    ) -> None:
+    def test_smoke(self, shape: tuple[int, int], p_root_inv: int, mode: str, kl_corrected: bool) -> None:
         m, n = shape
-        factor_traces = {
-            "none": None,
-            "float": (3.0, 5.0),
-            "tensor": (torch.tensor(3.0, device=self.device), torch.tensor(5.0, device=self.device)),
-        }[trace_kind]
+        L = torch.eye(m, device=self.device) * 3.0
+        R = torch.eye(n, device=self.device) * 5.0
 
-        scale = get_shampoo_scale_factor(
-            m, n, p_root_inv, mode, factor_traces=factor_traces, kl_corrected=kl_corrected
-        )
+        scale = get_shampoo_scale_factor(L, R, p_root_inv, mode, kl_corrected=kl_corrected, eps=1e-8)
 
-        if trace_kind == "tensor":
-            self.assertIsInstance(scale, torch.Tensor)
+        if isinstance(scale, torch.Tensor):
             scale = scale.item()
         self.assertTrue(math.isfinite(scale))
         self.assertGreater(scale, 0.0)
 
-    @parameterized.parameters(
-        {"kwargs": {"p_root_inv": 2}, "message": "factor_traces are required"},
-        {"kwargs": {"p_root_inv": 4, "kl_corrected": True}, "message": "factor_traces are required"},
-        {"kwargs": {"p_root_inv": 4, "mode": "bogus"}, "message": "Invalid mode"},
-    )
-    def test_invalid_arguments_raise(self, kwargs: dict, message: str) -> None:
-        with self.assertRaisesRegex(ValueError, message):
-            get_shampoo_scale_factor(8, 16, **kwargs)
+    @parameterized.parameters((4, False), (2, True))
+    def test_trace_skipped_when_exponent_vanishes(self, p_root_inv: int, kl_corrected: bool) -> None:
+        nan_L = torch.full((8, 8), math.nan, device=self.device)
+        nan_R = torch.full((16, 16), math.nan, device=self.device)
+
+        scale = get_shampoo_scale_factor(nan_L, nan_R, p_root_inv, kl_corrected=kl_corrected, eps=1e-8)
+
+        self.assertIsInstance(scale, float)
+        self.assertTrue(math.isfinite(scale))
+
+    @parameterized.parameters((8, False), (4, True))
+    def test_zero_factors_are_floored_by_eps(self, p_root_inv: int, kl_corrected: bool) -> None:
+        zero_L = torch.zeros(8, 8, device=self.device)
+        zero_R = torch.zeros(16, 16, device=self.device)
+
+        scale = get_shampoo_scale_factor(zero_L, zero_R, p_root_inv, kl_corrected=kl_corrected, eps=1e-8)
+
+        self.assertTrue(torch.isfinite(scale))
+
+    def test_invalid_mode_raises(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Invalid mode"):
+            get_shampoo_scale_factor(
+                torch.eye(8, device=self.device), torch.eye(16, device=self.device), 4, "bogus", eps=1e-8
+            )
 
 
 class _BypassPreconditioner:
@@ -524,11 +525,12 @@ class ShampooTest(parameterized.TestCase):
             self.assertEqual(optimizer.state[without_grad]["L"].shape, (5, 5))
             self.assertEqual(optimizer.state[without_grad]["R"].shape, (2, 2))
 
-    def test_zero_grad_applies_only_weight_decay(self) -> None:
+    @parameterized.parameters(2, 4, 8)
+    def test_zero_grad_applies_only_weight_decay(self, p_root_inv: int) -> None:
         lr, weight_decay = 0.1, 0.05
         p = torch.nn.Parameter(torch.randn(5, 5, device=self.device))
         initial = p.detach().clone()
-        optimizer = Shampoo([p], lr=lr, weight_decay=weight_decay)
+        optimizer = Shampoo([p], lr=lr, weight_decay=weight_decay, p_root_inv=p_root_inv)
 
         p.grad = torch.zeros_like(p)
         optimizer.step()
@@ -558,9 +560,7 @@ class ShampooTest(parameterized.TestCase):
             unscaled.step()
 
             state = unscaled.state[p_unscaled]
-            expected_scale = get_shampoo_scale_factor(
-                m, n, p_root_inv, factor_traces=(state["L"].trace().item(), state["R"].trace().item())
-            )
+            expected_scale = get_shampoo_scale_factor(state["L"], state["R"], p_root_inv, eps=unscaled.eps)
             torch.testing.assert_close(
                 p_scaled.detach() - before_scaled,
                 (p_unscaled.detach() - before_unscaled) * expected_scale,
@@ -629,11 +629,7 @@ class KlShampooTest(parameterized.TestCase):
 
             state = unscaled.state[p_unscaled]
             expected_scale = get_shampoo_scale_factor(
-                m,
-                n,
-                p_root_inv,
-                factor_traces=(state["L"].trace().item(), state["R"].trace().item()),
-                kl_corrected=True,
+                state["L"], state["R"], p_root_inv, kl_corrected=True, eps=unscaled.eps
             )
             torch.testing.assert_close(
                 p_scaled.detach() - before_scaled,
