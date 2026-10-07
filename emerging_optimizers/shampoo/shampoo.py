@@ -262,16 +262,6 @@ def get_shampoo_scale_factor(
 ) -> float | torch.Tensor:
     """Get the scale for the Shampoo update.
 
-    Default mode is "spectral", which brings the update to unit RMS so that learning rates transfer from AdamW,
-    the role ``sqrt(max(size_out, size_in))`` plays for Muon (https://arxiv.org/abs/2502.16982). For the update
-    ``L^(-1/p) G R^(-1/p)`` with isotropic gradient second moments, the update RMS is
-    ``(size_out * size_in)^(1/p - 1/2) * (tr(L) tr(R))^(1/4 - 1/p)`` with plain Shampoo factors and
-    ``(size_out * size_in)^(1/p - 1/2) * (tr(L) tr(R))^(1/2 - 1/p)`` with KL-corrected factors, whose Kronecker
-    product is calibrated to the gradient covariance rather than to its square. The returned factor is the
-    reciprocal. The trace exponent vanishes at ``p_root_inv=4`` for plain factors and at ``p_root_inv=2`` for
-    KL-corrected factors, where the factor is the pure shape constant ``(size_out * size_in)^(1/2 - 1/p)`` and
-    the traces are not computed.
-
     Args:
         L: Left Kronecker factor, ``size_out x size_out``.
         R: Right Kronecker factor, ``size_in x size_in``.
