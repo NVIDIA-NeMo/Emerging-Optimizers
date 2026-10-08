@@ -64,6 +64,8 @@ class ShampooPreconditioner:
         eps: Floor on the eigenvalue magnitudes before inversion.
     """
 
+    kl_corrected: ClassVar[bool] = False
+
     def __init__(
         self,
         state: dict,
@@ -168,6 +170,8 @@ class ShampooPreconditioner:
 
 class KlShampooPreconditioner(ShampooPreconditioner):
     """Shampoo preconditioner with the KL-corrected Kronecker factor update."""
+
+    kl_corrected: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -313,13 +317,11 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
 
     Attributes:
         PreconditionerCls: Preconditioner used for every parameter, and the source of the state layout
-            allocated by :meth:`_init_group`. Subclasses set it to change how the factors are maintained.
-        kl_corrected: Whether :attr:`PreconditionerCls` keeps KL-corrected Kronecker factors, which changes the
-            update scale; see :func:`get_shampoo_scale_factor`.
+            allocated by :meth:`_init_group`. Subclasses set it to change how the factors are maintained; its
+            ``kl_corrected`` attribute selects the update scale, see :func:`get_shampoo_scale_factor`.
     """
 
     PreconditionerCls: ClassVar[type[precond_base.ShampooPreconditionerProtocol]]
-    kl_corrected: ClassVar[bool] = False
 
     def __init__(
         self,
@@ -458,7 +460,7 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
                         state["R"],
                         self.p_root_inv,
                         self.scale_mode,
-                        kl_corrected=self.kl_corrected,
+                        kl_corrected=self.PreconditionerCls.kl_corrected,
                         eps=self.eps,
                     )
 
@@ -510,7 +512,6 @@ class KlShampoo(Shampoo):
     """Shampoo with KL-corrected Kronecker factors and EMA momentum."""
 
     PreconditionerCls: ClassVar[type[precond_base.ShampooPreconditionerProtocol]] = KlShampooPreconditioner
-    kl_corrected: ClassVar[bool] = True
 
     def __init__(
         self,

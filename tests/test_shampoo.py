@@ -366,6 +366,8 @@ class GetShampooScaleFactorTest(parameterized.TestCase):
 
 
 class _BypassPreconditioner:
+    kl_corrected = False
+
     def __init__(self, state: dict, p_root_inv: float, eps: float) -> None:
         self.p_root_inv = p_root_inv
         self.eps = eps
@@ -544,7 +546,7 @@ class ShampooTest(parameterized.TestCase):
         )
 
     @parameterized.parameters(2, 4)
-    def test_update_scale_matches_closed_form(self, p_root_inv: int) -> None:
+    def test_update_scale_close_to_closed_form(self, p_root_inv: int) -> None:
         m, n, lr = 8, 5, 0.1
         p_scaled = torch.nn.Parameter(torch.randn(m, n, device=self.device))
         p_unscaled = torch.nn.Parameter(p_scaled.detach().clone())
@@ -612,7 +614,7 @@ class KlShampooTest(parameterized.TestCase):
         )
 
     @parameterized.parameters(2, 4)
-    def test_update_scale_matches_closed_form(self, p_root_inv: int) -> None:
+    def test_update_scale_close_to_closed_form(self, p_root_inv: int) -> None:
         m, n, lr = 8, 5, 0.1
         p_scaled = torch.nn.Parameter(torch.randn(m, n, device=self.device))
         p_unscaled = torch.nn.Parameter(p_scaled.detach().clone())
