@@ -14,7 +14,7 @@
 # limitations under the License.
 import dataclasses
 from collections.abc import Iterator
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 import torch
 
@@ -110,6 +110,8 @@ class SoapPreconditionerProtocol(_PreconditionerProtocol, Protocol):
 
 class ShampooPreconditionerProtocol(_PreconditionerProtocol, Protocol):
     """Shampoo preconditioner"""
+
+    kl_corrected: ClassVar[bool]
 
     def precondition(self, x: torch.Tensor, /) -> torch.Tensor:
         """Applies the two-sided preconditioner to a matrix in the parameter basis.
