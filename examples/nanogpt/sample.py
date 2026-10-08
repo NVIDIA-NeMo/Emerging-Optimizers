@@ -1,5 +1,17 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Generate text with upstream GPT.generate and absl flags."""
 
 import pickle
@@ -35,22 +47,39 @@ def main(argv: list[str]) -> None:
         raise app.UsageError("temperature must be positive")
     torch.manual_seed(FLAGS.seed)
     device = torch.device(FLAGS.device)
-    upstream = load_nanogpt(FLAGS.nanogpt_dir)
     meta = {}
+    if FLAGS.data_dir:
+        with (Path(FLAGS.data_dir) / "meta.pkl").open("rb") as stream:
+            meta = pickle.load(stream)
+    if FLAGS.init_from != "resume" and ("stoi" in meta or "itos" in meta):
+        raise app.UsageError("Character metadata cannot be used with pretrained GPT-2; omit --data_dir.")
+    upstream = load_nanogpt(FLAGS.nanogpt_dir)
     model: Any
     if FLAGS.init_from == "resume":
         checkpoint = load_checkpoint(Path(FLAGS.checkpoint))
         model = upstream.GPT(upstream.GPTConfig(**checkpoint["model_args"]))
         load_model_state(model, checkpoint["model"])
-        meta = checkpoint.get("meta", {})
+        saved_meta = checkpoint.get("meta", {})
+        if not FLAGS.data_dir:
+            meta = saved_meta
+        elif "stoi" in saved_meta and meta.get("stoi") != saved_meta["stoi"]:
+            raise app.UsageError("Character metadata does not match the checkpoint's saved mapping.")
     else:
         model = upstream.GPT.from_pretrained(FLAGS.init_from, {"dropout": 0.0})
-    if FLAGS.data_dir:
-        with (Path(FLAGS.data_dir) / "meta.pkl").open("rb") as stream:
-            meta = pickle.load(stream)
-    if "stoi" in meta:
-        encode = lambda text: [meta["stoi"][char] for char in text]
-        decode = lambda tokens: "".join(meta["itos"][token] for token in tokens)
+    if "stoi" in meta or "itos" in meta:
+        stoi, itos = meta.get("stoi"), meta.get("itos")
+        if not isinstance(stoi, dict) or not isinstance(itos, dict):
+            raise app.UsageError("Character metadata must include both stoi and itos dictionaries.")
+        vocab_size = model.config.vocab_size
+        if meta.get("vocab_size") != vocab_size or len(stoi) != vocab_size or set(itos) != set(range(vocab_size)):
+            raise app.UsageError("Character metadata must cover exactly the loaded model's vocabulary.")
+        if any(
+            not isinstance(char, str) or len(char) != 1 or not isinstance(token, int) or itos.get(token) != char
+            for char, token in stoi.items()
+        ):
+            raise app.UsageError("Character metadata stoi and itos must be inverse character mappings.")
+        encode = lambda text: [stoi[char] for char in text]
+        decode = lambda tokens: "".join(itos[token] for token in tokens)
     else:
         import tiktoken
 
