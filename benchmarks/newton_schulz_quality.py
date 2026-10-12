@@ -15,7 +15,12 @@ from typing import Any
 import torch
 from absl import app, flags
 
-from emerging_optimizers.orthogonalized_optimizers.muon_utils import _COEFFICIENT_SETS, newton_schulz
+from emerging_optimizers.orthogonalized_optimizers.muon_utils import (
+    _COEFFICIENT_ITER_MODES,
+    _COEFFICIENT_SETS,
+    get_coefficient_iterator,
+    newton_schulz,
+)
 from emerging_optimizers.utils import fp32_matmul_precision
 
 
@@ -186,6 +191,18 @@ def main(_: list[str]) -> None:
         "logspace_prescribed_condition_number": 1e40,
         "allow_bf16_reduced_precision_reduction": torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction,
         "coefficient_sets": {key: _COEFFICIENT_SETS[key] for key in FLAGS.coefficients},
+        "coefficient_iteration_modes": {key: _COEFFICIENT_ITER_MODES.get(key, "cycle") for key in FLAGS.coefficients},
+        "coefficient_schedules": {
+            key: {
+                str(count): list(
+                    get_coefficient_iterator(
+                        count, _COEFFICIENT_SETS[key], mode=_COEFFICIENT_ITER_MODES.get(key, "cycle")
+                    )
+                )
+                for count in ([5] if key == "cubic5" else steps)
+            }
+            for key in FLAGS.coefficients
+        },
     }
     print(json.dumps(metadata, indent=2), flush=True)
     rows = []
