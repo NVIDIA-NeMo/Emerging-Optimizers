@@ -78,7 +78,7 @@ def plot_results(rows: list[dict[str, Any]], path: Path) -> None:
     import matplotlib.pyplot as plt
 
     cases = list(dict.fromkeys((row["weight"], row["spectrum"]) for row in rows))
-    fig, axes = plt.subplots(len(cases), 2, figsize=(13, 3.4 * len(cases)), squeeze=False)
+    fig, axes = plt.subplots(len(cases), 2, figsize=(13, 3.4 * len(cases) + 1), squeeze=False)
     colors = dict(zip(_COEFFICIENT_SETS, plt.get_cmap("tab10").colors))
     styles = {"highest": "-", "high": ":", "medium": "--"}
     for axes_row, (weight, spectrum) in zip(axes, cases):
@@ -99,6 +99,8 @@ def plot_results(rows: list[dict[str, Any]], path: Path) -> None:
                         color=colors[coefficient],
                         linestyle=styles[precision],
                         marker=".",
+                        linewidth=2.2,
+                        markersize=7,
                         label=f"{coefficient} / {precision}",
                     )
             ax.set(title=f"{weight} {selected[0]['shape']} / {spectrum}", xlabel="NS steps", ylabel=metric)
@@ -106,8 +108,19 @@ def plot_results(rows: list[dict[str, Any]], path: Path) -> None:
             ax.grid(False, which="both")
             ax.set_facecolor("white")
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=4, fontsize=8, frameon=False)
-    fig.tight_layout(rect=(0, 0, 1, 1 - 1.05 / fig.get_figheight()))
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        ncol=2,
+        fontsize=14,
+        frameon=False,
+        handlelength=3,
+        markerscale=1.5,
+        labelspacing=0.6,
+        columnspacing=2,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 1 - 1.85 / fig.get_figheight()))
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=160, facecolor="white", transparent=False)
     plt.close(fig)
