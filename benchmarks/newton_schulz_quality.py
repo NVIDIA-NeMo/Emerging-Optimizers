@@ -104,11 +104,12 @@ def plot_results(rows: list[dict[str, Any]], path: Path) -> None:
             ax.set(title=f"{weight} {selected[0]['shape']} / {spectrum}", xlabel="NS steps", ylabel=metric)
             ax.set_xticks(sorted({row["steps"] for row in selected}))
             ax.grid(False, which="both")
+            ax.set_facecolor("white")
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=4, fontsize=8, frameon=False)
     fig.tight_layout(rect=(0, 0, 1, 1 - 1.05 / fig.get_figheight()))
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=160, transparent=True)
+    fig.savefig(path, dpi=160, facecolor="white", transparent=False)
     plt.close(fig)
 
 

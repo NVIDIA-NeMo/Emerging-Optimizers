@@ -20,7 +20,14 @@ python -m benchmarks.newton_schulz_quality \
 
 ## Results
 
-For NS output $X$ and reference $Q$, relative polar error is $\|X-Q\|_F / \|Q\|_F$; orthogonality error is $\|XX^T-I_{3072}\|_F / \sqrt{3072}$.
+For NS output `X` and reference `Q`:
+
+$$
+\begin{aligned}
+\text{Relative polar error} &= \frac{\lVert X-Q\rVert_F}{\lVert Q\rVert_F} \\
+\text{Orthogonality error} &= \frac{\lVert XX^T-I_{3072}\rVert_F}{\sqrt{3072}}
+\end{aligned}
+$$
 
 ![Relative polar and orthogonality errors for Gaussian, uniform, and Hilbert inputs. Solid lines: FP32. Dashed lines: BF16.](../assets/newton-schulz-quality.png)
 
