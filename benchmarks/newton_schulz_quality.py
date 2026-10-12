@@ -27,7 +27,7 @@ FLAGS = flags.FLAGS
 
 
 def make_matrix(shape: tuple[int, int], spectrum: str, seed: int, device: str) -> torch.Tensor:
-    """Create an FP32 Gaussian, uniform, or rectangular Hilbert matrix."""
+    """Create an FP32 Gaussian, uniform, Hilbert, or dense logspace-spectrum matrix."""
     generator = torch.Generator(device=device).manual_seed(seed)
     if spectrum == "gaussian":
         return torch.randn(shape, generator=generator, device=device, dtype=torch.float32)
@@ -37,6 +37,18 @@ def make_matrix(shape: tuple[int, int], spectrum: str, seed: int, device: str) -
         rows = torch.arange(shape[0], device=device, dtype=torch.float32)[:, None]
         columns = torch.arange(shape[1], device=device, dtype=torch.float32)[None, :]
         return 1.0 / (rows + columns + 1.0)
+    if spectrum == "logspace":
+        rank = min(shape)
+        left, _ = torch.linalg.qr(
+            torch.randn(shape[0], rank, generator=generator, device=device, dtype=torch.float64), mode="reduced"
+        )
+        right, _ = torch.linalg.qr(
+            torch.randn(shape[1], rank, generator=generator, device=device, dtype=torch.float64), mode="reduced"
+        )
+        singular_values = torch.logspace(10, -30, rank, device=device, dtype=torch.float64)
+        # Reconstruct in FP64 before casting to the same FP32 input used by NS
+        # and polar. The prescribed tiny singular values are lost to rounding.
+        return ((left * singular_values) @ right.mT).float()
     raise ValueError(f"Unknown input distribution: {spectrum}")
 
 
@@ -95,7 +107,7 @@ def plot_results(rows: list[dict[str, Any]], path: Path) -> None:
                         continue
                     ax.semilogy(
                         [row["steps"] for row in group],
-                        [row[metric] for row in group],
+                        [row[metric] if row[metric] is not None else math.nan for row in group],
                         color=colors[coefficient],
                         linestyle=styles[precision],
                         marker=".",
@@ -147,8 +159,10 @@ def main(_: list[str]) -> None:
         raise ValueError("Include 5 in --steps when requesting the fixed cubic5 schedule.")
     if not FLAGS.precisions or any(precision not in ("highest", "high", "medium") for precision in FLAGS.precisions):
         raise ValueError("--precisions must contain highest, high, or medium.")
-    if not FLAGS.spectra or any(spectrum not in ("gaussian", "uniform", "hilbert") for spectrum in FLAGS.spectra):
-        raise ValueError("--spectra must contain gaussian, uniform, or hilbert.")
+    if not FLAGS.spectra or any(
+        spectrum not in ("gaussian", "uniform", "hilbert", "logspace") for spectrum in FLAGS.spectra
+    ):
+        raise ValueError("--spectra must contain gaussian, uniform, hilbert, or logspace.")
 
     torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
 
@@ -168,6 +182,8 @@ def main(_: list[str]) -> None:
         "input_distributions": FLAGS.spectra,
         "uniform_interval": "[0, 1)",
         "hilbert_definition": "H[i, j] = 1 / (i + j + 1), zero-based indices, constructed in float32",
+        "logspace_definition": "U @ diag(s) @ V.T reconstructed in float64, then cast to float32; random orthonormal U and V from Gaussian QR; s log-spaced from 1e10 to 1e-30",
+        "logspace_prescribed_condition_number": 1e40,
         "allow_bf16_reduced_precision_reduction": torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction,
         "coefficient_sets": {key: _COEFFICIENT_SETS[key] for key in FLAGS.coefficients},
     }
@@ -188,6 +204,14 @@ def main(_: list[str]) -> None:
                 or baseline["orthogonality_error"] > 1e-8
             ):
                 raise RuntimeError(f"Polar reference failed validation: residual={residual}, metrics={baseline}")
+            input_spectrum = {}
+            if spectrum == "logspace":
+                actual_singular_values = torch.linalg.svdvals(x.double())
+                input_spectrum = {
+                    "input_sigma_max": actual_singular_values[0].item(),
+                    "input_sigma_min": actual_singular_values[-1].item(),
+                    "input_condition_number": (actual_singular_values[0] / actual_singular_values[-1]).item(),
+                }
             references.append(
                 {
                     "weight": weight,
@@ -195,6 +219,7 @@ def main(_: list[str]) -> None:
                     "spectrum": spectrum,
                     "reconstruction_error": residual,
                     **baseline,
+                    **input_spectrum,
                 }
             )
             for precision in FLAGS.precisions:
@@ -203,10 +228,7 @@ def main(_: list[str]) -> None:
                         with fp32_matmul_precision(precision):
                             result = newton_schulz(x, steps=count, coefficient_type=coefficient)
                         metrics = quality_metrics(result, reference)
-                        if not all(math.isfinite(value) for value in metrics.values()):
-                            raise RuntimeError(
-                                f"Nonfinite result: {weight}/{spectrum}/{precision}/{coefficient}/{count}"
-                            )
+                        finite = all(math.isfinite(value) for value in metrics.values())
                         row = {
                             "weight": weight,
                             "shape": shape,
@@ -214,18 +236,21 @@ def main(_: list[str]) -> None:
                             "precision": precision,
                             "coefficient": coefficient,
                             "steps": count,
-                            **metrics,
+                            "status": "ok" if finite else "nonfinite",
+                            **{key: value if math.isfinite(value) else None for key, value in metrics.items()},
                         }
                         rows.append(row)
                         print(
                             f"{weight:7s} {spectrum:8s} {precision:7s} {coefficient:13s} {count:2d} "
                             f"polar={metrics['relative_polar_error']:.4e} "
-                            f"orth={metrics['orthogonality_error']:.4e}",
+                            f"orth={metrics['orthogonality_error']:.4e} status={row['status']}",
                             flush=True,
                         )
     output = Path(FLAGS.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps({"metadata": metadata, "references": references, "results": rows}, indent=2) + "\n")
+    output.write_text(
+        json.dumps({"metadata": metadata, "references": references, "results": rows}, indent=2, allow_nan=False) + "\n"
+    )
     if FLAGS.plot:
         plot_results(rows, Path(FLAGS.plot))
 
@@ -237,7 +262,9 @@ if __name__ == "__main__":
     flags.DEFINE_list("coefficients", list(_COEFFICIENT_SETS), "Repository coefficient sets to evaluate.")
     flags.DEFINE_list("precisions", ["highest", "medium"], "NS matmul precisions; medium explicitly uses BF16.")
     flags.DEFINE_list(
-        "spectra", ["gaussian", "uniform", "hilbert"], "Inputs: N(0, 1), uniform [0, 1), or Hilbert H[i,j]=1/(i+j+1)."
+        "spectra",
+        ["gaussian", "uniform", "hilbert", "logspace"],
+        "Inputs: N(0, 1), uniform [0, 1), Hilbert, or dense SVD reconstruction with prescribed singular values from 1e10 to 1e-30.",
     )
     flags.DEFINE_integer("shape_divisor", 1, "Divide dimensions for smoke tests; 1 uses actual expert dimensions.")
     flags.DEFINE_string("output", "/tmp/newton-schulz-quality.json", "Output JSON path.")
