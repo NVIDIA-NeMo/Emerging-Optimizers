@@ -54,7 +54,7 @@ def newton_schulz_ref(x: torch.Tensor, coefficient_sets: list[tuple[float, float
         x = x.mT
 
     # Ensure spectral norm is at most 1
-    X = x / (1.01 * x.norm(dim=(-2, -1), keepdim=True) + 1e-15)
+    X = x / x.norm(dim=(-2, -1), keepdim=True).clamp_min_(1e-7)
 
     # Perform the NS iterations
     for i in range(steps):
@@ -128,7 +128,7 @@ class TestNewtonSchulz(parameterized.TestCase):
         norm_ref = torch.linalg.vector_norm(x, dtype=torch.double)
         assert norm_ref != 0
         out = muon_utils.newton_schulz(x, steps=0, normalize_in_double=True)
-        torch.testing.assert_close(x / (1.01 * norm_ref), out, atol=0, rtol=1e-6)
+        torch.testing.assert_close(x / norm_ref, out, atol=0, rtol=1e-6)
 
     @parameterized.parameters(
         (2, 256, 256),
@@ -261,21 +261,21 @@ class TestNewtonSchulz(parameterized.TestCase):
         out = muon_utils.newton_schulz(x, steps=16, coefficient_type="polar_express")
         assert_close_to_orthogonal(out, diag_atol=1e-5, off_diag_atol=1e-5)
 
-    @parameterized.parameters(
-        (511, 513),
-        (511, 257),
-        (257, 513),
+    @parameterized.product(
+        shape=[(511, 513), (511, 257), (257, 513), (2, 31, 17)],
+        steps=[0, 1, 7, 8, 9, 10, 16],
     )
-    def test_polar_express_9steps_close_to_reference(self, dim1, dim2):
-        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
-        out_pe9 = muon_utils.newton_schulz(x, steps=9, coefficient_type="polar_express")
+    def test_polar_express_close_to_reference(self, shape, steps):
+        x = torch.randn(*shape, device=self.device, dtype=torch.float32)
+        out_pe = muon_utils.newton_schulz(x, steps=steps, coefficient_type="polar_express")
 
-        coeff = deepcopy(muon_utils._COEFFICIENT_SETS["polar_express"])
-        a, b, c = coeff[-1]
-        coeff[-1] = (a / 1.01, b / 1.01**3, c / 1.01**5)
+        coeff = deepcopy(muon_utils._COEFFICIENT_SETS["polar_express"][:7])
+        a, b, c = (1.8750, -1.2500, 0.3750)
+        if steps > 8:
+            coeff.extend([(a / 1.01, b / 1.01**3, c / 1.01**5)] * (steps - 8))
         coeff.append((a, b, c))
-        out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
-        torch.testing.assert_close(out_pe9, out_ref, atol=2e-6, rtol=1e-7)
+        out_ref = newton_schulz_ref(x, coefficient_sets=coeff[:steps])
+        torch.testing.assert_close(out_pe, out_ref, atol=2e-6, rtol=1e-7)
 
     @parameterized.parameters(
         (511, 513),

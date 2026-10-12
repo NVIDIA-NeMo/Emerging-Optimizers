@@ -54,6 +54,9 @@ _COEFFICIENT_SETS = {
         (1.8726, -1.2307, 0.3585),
         (1.8564, -1.2132, 0.3568),
         (1.8750, -1.2500, 0.3750),
+        # Guarded copy of the final tuple: (a / 1.01, b / 1.01**3, c / 1.01**5).
+        # Used for extra iterations before the unguarded final step.
+        (1.85643564, -1.21323768, 0.35679963),
     ],
     "cans": [
         # CANS from: http://arxiv.org/abs/2506.10935
@@ -141,9 +144,9 @@ def distributed_normalize_p2(
     x_sq_sum = (x_sq * x_sq).sum()
     torch.distributed.all_reduce(x_sq_sum, op=torch.distributed.ReduceOp.SUM, group=group)
     norm = torch.sqrt(x_sq_sum).to(x.dtype)
-    if normalize_in_double:
-        return x / (1.01 * norm)
-    return x / (1.01 * norm + eps)
+    if not normalize_in_double:
+        norm.clamp_min_(eps)
+    return x / norm
 
 
 def newton_schulz(
@@ -213,14 +216,13 @@ def newton_schulz(
         X = distributed_normalize_p2(x, eps, tp_group, normalize_in_double)
     else:
         if not normalize_in_double:
-            norm = torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True)
-            X = x / (1.01 * norm + eps)
+            X = torch.nn.functional.normalize(x, p=2, dim=(-2, -1), eps=eps)  # type: ignore[arg-type]
         else:
             # eps is ignored when normalize in double so that zero division can happen if norm is exact 0.
             # However, if norm is 0 in double precision, it means the entire input is 0, which usually
             # suggests something wrong has happened in training. So we don't guard it here.
             norm = torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True, dtype=torch.float64).to(x.dtype)
-            X = x / (1.01 * norm)
+            X = x / norm
 
     if coefficient_type in _COEFFICIENT_SETS:
         coefficient_sets = _COEFFICIENT_SETS[coefficient_type]
@@ -239,13 +241,13 @@ def newton_schulz(
 
     repeat_last_types = ("polar_express", "cans", "deepseekv4")
     iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in repeat_last_types else "cycle"
-    if coefficient_type == "polar_express" and steps > len(coefficient_sets):
-        a, b, c = coefficient_sets[-1]
-        guarded_last = (a / 1.01, b / 1.01**3, c / 1.01**5)
+    coeff_iter: Iterator[tuple[float, float, float]]
+    if coefficient_type == "polar_express" and steps >= len(coefficient_sets):
+        # Repeat the predefined guarded tuple, then finish with the unguarded tuple.
         coeff_iter = chain(
-            coefficient_sets[:-1],
-            repeat(guarded_last, steps - len(coefficient_sets)),
-            (coefficient_sets[-1],),
+            coefficient_sets[:-2],
+            repeat(coefficient_sets[-1], steps - len(coefficient_sets) + 1),
+            (coefficient_sets[-2],),
         )
     else:
         coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)

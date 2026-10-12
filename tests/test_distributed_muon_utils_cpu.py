@@ -102,20 +102,26 @@ class DistributedNewtonSchulzStepCpuTest(parameterized.TestCase):
 
 
 class DistributedNewtonSchulzCpuTest(parameterized.TestCase):
-    @parameterized.parameters(
-        {"shape": (21, 16)},
-        {"shape": (16, 32)},
+    @parameterized.product(
+        shape=[(21, 16), (16, 32)],
+        normalize_in_double=[False, True],
+        scale=[1.0, 1e-30],
     )
-    def test_distributed_normalize_close_to_non_distributed(self, shape):
-        x = torch.randint(-5, 5, shape, device="cpu", dtype=torch.float32)
+    def test_distributed_normalize_close_to_non_distributed(self, shape, normalize_in_double, scale):
+        x = torch.randint(-5, 5, shape, device="cpu", dtype=torch.float32) * scale
         torch.distributed.all_reduce(x, op=torch.distributed.ReduceOp.SUM)
 
         world_size = torch.distributed.get_world_size()
         rank = torch.distributed.get_rank()
         local_x = x.chunk(world_size, dim=1)[rank]
 
-        dist_out = muon_utils.distributed_normalize_p2(local_x, eps=1e-7, group=torch.distributed.group.WORLD)
-        ref_out = x / (1.01 * torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True) + 1e-7)
+        dist_out = muon_utils.distributed_normalize_p2(
+            local_x, eps=1e-7, group=torch.distributed.group.WORLD, normalize_in_double=normalize_in_double
+        )
+        if normalize_in_double:
+            ref_out = x / torch.linalg.vector_norm(x, dim=(-2, -1), keepdim=True, dtype=torch.float64).to(x.dtype)
+        else:
+            ref_out = torch.nn.functional.normalize(x, dim=(-2, -1), eps=1e-7)
 
         torch.testing.assert_close(ref_out.chunk(world_size, dim=1)[rank], dist_out)
 
