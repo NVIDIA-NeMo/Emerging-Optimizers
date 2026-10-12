@@ -277,10 +277,12 @@ class TestNewtonSchulz(parameterized.TestCase):
         out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
         torch.testing.assert_close(out_pe, out_ref, atol=2e-6, rtol=1e-7)
 
-    def test_polar_express_guarded_coefficient_matches_safety_factor(self):
+    def test_polar_express_guarded_coefficient_matches_rounded_safety_factor(self):
         coeff = muon_utils._COEFFICIENT_SETS["polar_express"]
         a, b, c = coeff[-1]
-        expected = torch.tensor((a / 1.01, b / 1.01**3, c / 1.01**5), dtype=torch.float32)
+        expected = torch.tensor(
+            (round(a / 1.01, 4), round(b / 1.01**3, 4), round(c / 1.01**5, 4)), dtype=torch.float32
+        )
         actual = torch.tensor(coeff[-2], dtype=torch.float32)
         torch.testing.assert_close(actual, expected, atol=0, rtol=0)
 

@@ -53,9 +53,9 @@ _COEFFICIENT_SETS = {
         (2.2779, -1.6198, 0.3985),
         (1.8726, -1.2307, 0.3585),
         (1.8564, -1.2132, 0.3568),
-        # Guarded copy of the final tuple: (a / 1.01, b / 1.01**3, c / 1.01**5).
+        # Guarded copy of the final tuple: (a / 1.01, b / 1.01**3, c / 1.01**5), rounded to 4 decimals.
         # Used for extra iterations before the unguarded final step.
-        (1.85643564, -1.21323768, 0.35679963),
+        (1.8564, -1.2132, 0.3568),
         (1.8750, -1.2500, 0.3750),
     ],
     "cans": [
