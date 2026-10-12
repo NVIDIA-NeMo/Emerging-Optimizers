@@ -12,8 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import math
-from typing import TYPE_CHECKING, Callable, ClassVar, override
+from typing import TYPE_CHECKING, Callable, ClassVar, Literal, override
 
 
 if TYPE_CHECKING:
@@ -36,6 +35,8 @@ __all__ = [
     "Shampoo",
     "ShampooBase",
     "ShampooPreconditioner",
+    "ShampooScaleT",
+    "get_shampoo_scale_factor",
 ]
 
 
@@ -62,6 +63,8 @@ class ShampooPreconditioner:
         p_root_inv: Inverse root order; each factor is applied as ``A^(-1/p_root_inv)``.
         eps: Floor on the eigenvalue magnitudes before inversion.
     """
+
+    kl_corrected: ClassVar[bool] = False
 
     def __init__(
         self,
@@ -168,6 +171,8 @@ class ShampooPreconditioner:
 class KlShampooPreconditioner(ShampooPreconditioner):
     """Shampoo preconditioner with the KL-corrected Kronecker factor update."""
 
+    kl_corrected: ClassVar[bool] = True
+
     def __init__(
         self,
         state: dict,
@@ -244,16 +249,56 @@ class KlShampooPreconditioner(ShampooPreconditioner):
         root_inv_L = _get_root_inverse_from_eigens(eigvals_L, eigvecs_L, self.p_root_inv, self.eps)
         root_inv_R = _get_root_inverse_from_eigens(eigvals_R, eigvecs_R, self.p_root_inv, self.eps)
 
-        m, n = x.shape
-        shape_scale = math.sqrt(m / n) / (math.sqrt(m) + math.sqrt(n))
-        return (root_inv_L @ x @ root_inv_R) * shape_scale
+        return root_inv_L @ x @ root_inv_R
+
+
+ShampooScaleT = Literal["shape_scaling", "spectral", "unit_rms_norm"]
+
+
+def get_shampoo_scale_factor(
+    L: torch.Tensor,
+    R: torch.Tensor,
+    p_root_inv: float,
+    mode: ShampooScaleT = "spectral",
+    *,
+    kl_corrected: bool = False,
+    eps: float,
+) -> float | torch.Tensor:
+    """Get the scale for the Shampoo update.
+
+    Args:
+        L: Left Kronecker factor, ``size_out x size_out``.
+        R: Right Kronecker factor, ``size_in x size_in``.
+        p_root_inv: Inverse root order applied to each Kronecker factor.
+        mode: The mode to use for the scale.
+        kl_corrected: Whether the Kronecker factors are KL-corrected.
+        eps: Floor on the factor traces; use the preconditioner's ``eps``.
+
+    Returns:
+        The scale factor for the update: a float when the trace exponent vanishes, otherwise a 0-d tensor.
+    """
+    size_out, size_in = L.shape[-1], R.shape[-1]
+    trace_exp = 1 / p_root_inv - (0.5 if kl_corrected else 0.25)
+    scale: float | torch.Tensor = (size_out * size_in) ** (0.5 - 1 / p_root_inv)
+    if trace_exp != 0:
+        scale = scale * (L.trace().clamp_min(eps) ** trace_exp) * (R.trace().clamp_min(eps) ** trace_exp)
+
+    if mode == "spectral":
+        return scale
+    elif mode == "unit_rms_norm":
+        return scale * (size_out / size_in) ** 0.5 / (size_out**0.5 + size_in**0.5)
+    elif mode == "shape_scaling":
+        return scale * max(1, size_out / size_in) ** 0.5 / (size_out**0.5 + size_in**0.5)
+    else:
+        raise ValueError(f"Invalid mode for Shampoo update scale factor: {mode}")
 
 
 class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
     """Canonical Shampoo step loop, shared by the Shampoo-family optimizers.
 
     :meth:`step` is the whole algorithm: update the preconditioner from the gradient, run an inner scalar
-    optimizer in the parameter basis, and precondition its update on both sides. Subclasses customize the
+    optimizer in the parameter basis, precondition its update on both sides, and scale it with
+    :func:`get_shampoo_scale_factor`. Subclasses customize the
     two pieces that vary between Shampoo variants and leave the loop alone:
 
     - :attr:`PreconditionerCls` -- how the Kronecker factors and their inverse roots are maintained.
@@ -267,10 +312,13 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         eps: Numerical epsilon
         weight_decay: Decoupled weight decay coefficient.
         p_root_inv: Inverse root order applied to each Kronecker factor.
+        scale_mode: The type of scale factor to use for the update, see :func:`get_shampoo_scale_factor`.
+            ``None`` disables it.
 
     Attributes:
         PreconditionerCls: Preconditioner used for every parameter, and the source of the state layout
-            allocated by :meth:`_init_group`. Subclasses set it to change how the factors are maintained.
+            allocated by :meth:`_init_group`. Subclasses set it to change how the factors are maintained; its
+            ``kl_corrected`` attribute selects the update scale, see :func:`get_shampoo_scale_factor`.
     """
 
     PreconditionerCls: ClassVar[type[precond_base.ShampooPreconditionerProtocol]]
@@ -285,10 +333,12 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         weight_decay: float = 0.01,
         *,
         p_root_inv: float = 4,
+        scale_mode: ShampooScaleT | None = "spectral",
     ) -> None:
         self.eps = eps
         self.weight_decay_method = "decoupled"
         self.p_root_inv = p_root_inv
+        self.scale_mode = scale_mode
 
         if lr < 0.0:
             raise ValueError(f"Invalid learning rate: {lr}")
@@ -404,6 +454,15 @@ class ShampooBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
                 else:
                     preconditioner.step(grad, shampoo_beta)
                 preconditioned_update = preconditioner.precondition(scalar_update)
+                if self.scale_mode is not None:
+                    preconditioned_update = preconditioned_update * get_shampoo_scale_factor(
+                        state["L"],
+                        state["R"],
+                        self.p_root_inv,
+                        self.scale_mode,
+                        kl_corrected=self.PreconditionerCls.kl_corrected,
+                        eps=self.eps,
+                    )
 
                 self._apply_weight_decay_inplace(
                     p,
@@ -463,7 +522,8 @@ class KlShampoo(Shampoo):
         eps: float = 1e-8,
         weight_decay: float = 0.01,
         *,
-        p_root_inv: float = 4,
+        p_root_inv: float = 2,
+        scale_mode: ShampooScaleT | None = "spectral",
     ) -> None:
         super().__init__(
             params,
@@ -473,4 +533,5 @@ class KlShampoo(Shampoo):
             eps,
             weight_decay,
             p_root_inv=p_root_inv,
+            scale_mode=scale_mode,
         )

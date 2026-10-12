@@ -10,7 +10,7 @@ Runs the same checks that gate a pull request in `.github/workflows/cicd-main.ym
 
 1. **Lint** (host) — `pre-commit run --all-files` (ruff check, ruff format, mypy, copyright/EOF/whitespace, no-underscore-md).
 2. **L0 CPU tests** (container) — distributed muon utils at `nproc=4,8`, plus `test_scalar_optimizers.py` and `test_procrustes_step.py`.
-3. **L0 GPU tests** (container) — every `tests/test_*.py` (excluding `*_cpu.py`) twice — once with a random seed, once with `--seed=42` — then the convergence `tests/convergence/*_test.py` set.
+3. **L0 GPU tests** (container) — every `tests/test_*.py` (excluding `*_cpu.py`) twice — once with `--seed=42`, once with `--seed=0xdeadbeef` — then the convergence `tests/convergence/*_test.py` set.
 
 Stages 2 and 3 share a single NGC container session: lint runs on the host, then a single `docker run` against the image declared in `docker/Dockerfile.ci` (the `FROM` line — do **not** hard-code a tag, so the skill picks up version bumps automatically) with `--gpus all` performs both CPU and GPU passes. **All test execution happens inside the container; never run tests on the host.** Reasons:
 

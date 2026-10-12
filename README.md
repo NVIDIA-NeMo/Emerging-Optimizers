@@ -58,6 +58,10 @@ pip install .
 
 Refer to tests for usage of different optimizers, e.g.  [`tests/test_orthogonalized_optimizer.py::MuonTest`](tests/test_orthogonalized_optimizer.py).
 
+Train the upstream nanoGPT model with absl flags and a choice of optimizers using the
+[minimal-dependency nanoGPT example](examples/nanogpt/README.md). It supports checkpoint resume,
+mixed precision, generation, and PyTorch DDP.
+
 ### Integration with Megatron Core
 
 Emerging optimizer has been integrated into Megatron Core with tensor parallel support and many other features (split QKV for example), check out [emerging_optimizers.py](https://github.com/NVIDIA/Megatron-LM/blob/core_v0.18.0/megatron/core/optimizer/emerging_optimizers.py).
