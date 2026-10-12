@@ -23,7 +23,7 @@ from emerging_optimizers import triton_kernels
 
 __all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "get_coefficient_iterator", "CoeffIterMode"]
 
-CoeffIterMode = Literal["cycle", "repeat_last"]
+CoeffIterMode = Literal["cycle", "repeat_last", "repeat_penultimate"]
 
 NSCoeffT = Literal["simple", "quintic", "polar_express", "cans", "aol", "deepseekv4", "custom", "cubic5"]
 
@@ -52,6 +52,9 @@ _COEFFICIENT_SETS = {
         (3.2856, -2.4153, 0.4853),
         (2.2779, -1.6198, 0.3985),
         (1.8726, -1.2307, 0.3585),
+        (1.8564, -1.2132, 0.3568),
+        # Guarded copy of the final tuple: (a / 1.01, b / 1.01**3, c / 1.01**5), rounded to 4 decimals.
+        # Used for extra iterations before the unguarded final step.
         (1.8564, -1.2132, 0.3568),
         (1.8750, -1.2500, 0.3750),
     ],
@@ -89,6 +92,12 @@ _COEFFICIENT_SETS = {
     ],
 }
 
+_COEFFICIENT_ITER_MODES: dict[NSCoeffT, CoeffIterMode] = {
+    "polar_express": "repeat_penultimate",
+    "cans": "repeat_last",
+    "deepseekv4": "repeat_last",
+}
+
 
 def get_coefficient_iterator(
     steps: int,
@@ -103,12 +112,15 @@ def get_coefficient_iterator(
         mode: Iteration mode:
             - "cycle": After the last element, restart from the beginning.
             - "repeat_last": After the last element, keep yielding the last tuple.
+            - "repeat_penultimate": Consume the prefix, repeat the penultimate tuple for
+              extra steps, and finish with the last tuple. Short schedules truncate the prefix.
 
     Yields:
         Tuples (a, b, c) from coefficient_sets according to the specified mode.
 
     Raises:
         ValueError: If coefficient_sets is empty.
+        ValueError: If "repeat_penultimate" is used with fewer than two coefficient tuples.
         ValueError: If an invalid mode is provided.
     """
     logging.debug("Iterating through %s steps with %s mode.", steps, mode)
@@ -123,8 +135,16 @@ def get_coefficient_iterator(
     elif mode == "repeat_last":
         # Chain the original list with an infinite repeat of the last item
         base = chain(coefficient_sets, repeat(coefficient_sets[-1]))
+    elif mode == "repeat_penultimate":
+        if len(coefficient_sets) < 2:
+            raise ValueError("repeat_penultimate requires at least two coefficient tuples.")
+        base = chain(
+            coefficient_sets[:-2],
+            repeat(coefficient_sets[-2], max(0, steps - len(coefficient_sets) + 1)),
+            coefficient_sets[-1:],
+        )
     else:
-        raise ValueError(f"Invalid mode: {mode}. Expected 'cycle' or 'repeat_last'.")
+        raise ValueError(f"Invalid mode: {mode}. Expected 'cycle', 'repeat_last', or 'repeat_penultimate'.")
 
     return islice(base, steps)
 
@@ -236,8 +256,7 @@ def newton_schulz(
             "Use steps=5, or pass explicit custom coefficients."
         )
 
-    repeat_last_types = ("polar_express", "cans", "deepseekv4")
-    iter_mode: CoeffIterMode = "repeat_last" if coefficient_type in repeat_last_types else "cycle"
+    iter_mode = _COEFFICIENT_ITER_MODES.get(coefficient_type, "cycle")
     coeff_iter = get_coefficient_iterator(steps, coefficient_sets, mode=iter_mode)
 
     ns_step_fn = newton_schulz_step if X.ndim == 2 else batched_newton_schulz_step

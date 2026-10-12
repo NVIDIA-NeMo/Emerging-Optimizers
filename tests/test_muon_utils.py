@@ -261,19 +261,30 @@ class TestNewtonSchulz(parameterized.TestCase):
         out = muon_utils.newton_schulz(x, steps=16, coefficient_type="polar_express")
         assert_close_to_orthogonal(out, diag_atol=1e-5, off_diag_atol=1e-5)
 
-    @parameterized.parameters(
-        (511, 513),
-        (511, 257),
-        (257, 513),
+    @parameterized.product(
+        shape=[(511, 513), (511, 257), (257, 513), (2, 31, 17)],
+        steps=[0, 1, 7, 8, 9, 10, 16],
     )
-    def test_polar_express_9steps_close_to_reference(self, dim1, dim2):
-        x = torch.randn(dim1, dim2, device=self.device, dtype=torch.float32)
-        out_pe9 = muon_utils.newton_schulz(x, steps=9, coefficient_type="polar_express")
+    def test_polar_express_close_to_reference(self, shape, steps):
+        x = torch.randn(*shape, device=self.device, dtype=torch.float32)
+        out_pe = muon_utils.newton_schulz(x, steps=steps, coefficient_type="polar_express")
 
-        coeff = deepcopy(muon_utils._COEFFICIENT_SETS["polar_express"])
-        coeff.append(coeff[-1])
+        coeff = list(
+            muon_utils.get_coefficient_iterator(
+                steps, muon_utils._COEFFICIENT_SETS["polar_express"], mode="repeat_penultimate"
+            )
+        )
         out_ref = newton_schulz_ref(x, coefficient_sets=coeff)
-        torch.testing.assert_close(out_pe9, out_ref, atol=2e-6, rtol=1e-7)
+        torch.testing.assert_close(out_pe, out_ref, atol=2e-6, rtol=1e-7)
+
+    def test_polar_express_guarded_coefficient_matches_rounded_safety_factor(self):
+        coeff = muon_utils._COEFFICIENT_SETS["polar_express"]
+        a, b, c = coeff[-1]
+        expected = torch.tensor(
+            (round(a / 1.01, 4), round(b / 1.01**3, 4), round(c / 1.01**5, 4)), dtype=torch.float32
+        )
+        actual = torch.tensor(coeff[-2], dtype=torch.float32)
+        torch.testing.assert_close(actual, expected, atol=0, rtol=0)
 
     @parameterized.parameters(
         (511, 513),
@@ -427,6 +438,23 @@ class TestMuonUtils(parameterized.TestCase):
         """Test that get_coefficient_iterator raises ValueError for empty coefficient_sets."""
         with self.assertRaisesRegex(ValueError, "must be non-empty"):
             list(muon_utils.get_coefficient_iterator(5, []))
+
+    @parameterized.named_parameters(
+        ("zero_steps", 0, []),
+        ("truncated_prefix", 1, [0]),
+        ("no_repetition", 2, [0, 2]),
+        ("full_schedule", 3, [0, 1, 2]),
+        ("one_extra_step", 4, [0, 1, 1, 2]),
+        ("several_extra_steps", 7, [0, 1, 1, 1, 1, 1, 2]),
+    )
+    def test_get_coefficient_iterator_repeat_penultimate(self, steps, expected_indices):
+        coeff = [(1.0, 2.0, 3.0), (4.0, 5.0, 6.0), (7.0, 8.0, 9.0)]
+        actual = list(muon_utils.get_coefficient_iterator(steps, coeff, mode="repeat_penultimate"))
+        self.assertEqual(actual, [coeff[index] for index in expected_indices])
+
+    def test_get_coefficient_iterator_repeat_penultimate_requires_two_coefficients(self):
+        with self.assertRaisesRegex(ValueError, "requires at least two"):
+            muon_utils.get_coefficient_iterator(5, [(1.0, 2.0, 3.0)], mode="repeat_penultimate")
 
     def test_get_coefficient_iterator_invalid_mode_raises_value_error(self) -> None:
         """Test that get_coefficient_iterator raises ValueError for invalid mode."""
