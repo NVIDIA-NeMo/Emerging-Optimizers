@@ -1,4 +1,6 @@
-# Newton–Schulz quality
+# Newton–Schulz orthogonalization quality
+
+This doc summarizes quality of orthogonalization by Newton-Schulz compared polar decomposition (QDWH).
 
 ## Run settings
 

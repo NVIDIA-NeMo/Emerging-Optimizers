@@ -127,7 +127,7 @@ def plot_results(rows: list[dict[str, Any]], path: Path) -> None:
                         markersize=7,
                         label=f"{coefficient} / {precision}",
                     )
-            ax.set(title=f"{weight} {selected[0]['shape']} / {spectrum}", xlabel="NS steps", ylabel=metric)
+            ax.set(title=f"{tuple(selected[0]['shape'])} / {spectrum}", xlabel="NS steps", ylabel=metric)
             ax.set_xticks(sorted({row["steps"] for row in selected}))
             ax.grid(False, which="both")
             ax.set_facecolor("white")
