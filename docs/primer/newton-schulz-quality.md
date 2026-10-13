@@ -24,13 +24,13 @@ python -m benchmarks.newton_schulz_quality \
 
 Dense logspace input after FP32 conversion: measured singular values `1.54` to `1e+10`, condition number `6.47e+09`.
 
-For NS output `X` and reference `Q`:
+For original input `A`, NS output `X`, and FP64 reference polar factors `A = H Q`:
 
 $$
 \begin{aligned}
 \text{Relative polar error} &= \frac{\lVert X-Q\rVert_F}{\lVert Q\rVert_F} \\
-\text{Orthogonality error} &= \frac{\lVert XX^T-I_{3072}\rVert_F}{\sqrt{3072}}
+\text{Relative reconstruction error} &= \frac{\lVert HX-A\rVert_F}{\lVert A\rVert_F}
 \end{aligned}
 $$
 
-![Relative polar and orthogonality errors for Gaussian, uniform, Hilbert, and dense logspace inputs. Solid lines: FP32. Dashed lines: BF16.](../assets/newton-schulz-quality.png)
+![Relative polar and reconstruction errors for Gaussian, uniform, Hilbert, and dense logspace inputs. Solid lines: FP32. Dashed lines: BF16.](../assets/newton-schulz-quality.png)

@@ -4,7 +4,7 @@
 """Evaluate Newton-Schulz quality on synthetic Kimi-K3 routed-expert matrices.
 
 Run from the repository root with ``python -m benchmarks.newton_schulz_quality``.
-See docs/primer/newton-schulz-quality.md for the experiment and interpretation.
+See docs/primer/newton-schulz-quality.md for the run settings and results.
 """
 
 import json
@@ -57,8 +57,8 @@ def make_matrix(shape: tuple[int, int], spectrum: str, seed: int, device: str) -
     raise ValueError(f"Unknown input distribution: {spectrum}")
 
 
-def polar_reference(x: torch.Tensor) -> tuple[torch.Tensor, float]:
-    """Compute the FP64 polar factor of the same FP32 input and its residual."""
+def polar_reference(x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, float]:
+    """Return FP64 polar factors Q, H and the relative reconstruction residual."""
     if not hasattr(torch.linalg, "polar"):
         raise RuntimeError("This experiment requires torch.linalg.polar (PyTorch 2.14 or newer).")
     # torch.linalg.polar requires rows >= columns. The wide polar factor follows
@@ -67,7 +67,14 @@ def polar_reference(x: torch.Tensor) -> tuple[torch.Tensor, float]:
     tall = (x.mT if wide else x).double()
     q, h = torch.linalg.polar(tall)
     residual = (torch.linalg.vector_norm(q @ h - tall) / torch.linalg.vector_norm(tall)).item()
-    return (q.mT if wide else q), residual
+    return (q.mT if wide else q), h, residual
+
+
+def reconstruction_error(x: torch.Tensor, original: torch.Tensor, h: torch.Tensor) -> float:
+    """Reconstruct the original input with the NS output and reference polar H in FP64."""
+    x, original, h = x.double(), original.double(), h.double()
+    reconstructed = h @ x if x.shape[0] < x.shape[1] else x @ h
+    return (torch.linalg.vector_norm(reconstructed - original) / torch.linalg.vector_norm(original)).item()
 
 
 def quality_metrics(x: torch.Tensor, reference: torch.Tensor) -> dict[str, float]:
@@ -100,7 +107,7 @@ def plot_results(rows: list[dict[str, Any]], path: Path) -> None:
     styles = {"highest": "-", "high": ":", "medium": "--"}
     for axes_row, (weight, spectrum) in zip(axes, cases):
         selected = [row for row in rows if (row["weight"], row["spectrum"]) == (weight, spectrum)]
-        for ax, metric in zip(axes_row, ("relative_polar_error", "orthogonality_error")):
+        for ax, metric in zip(axes_row, ("relative_polar_error", "reconstruction_error")):
             for coefficient in _COEFFICIENT_SETS:
                 if coefficient in {"simple", "aol", "cans"}:
                     continue
@@ -182,6 +189,7 @@ def main(_: list[str]) -> None:
         "reference": "torch.linalg.polar",
         "reference_dtype": "float64",
         "metric_dtype": "float64",
+        "reconstruction_error_definition": "||H_ref @ X - A||_F / ||A||_F for wide A; ||X @ H_ref - A||_F / ||A||_F otherwise; H_ref from FP64 polar of original FP32 A",
         "steps": steps,
         "precisions": FLAGS.precisions,
         "input_distributions": FLAGS.spectra,
@@ -212,7 +220,7 @@ def main(_: list[str]) -> None:
         for spectrum in FLAGS.spectra:
             print(f"Building {weight} {shape} / {spectrum}", flush=True)
             x = make_matrix(shape, spectrum, FLAGS.seed, FLAGS.device)
-            reference, residual = polar_reference(x)
+            reference, h, residual = polar_reference(x)
             baseline = quality_metrics(reference, reference)
             if (
                 not math.isfinite(residual)
@@ -245,6 +253,7 @@ def main(_: list[str]) -> None:
                         with fp32_matmul_precision(precision):
                             result = newton_schulz(x, steps=count, coefficient_type=coefficient)
                         metrics = quality_metrics(result, reference)
+                        metrics["reconstruction_error"] = reconstruction_error(result, x, h)
                         finite = all(math.isfinite(value) for value in metrics.values())
                         row = {
                             "weight": weight,
@@ -260,7 +269,7 @@ def main(_: list[str]) -> None:
                         print(
                             f"{weight:7s} {spectrum:8s} {precision:7s} {coefficient:13s} {count:2d} "
                             f"polar={metrics['relative_polar_error']:.4e} "
-                            f"orth={metrics['orthogonality_error']:.4e} status={row['status']}",
+                            f"reconstruction={metrics['reconstruction_error']:.4e} status={row['status']}",
                             flush=True,
                         )
     output = Path(FLAGS.output)
