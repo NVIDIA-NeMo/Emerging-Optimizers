@@ -144,7 +144,9 @@ def plot_results(rows: list[dict[str, Any]], path: Path) -> None:
         labelspacing=0.6,
         columnspacing=2,
     )
-    fig.tight_layout(rect=(0, 0, 1, 1 - 1.85 / fig.get_figheight()))
+    legend_height = 0.35 * math.ceil(len(handles) / 2) + 0.45
+    fig.set_size_inches(13, 3.4 * len(cases) + legend_height - 0.85)
+    fig.tight_layout(rect=(0, 0, 1, 1 - legend_height / fig.get_figheight()))
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=160, facecolor="white", transparent=False)
     plt.close(fig)
@@ -286,7 +288,9 @@ if __name__ == "__main__":
     flags.DEFINE_integer("seed", 0, "Random seed; identical inputs are reused across the sweep.")
     flags.DEFINE_list("steps", ["5", "8", "10", "16"], "NS step counts.")
     flags.DEFINE_list("coefficients", list(_COEFFICIENT_SETS), "Repository coefficient sets to evaluate.")
-    flags.DEFINE_list("precisions", ["highest", "medium"], "NS matmul precisions; medium explicitly uses BF16.")
+    flags.DEFINE_list(
+        "precisions", ["highest", "high", "medium"], "NS matmul precisions; medium explicitly uses BF16."
+    )
     flags.DEFINE_list(
         "spectra",
         ["gaussian", "uniform", "hilbert", "logspace"],
