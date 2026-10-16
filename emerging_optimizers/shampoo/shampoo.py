@@ -195,8 +195,10 @@ class KlShampooPreconditioner(ShampooPreconditioner):
             {
                 "Q_L": torch.eye(m, device=device),
                 "Q_R": torch.eye(n, device=device),
-                "eigvals_L": torch.zeros(m, device=device),
-                "eigvals_R": torch.zeros(n, device=device),
+                # Initialize eigenvalues to one to skip KL correction for the first step.
+                # They will be overwritten immediately afterward.
+                "eigvals_L": torch.ones(m, device=device),
+                "eigvals_R": torch.ones(n, device=device),
             }
         )
         return state
