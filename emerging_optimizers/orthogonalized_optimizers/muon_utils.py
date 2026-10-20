@@ -334,6 +334,12 @@ def newton_schulz_tp(
             takes effect when the fp32 matmul precision is ``"medium"`` (see ``newton_schulz``).
             Falls back to GEMM when either matrix dimension is not a multiple of 8.
     """
+    if partition_dim is not None:
+        if tp_mode not in ("duplicated", "distributed"):
+            raise ValueError(f"Invalid tp_mode: {tp_mode}")
+        if tp_mode == "distributed" and partition_dim not in (0, 1):
+            raise ValueError(f"Invalid partition_dim: {partition_dim}")
+
     tp_size = get_pg_size(tp_group)
     if partition_dim is None or tp_size == 1:
         # Fallback path for non TP params.
