@@ -106,6 +106,32 @@ class AdaptiveMuonTest(parameterized.TestCase):
     @parameterized.parameters(
         *({"moment2_method": moment2_method} for moment2_method in MOMENT2_METHODS),
     )
+    def test_step_with_param_group_added_after_init(self, moment2_method) -> None:
+        first_param = nn.Parameter(torch.randn(8, 16, dtype=torch.float32, device=FLAGS.device))
+        first_param.grad = torch.randn_like(first_param)
+        adaptive_opt = AdaptiveMuon(
+            [first_param],
+            lr=0.01,
+            momentum=0.9,
+            weight_decay=0.0,
+            moment2_method=moment2_method,
+            beta2=0.9,
+            eps=1e-6,
+        )
+
+        added_param = nn.Parameter(torch.randn(16, 8, dtype=torch.float32, device=FLAGS.device))
+        added_param.grad = torch.randn_like(added_param)
+        adaptive_opt.add_param_group({"params": [added_param]})
+
+        adaptive_opt.step()
+
+        self.assertEqual(adaptive_opt.param_groups[1]["beta2"], 0.9)
+        self.assertEqual(adaptive_opt.param_groups[1]["eps"], 1e-6)
+        self.assertIn("moment2_buffer", adaptive_opt.state[added_param])
+
+    @parameterized.parameters(
+        *({"moment2_method": moment2_method} for moment2_method in MOMENT2_METHODS),
+    )
     def test_moment2_accumulates_before_muon_update_scaling(self, moment2_method) -> None:
         """Test that Muon update scaling is applied after second-moment normalization."""
         shape = (4, 16)

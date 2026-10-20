@@ -111,12 +111,10 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
             weight_decay_method=weight_decay_method,
             fp32_matmul_prec=fp32_matmul_prec,
             scaled_orthogonalize_fn=raw_orthogonalize_fn,
+            beta2=beta2,
+            eps=eps,
         )
         self.moment2_method = moment2_method
-
-        for group in self.param_groups:
-            group.setdefault("beta2", beta2)
-            group.setdefault("eps", eps)
 
     def _apply_muon_scale(self, update: torch.Tensor, size_out: int, size_in: int) -> torch.Tensor:
         scale_factor = muon.get_muon_scale_factor(size_out, size_in, mode=self.scale_mode)
