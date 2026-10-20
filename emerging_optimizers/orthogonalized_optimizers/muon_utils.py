@@ -19,6 +19,7 @@ import torch
 from absl import logging
 
 from emerging_optimizers import triton_kernels
+from emerging_optimizers.utils import get_pg_size
 
 
 __all__ = ["newton_schulz", "newton_schulz_tp", "NSCoeffT", "get_coefficient_iterator", "CoeffIterMode"]
@@ -306,7 +307,7 @@ def newton_schulz_tp(
 
     This function uses partition_dim to determine along which dimension the input tensor is sharded. Transpose is
     set based on the partition_dim. If partition_dim is None, the input tensor is not sharded and the function will
-    fall back to the non-TP path.
+    fall back to the non-TP path. It also falls back to the non-TP path if tp_group has size 1.
 
     Warning:
         If partition_dim is the smaller dim of the input tensor, `distributed` mode will run Newton-Schulz along the
@@ -333,7 +334,14 @@ def newton_schulz_tp(
             takes effect when the fp32 matmul precision is ``"medium"`` (see ``newton_schulz``).
             Falls back to GEMM when either matrix dimension is not a multiple of 8.
     """
-    if partition_dim is None:
+    if partition_dim is not None:
+        if tp_mode not in ("duplicated", "distributed"):
+            raise ValueError(f"Invalid tp_mode: {tp_mode}")
+        if tp_mode == "distributed" and partition_dim not in (0, 1):
+            raise ValueError(f"Invalid partition_dim: {partition_dim}")
+
+    tp_size = get_pg_size(tp_group)
+    if partition_dim is None or tp_size == 1:
         # Fallback path for non TP params.
         return newton_schulz(x, steps, coefficient_type, use_syrk=use_syrk)
 
@@ -344,22 +352,14 @@ def newton_schulz_tp(
     }
 
     if tp_mode == "duplicated":
-        x_shards = [torch.empty_like(x) for _ in range(tp_group.size())]
+        x_shards = [torch.empty_like(x) for _ in range(tp_size)]
         torch.distributed.all_gather(x_shards, x, tp_group)
         global_x = torch.cat(x_shards, dim=partition_dim)
 
         orthogonalized_x = newton_schulz(global_x, tp_group=None, **kwargs)
-        output = orthogonalized_x.chunk(tp_group.size(), dim=partition_dim)[tp_group.rank()]
-    elif tp_mode == "distributed":
-        if partition_dim == 0:
-            transpose = True
-        elif partition_dim == 1:
-            transpose = False
-        else:
-            raise ValueError(f"Invalid partition_dim: {partition_dim}")
-        output = newton_schulz(x, **kwargs, transpose=transpose, tp_group=tp_group)
+        output = orthogonalized_x.chunk(tp_size, dim=partition_dim)[tp_group.rank()]
     else:
-        raise ValueError(f"Invalid tp_mode: {tp_mode}")
+        output = newton_schulz(x, **kwargs, transpose=partition_dim == 0, tp_group=tp_group)
 
     return output
 
