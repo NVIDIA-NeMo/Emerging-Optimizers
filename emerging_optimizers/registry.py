@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from functools import partial
-from inspect import signature
+from inspect import Parameter, signature
 from typing import Any, Callable, Concatenate
 
 from absl import logging
@@ -73,9 +73,18 @@ def get_optimizer_cls(name: str) -> type[optim.Optimizer]:
 
 def validate_optimizer_args(opt_cls: type[optim.Optimizer], kwargs: dict[str, Any]) -> None:
     """Checks if kwargs are valid for the optimizer class signature."""
-    sig = signature(opt_cls)
+    supported_params = set[str]()
+    for cls in opt_cls.__mro__:
+        if "__init__" not in vars(cls):
+            continue
+        init_params = signature(vars(cls)["__init__"]).parameters.values()
+        for param in init_params:
+            if param.kind not in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD):
+                supported_params.add(param.name)
+        if all(p.kind != Parameter.VAR_KEYWORD for p in init_params):
+            break
+    supported_params.discard("self")
 
-    supported_params = set[str](sig.parameters.keys())
     unknown_args = set[str](kwargs.keys()) - supported_params
     unknown_args.discard("params")
     if unknown_args:
