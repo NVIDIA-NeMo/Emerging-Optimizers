@@ -74,13 +74,13 @@ def get_optimizer_cls(name: str) -> type[optim.Optimizer]:
 def validate_optimizer_args(opt_cls: type[optim.Optimizer], kwargs: dict[str, Any]) -> None:
     """Checks if kwargs are valid for the optimizer class signature."""
     supported_params = set[str]()
-    for klass in opt_cls.__mro__:
-        if "__init__" not in vars(klass):
+    for cls in opt_cls.__mro__:
+        if "__init__" not in vars(cls):
             continue
-        init_params = signature(vars(klass)["__init__"]).parameters.values()
-        supported_params.update(
-            p.name for p in init_params if p.kind not in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD)
-        )
+        init_params = signature(vars(cls)["__init__"]).parameters.values()
+        for param in init_params:
+            if param.kind not in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD):
+                supported_params.add(param.name)
         if all(p.kind != Parameter.VAR_KEYWORD for p in init_params):
             break
     supported_params.discard("self")
