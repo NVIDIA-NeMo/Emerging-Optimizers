@@ -34,7 +34,7 @@ def setUpModule() -> None:
             torch.cuda.manual_seed_all(FLAGS.seed)
 
 
-from emerging_optimizers.orthogonalized_optimizers import adaptive_muon, mop, muon, scion
+from emerging_optimizers.orthogonalized_optimizers import adaptive_muon, mop, muon, muon_hyperball, scion
 
 
 class TestRegistry(parameterized.TestCase):
@@ -92,6 +92,22 @@ class TestRegistry(parameterized.TestCase):
         """Test that validate_optimizer_args raises TypeError for unknown arguments."""
         with self.assertRaisesRegex(TypeError, "does not accept arguments.*nonexistent_arg"):
             registry.validate_optimizer_args(muon.Muon, {"nonexistent_arg": 42})
+
+    def test_get_configured_optimizer_accepts_args_forwarded_to_base_class(self) -> None:
+        opt_cls = registry.get_configured_optimizer_cls(
+            "muon_hyperball", lr=0.01, momentum=0.9, nesterov=True, hyperball_radius=1.0
+        )
+        param = torch.randn(10, 10, device=FLAGS.device)
+        param /= torch.linalg.vector_norm(param)
+        opt = opt_cls([param])
+        self.assertIsInstance(opt, muon_hyperball.MuonHyperball)
+        self.assertEqual(opt.param_groups[0]["lr"], 0.01)
+        self.assertEqual(opt.param_groups[0]["momentum"], 0.9)
+
+    @parameterized.parameters("nonexistent_arg", "args", "kwargs", "scaled_orthogonalize_fn")
+    def test_validate_optimizer_args_with_var_keyword_unknown_args_raises_type_error(self, arg_name: str) -> None:
+        with self.assertRaisesRegex(TypeError, f"does not accept arguments.*{arg_name}"):
+            registry.validate_optimizer_args(muon_hyperball.MuonHyperball, {arg_name: 42})
 
 
 if __name__ == "__main__":
