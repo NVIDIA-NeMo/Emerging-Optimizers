@@ -184,8 +184,8 @@ def _init_psgd_kron_states(
 
     # Create identity matrices scaled by precond_init_scale for each dimension
     for size in grad.shape:
-        q_list.append(torch.eye(size, device=grad.device) * precond_init_scale)
-        lip_const_list.append(torch.ones((), device=grad.device))
+        q_list.append(torch.eye(size, dtype=grad.dtype, device=grad.device) * precond_init_scale)
+        lip_const_list.append(torch.ones((), dtype=grad.dtype, device=grad.device))
 
     return q_list, lip_const_list
 

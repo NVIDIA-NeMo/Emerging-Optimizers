@@ -15,7 +15,7 @@
 
 import torch
 from absl import flags, logging
-from absl.testing import absltest
+from absl.testing import absltest, parameterized
 
 from emerging_optimizers.psgd.psgd import PSGDPro
 
@@ -33,7 +33,7 @@ def setUpModule() -> None:
             torch.cuda.manual_seed_all(FLAGS.seed)
 
 
-class TestPSGDPro(absltest.TestCase):
+class TestPSGDPro(parameterized.TestCase):
     def setUp(self) -> None:
         self.device = FLAGS.device
 
@@ -46,6 +46,20 @@ class TestPSGDPro(absltest.TestCase):
             param.grad = torch.randn_like(param)
             optimizer.step()
             self.assertEqual(optimizer.state[param]["step"], expected_step)
+
+    @parameterized.parameters(torch.float64, torch.bfloat16)
+    def test_step_with_non_fp32_param(self, dtype) -> None:
+        param = torch.randn(8, 4, device=self.device, dtype=dtype, requires_grad=True)
+        optimizer = PSGDPro([param], lr=0.01)
+
+        for _ in range(3):
+            param.grad = torch.randn_like(param)
+            optimizer.step()
+
+        self.assertEqual(param.dtype, dtype)
+        self.assertTrue(torch.isfinite(param).all())
+        for q in optimizer.state[param]["Q"]:
+            self.assertEqual(q.dtype, dtype)
 
 
 if __name__ == "__main__":
