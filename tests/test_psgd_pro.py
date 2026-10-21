@@ -15,7 +15,7 @@
 
 import torch
 from absl import flags, logging
-from absl.testing import absltest
+from absl.testing import absltest, parameterized
 
 from emerging_optimizers.psgd.psgd import PSGDPro
 
@@ -33,9 +33,23 @@ def setUpModule() -> None:
             torch.cuda.manual_seed_all(FLAGS.seed)
 
 
-class TestPSGDPro(absltest.TestCase):
+class TestPSGDPro(parameterized.TestCase):
     def setUp(self) -> None:
         self.device = FLAGS.device
+
+    @parameterized.parameters(
+        {"kwargs": {"lr": -0.01}, "message": "Invalid learning rate"},
+        {"kwargs": {"weight_decay": -0.1}, "message": "Invalid weight_decay value"},
+        {"kwargs": {"momentum": 1.0}, "message": "Invalid momentum"},
+        {"kwargs": {"beta_lip": 1.0}, "message": "Invalid beta_lip"},
+        {"kwargs": {"precond_lr": -0.1}, "message": "Invalid precond_lr"},
+        {"kwargs": {"min_precond_lr": -0.01}, "message": "Invalid min_precond_lr"},
+        {"kwargs": {"warmup_steps": 0}, "message": "Invalid warmup_steps"},
+    )
+    def test_invalid_arguments_raise(self, kwargs: dict, message: str) -> None:
+        param = torch.randn(4, 4, device=self.device, requires_grad=True)
+        with self.assertRaisesRegex(ValueError, message):
+            PSGDPro([param], **kwargs)
 
     def test_step_counter_increments(self) -> None:
         """PSGDPro must increment state['step'] each optimization step."""
