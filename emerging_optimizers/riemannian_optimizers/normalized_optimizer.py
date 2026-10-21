@@ -159,10 +159,10 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
 
 @registry.register_optimizer("oblique_steepest_sgd")
 class ObliqueSteepestSGD(ObliqueSGD):
-    """Muon-style steepest descent optimizer for parameters on Oblique manifolds.
+    r"""Muon-style steepest descent optimizer for parameters on Oblique manifolds.
 
     Unlike standard Riemannian SGD, this optimizer computes updates using a Linear Minimization
-    Oracle (LMO) with respect to the $l_1 \to \text{RMS}$ norm constraint. Mathematically, this
+    Oracle (LMO) with respect to the :math:`l_1 \to \text{RMS}` norm constraint. Mathematically, this
     is equivalent to finding the Euclidean descent direction, projecting it onto the tangent space,
     and normalizing the resulting directional vector.
 
