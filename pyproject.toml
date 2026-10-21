@@ -135,6 +135,7 @@ select = [
     "E741",  # ambiguous variable name
     "F821",  # undefined name
     "E266",  # too many leading '#' for block comment
+    "W605",  # invalid escape sequence
     "I",     # isort
     "D101",  # missing docstring in public class
     "D103",  # missing docstring in public function
