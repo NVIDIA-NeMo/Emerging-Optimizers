@@ -71,11 +71,20 @@ class TestConv1dFlatWeights(parameterized.TestCase):
         else:
             assert_equal(conv.weight.grad.view(-1), conv_flat.weight.grad.reshape(-1))
 
-    @parameterized.product(
-        bias=[False, True],
+    @parameterized.parameters(
+        dict(bias=True, padding=0, dilation=1, groups=1),
+        dict(bias=False, padding=1, dilation=2, groups=2),
     )
-    def test_extra_repr(self, bias):
-        conv_flat = Conv1dFlatWeights(in_channels=3, out_channels=4, kernel_size=2, bias=bias)
+    def test_extra_repr(self, bias, padding, dilation, groups):
+        conv_flat = Conv1dFlatWeights(
+            in_channels=4,
+            out_channels=6,
+            kernel_size=2,
+            bias=bias,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+        )
         print(conv_flat)
 
     @parameterized.product(
