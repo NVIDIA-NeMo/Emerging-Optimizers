@@ -175,6 +175,7 @@ class SoapV3AgainstLegacyTest(parameterized.TestCase):
         test_kwargs = {
             "lr": 2,
             "eps": 1 / 8,
+            "weight_decay": 1 / 16,
         }
 
         ref_param = raw.clone()
