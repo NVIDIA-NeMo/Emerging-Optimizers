@@ -232,18 +232,16 @@ def _update_precond_procrustes(
     updated_q_list: list[torch.Tensor] = []
     updated_lip_const_list: list[torch.Tensor] = []
     for dim, q in enumerate(q_list):
+        if q.dim() < 2:
+            # TODO(mkhona): Revisit 1D support. PSGDPro never reaches here and there was a bug in previous code.
+            raise RuntimeError(
+                f"1D Kronecker factors are not supported, got factor of shape {tuple(q.shape)} at dim {dim}"
+            )
         # compute gradient covariance
         precond_grad_cov = psgd_kron_contractions.partial_contraction(pg, pg, dim)
-        if q.dim() < 2:
-            # diagonal or scalar-structured preconditioner
-            q, updated_lip_const = _update_1d_preconditioner(
-                q, lip_const_list[dim], precond_grad_cov, total_numel, precond_lr, beta_lip
-            )
-        else:
-            # matrix-structured preconditioner
-            q, updated_lip_const = _update_matrix_preconditioner(
-                q, lip_const_list[dim], precond_grad_cov, total_numel, precond_lr, beta_lip
-            )
+        q, updated_lip_const = _update_matrix_preconditioner(
+            q, lip_const_list[dim], precond_grad_cov, total_numel, precond_lr, beta_lip
+        )
         updated_q_list.append(q)
         updated_lip_const_list.append(updated_lip_const)
 
@@ -277,35 +275,6 @@ def _update_matrix_preconditioner(
     lip_const = torch.max(beta_lip * lip_const + (1 - beta_lip) * ell, ell)
     q = q - precond_lr / lip_const * (precond_grad_cov @ q - normalization * q)
     q = procrustes_step(q)
-    return q, lip_const
-
-
-def _update_1d_preconditioner(
-    q: torch.Tensor,
-    lip_const: torch.Tensor,
-    precond_grad_cov: torch.Tensor,
-    total_numel: int,
-    precond_lr: float,
-    beta_lip: float,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    r"""Update 1D preconditioner with adaptive Lipschitz constant.
-
-    Args:
-        q: Kronecker factor 1D tensor for this dimension to update.
-        lip_const: Lipschitz constant for this dimension.
-        precond_grad_cov: Gradient covariance.
-        total_numel: Total number of elements in the gradient.
-        precond_lr: Learning rate.
-        beta_lip: EMA beta for the Lipschitz constant.
-
-    Returns:
-        q: Updated Kronecker factor 1D tensor for this dimension.
-        lip_const: Updated Lipschitz constant for this dimension.
-    """
-    normalization = total_numel / q.numel()
-    ell = torch.max(precond_grad_cov) + normalization
-    lip_const = torch.max(beta_lip * lip_const + (1 - beta_lip) * ell, ell)
-    q = q * (1 - precond_lr / lip_const * (precond_grad_cov - normalization))
     return q, lip_const
 
 
