@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import importlib
+import sys
 from unittest.mock import patch
 
 import torch
@@ -20,6 +22,7 @@ from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
+import emerging_optimizers
 from emerging_optimizers import triton_kernels
 from emerging_optimizers.triton_kernels import batched_syrk
 from emerging_optimizers.triton_kernels.batched_syrk import prune_invalid_batched_configs
@@ -51,6 +54,33 @@ def _make_batched_config(
         num_warps=num_warps,
         num_stages=num_stages,
     )
+
+
+class TritonImportFallbackTest(parameterized.TestCase):
+    def _import_triton_kernels_without(self, blocked_module: str):
+        with (
+            patch.dict(sys.modules, {blocked_module: None}),
+            patch.object(emerging_optimizers, "triton_kernels", triton_kernels),
+        ):
+            for name in [m for m in sys.modules if m.startswith("emerging_optimizers.triton_kernels")]:
+                if name != blocked_module:
+                    del sys.modules[name]
+            return importlib.import_module("emerging_optimizers.triton_kernels")
+
+    def test_missing_triton_sets_has_triton_340_false(self) -> None:
+        fallback_module = self._import_triton_kernels_without("triton")
+
+        self.assertIsNot(fallback_module, triton_kernels)
+        self.assertFalse(fallback_module.HAS_TRITON_340)
+        self.assertFalse(hasattr(fallback_module, "tsyrk_ex"))
+        self.assertIs(emerging_optimizers.triton_kernels, triton_kernels)
+
+    def test_other_missing_module_is_reraised(self) -> None:
+        blocked_module = "emerging_optimizers.triton_kernels.batched_syrk"
+        with self.assertRaises(ModuleNotFoundError) as cm:
+            self._import_triton_kernels_without(blocked_module)
+
+        self.assertEqual(cm.exception.name, blocked_module)
 
 
 class PruneInvalidConfigsTest(parameterized.TestCase):
