@@ -16,7 +16,7 @@ import torch
 from torch import Tensor
 
 
-__all__ = ["mat_fourth_root_inv_via_scaled_cans", "mat_root_inv_via_scaled_cans"]
+__all__ = ["mat_4th_root_inv_via_scaled_cans", "mat_root_inv_via_scaled_cans"]
 
 
 def mat_root_inv_via_scaled_cans(
@@ -97,7 +97,7 @@ def mat_root_inv_via_scaled_cans(
     return result if is_batched else result.squeeze(0)
 
 
-def mat_fourth_root_inv_via_scaled_cans(
+def mat_4th_root_inv_via_scaled_cans(
     x: Tensor,
     eps: float = 1e-12,
 ) -> Tensor:
@@ -131,7 +131,7 @@ def mat_fourth_root_inv_via_scaled_cans(
         TypeError: If ``x`` is not a square FP32 matrix or batch of square FP32 matrices.
         RuntimeError: If the active FP32 matmul precision is ``"medium"``.
     """
-    _CANS_FOURTH_ROOT_COEFFS = (
+    _CANS_4TH_ROOT_COEFFS = (
         (1.859955146405686, -1.8054311263887455),
         (1.8535345838379491, -1.774483796858544),
         (1.8398551149226694, -1.7099629175045363),
@@ -158,15 +158,17 @@ def mat_fourth_root_inv_via_scaled_cans(
     inf_norm = torch.linalg.matrix_norm(x, ord=float("inf"), dim=(-2, -1), keepdim=True).clamp_min_(eps)
     m = x / inf_norm
 
-    identity = torch.eye(x.shape[-1], device=x.device)
-    z = identity.expand(x.shape[0], -1, -1)
+    z = torch.eye(x.shape[-1], device=x.device)
+    z = z.expand(x.shape[0], -1, -1)
 
-    for beta, alpha in _CANS_FOURTH_ROOT_COEFFS[:-1]:
+    for beta, alpha in _CANS_4TH_ROOT_COEFFS[:-1]:
         z = torch.baddbmm(z, m, z, beta=beta, alpha=alpha)
-        s = (beta * beta) * identity + (2.0 * beta * alpha) * m + (alpha * alpha) * (m @ m)
+        t = alpha * m
+        t.diagonal(dim1=-2, dim2=-1).add_(beta)
+        s = t @ t
         m = (s @ s) @ m
 
-    beta, alpha = _CANS_FOURTH_ROOT_COEFFS[-1]
+    beta, alpha = _CANS_4TH_ROOT_COEFFS[-1]
     z = torch.baddbmm(z, m, z, beta=beta, alpha=alpha)
 
     z = z * inf_norm.pow(-0.25)

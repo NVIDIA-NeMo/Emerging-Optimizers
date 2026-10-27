@@ -121,11 +121,11 @@ def run_schedule_scalar(folded: CoeffTable, lam: np.ndarray, dtype: type) -> tup
     x = np.ones_like(lam)
     mu = lam.copy()
     coeffs = [(dtype(b), dtype(a)) for b, a in folded]
-    two = dtype(2.0)
     for beta, alpha in coeffs[:-1]:
         x = beta * x + alpha * (mu * x)
-        q2 = beta * beta + (two * beta * alpha) * mu + (alpha * alpha) * (mu * mu)
-        mu = (q2 * q2) * mu
+        q = beta + alpha * mu
+        s = q * q
+        mu = (s * s) * mu
     beta, alpha = coeffs[-1]
     x = beta * x + alpha * (mu * x)
     return x, mu
@@ -159,8 +159,9 @@ def fourth_root_inv_matrix(x: torch.Tensor, folded: CoeffTable) -> torch.Tensor:
     z = identity.clone()
     for beta, alpha in folded[:-1]:
         z = torch.addmm(z, m, z, beta=beta, alpha=alpha)
-        w = m @ m
-        s = (beta * beta) * identity + (2.0 * beta * alpha) * m + (alpha * alpha) * w
+        t = alpha * m
+        t.diagonal().add_(beta)
+        s = t @ t
         m = (s @ s) @ m
     beta, alpha = folded[-1]
     z = torch.addmm(z, m, z, beta=beta, alpha=alpha)
@@ -243,7 +244,7 @@ def main(argv: list[str]) -> None:
     print(f"\n{'=' * 100}")
     print(f"SELECTED: l0 = {l0:.0e} (smallest meeting bound <= {target_bound:.0e}, fp32 sim <= {target_fp32:.0e})")
     print(f"{'=' * 100}")
-    print("_CANS_FOURTH_ROOT_COEFFS = (")
+    print("_CANS_4TH_ROOT_COEFFS = (")
     for beta, alpha in folded:
         print(f"    ({beta!r}, {alpha!r}),")
     print(")")
