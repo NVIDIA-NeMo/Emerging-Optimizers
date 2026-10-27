@@ -128,6 +128,32 @@ class TpReklsCpuTest(parameterized.TestCase):
                     ref_local,
                 )
 
+    def test_invalid_partition_dim_raises_value_error(self):
+        param = torch.nn.Parameter(torch.randn(8, 16))
+        param.grad = torch.randn_like(param)
+        tp_optimizer = TpRekls([{"params": [param], "partition_dim": 2}], lr=1e-3, tp_group=self.tp_group)
+
+        with self.assertRaisesRegex(ValueError, "partition_dim must be 0, 1, or None"):
+            tp_optimizer.step()
+
+    def test_non_2d_param_raises_type_error(self):
+        param = torch.nn.Parameter(torch.randn(2, 8, 16))
+        param.grad = torch.randn_like(param)
+        tp_optimizer = TpRekls([param], lr=1e-3, tp_group=self.tp_group)
+
+        with self.assertRaisesRegex(TypeError, "only supported for 2D tensors"):
+            tp_optimizer.step()
+
+    def test_indivisible_full_shape_raises_value_error(self):
+        if self.world_size == 1:
+            self.skipTest("Every shape is divisible by tp_size=1")
+        param = torch.nn.Parameter(torch.randn(1, 3))
+        param.grad = torch.randn_like(param)
+        tp_optimizer = TpRekls([{"params": [param], "partition_dim": 0}], lr=1e-3, tp_group=self.tp_group)
+
+        with self.assertRaisesRegex(ValueError, "requires both dimensions to be divisible"):
+            tp_optimizer.step()
+
 
 if __name__ == "__main__":
     torch.distributed.init_process_group(backend="gloo")

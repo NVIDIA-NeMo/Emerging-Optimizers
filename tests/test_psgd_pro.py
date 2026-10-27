@@ -17,6 +17,7 @@ import torch
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
+from emerging_optimizers.psgd import psgd
 from emerging_optimizers.psgd.psgd import PSGDPro
 
 
@@ -50,6 +51,13 @@ class TestPSGDPro(parameterized.TestCase):
         param = torch.randn(4, 4, device=self.device, requires_grad=True)
         with self.assertRaisesRegex(ValueError, message):
             PSGDPro([param], **kwargs)
+
+    def test_update_precond_procrustes_1d_factor_raises_runtime_error(self) -> None:
+        q_list = [torch.ones(4, device=self.device), torch.eye(3, device=self.device)]
+        lip_const_list = [torch.ones((), device=self.device), torch.ones((), device=self.device)]
+
+        with self.assertRaisesRegex(RuntimeError, "1D Kronecker factors are not supported"):
+            psgd._update_precond_procrustes(q_list, lip_const_list, torch.randn(4, 3, device=self.device))
 
     def test_step_counter_increments(self) -> None:
         """PSGDPro must increment state['step'] each optimization step."""

@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from unittest.mock import patch
+
 import torch
 from _comparison import assert_equal
 from absl import flags, logging
@@ -182,14 +184,31 @@ class EigUtilsTest(BaseTestCase):
 
     def test_eigh_with_fallback_reraises_runtime_error_when_force_double(self) -> None:
         """Test that eigh_with_fallback re-raises when force_double=True and eigh fails."""
-        from unittest.mock import patch
-
         x = torch.randn(4, 4, device=self.device)
         x = x @ x.T
 
         with patch("torch.linalg.eigh", side_effect=RuntimeError("mock eigh failure")):
             with self.assertRaisesRegex(RuntimeError, "mock eigh failure"):
                 eig_utils.eigh_with_fallback(x, force_double=True)
+
+    def test_eigh_with_fallback_falls_back_to_double_on_linalg_error(self) -> None:
+        x = torch.randn(4, 4, device=self.device)
+        x = x @ x.T
+        real_eigh = torch.linalg.eigh
+
+        def fail_unless_double(a: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+            if a.dtype != torch.float64:
+                raise torch.linalg.LinAlgError("mock eigh failure")
+            return real_eigh(a)
+
+        with patch("torch.linalg.eigh", side_effect=fail_unless_double) as mock_eigh:
+            eigenvalues, eigenvectors = eig_utils.eigh_with_fallback(x)
+
+        self.assertEqual(mock_eigh.call_count, 2)
+        self.assertEqual(mock_eigh.call_args.args[0].dtype, torch.float64)
+        self.assertEqual(eigenvalues.dtype, x.dtype)
+        self.assertEqual(eigenvectors.dtype, x.dtype)
+        torch.testing.assert_close(eigenvalues, real_eigh(x.double()).eigenvalues.flip(-1).to(x.dtype))
 
 
 if __name__ == "__main__":

@@ -12,13 +12,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import importlib
+import sys
+from unittest.mock import patch
+
 import torch
 import triton
 from _comparison import assert_equal
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
+import emerging_optimizers
 from emerging_optimizers import triton_kernels
+from emerging_optimizers.triton_kernels import batched_syrk
 from emerging_optimizers.triton_kernels.batched_syrk import prune_invalid_batched_configs
 from emerging_optimizers.triton_kernels.syrk import prune_invalid_configs, prune_invalid_configs_for_small_matrix
 
@@ -48,6 +54,33 @@ def _make_batched_config(
         num_warps=num_warps,
         num_stages=num_stages,
     )
+
+
+class TritonImportFallbackTest(parameterized.TestCase):
+    def _import_triton_kernels_without(self, blocked_module: str):
+        with (
+            patch.dict(sys.modules, {blocked_module: None}),
+            patch.object(emerging_optimizers, "triton_kernels", triton_kernels),
+        ):
+            for name in [m for m in sys.modules if m.startswith("emerging_optimizers.triton_kernels")]:
+                if name != blocked_module:
+                    del sys.modules[name]
+            return importlib.import_module("emerging_optimizers.triton_kernels")
+
+    def test_missing_triton_sets_has_triton_340_false(self) -> None:
+        fallback_module = self._import_triton_kernels_without("triton")
+
+        self.assertIsNot(fallback_module, triton_kernels)
+        self.assertFalse(fallback_module.HAS_TRITON_340)
+        self.assertFalse(hasattr(fallback_module, "tsyrk_ex"))
+        self.assertIs(emerging_optimizers.triton_kernels, triton_kernels)
+
+    def test_other_missing_module_is_reraised(self) -> None:
+        blocked_module = "emerging_optimizers.triton_kernels.batched_syrk"
+        with self.assertRaises(ModuleNotFoundError) as cm:
+            self._import_triton_kernels_without(blocked_module)
+
+        self.assertEqual(cm.exception.name, blocked_module)
 
 
 class PruneInvalidConfigsTest(parameterized.TestCase):
@@ -417,6 +450,14 @@ class BatchedTsyrkExValidationTest(parameterized.TestCase):
         with self.assertRaisesRegex(RuntimeError, "out must be contiguous"):
             triton_kernels.batched_tsyrk_ex(a, out=out)
 
+    def test_batched_tsyrk_ex_without_triton_340_raises_runtime_error(self) -> None:
+        a = torch.randn(2, 16, 16, device=self.device, dtype=torch.bfloat16)
+        with (
+            patch.object(batched_syrk, "HAS_TRITON_340", False),
+            self.assertRaisesRegex(RuntimeError, "Minimum required version is 3.4.0"),
+        ):
+            triton_kernels.batched_tsyrk_ex(a)
+
     def test_can_use_batched_tsyrk(self) -> None:
         a = torch.randn(2, 128, 64, device=self.device, dtype=torch.bfloat16)
         c = torch.randn(2, 128, 128, device=self.device, dtype=torch.bfloat16)
@@ -460,6 +501,16 @@ class BatchedTsyrkIntegerInputTest(parameterized.TestCase):
         _ = triton_kernels.batched_tsyrk_ex(a_warmup)
         d = triton_kernels.batched_tsyrk_ex(a)
         assert_equal(d, ref)
+
+    def test_batched_tsyrk_ex_writes_into_out_tensor(self):
+        a = torch.randint(-3, 3, (2, 128, 128), device=self.device, dtype=torch.bfloat16)
+        out = torch.empty(2, 128, 128, device=self.device, dtype=torch.bfloat16)
+        _ = triton_kernels.batched_tsyrk_ex(torch.randint_like(a, -3, 3))
+
+        d = triton_kernels.batched_tsyrk_ex(a, out=out)
+
+        self.assertIs(d, out)
+        assert_equal(d, torch.bmm(a, a.mT))
 
     @parameterized.product(
         ({"b": 2, "n": 128, "alpha": 0.5, "beta": 0.5}, {"b": 4, "n": 256, "alpha": 0.25, "beta": 0.25}),

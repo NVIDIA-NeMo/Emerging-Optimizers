@@ -128,6 +128,23 @@ class SpelTest(parameterized.TestCase):
         normalized_gram = gram / expected_scale_sq
         assert_close_to_identity(normalized_gram, diag_atol=0.06, off_diag_atol=0.06)
 
+    def test_get_spel_scale_factor_invalid_mode_raises_value_error(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Invalid mode for Spel update scale factor"):
+            spel.get_spel_scale_factor(4, 4, mode="invalid")
+
+    def test_zero_num_ns_steps_raises_value_error(self) -> None:
+        test_param = nn.Parameter(torch.randn(4, 4, device=FLAGS.device))
+
+        with self.assertRaisesRegex(ValueError, "num_ns_steps must be at least 1"):
+            spel.Spel([test_param], lr=0.01, num_ns_steps=0)
+
+    def test_orthogonalize_non_2d_raises_value_error(self) -> None:
+        test_param = nn.Parameter(torch.randn(2, 4, 4, device=FLAGS.device))
+        spel_opt = spel.Spel([test_param], lr=0.01)
+
+        with self.assertRaisesRegex(ValueError, "Only 2D parameters are supported"):
+            spel_opt.orthogonalize(test_param, torch.randn_like(test_param))
+
 
 if __name__ == "__main__":
     absltest.main()

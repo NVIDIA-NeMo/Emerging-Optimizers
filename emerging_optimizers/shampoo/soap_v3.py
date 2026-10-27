@@ -334,7 +334,7 @@ class SoapBase(optim.Optimizer, opt_mixin.WeightDecayMixin):
         """
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
-                continue
+                continue  # pragma: no cover
 
             if p.dim() != 2:
                 raise TypeError(f"{type(self).__name__} is only supported for 2D tensors")

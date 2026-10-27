@@ -281,6 +281,30 @@ class AdaptiveMuonTest(parameterized.TestCase):
         with self.assertRaises(TypeError):
             adaptive_opt.step()
 
+    def test_apply_moment2_normalization_unknown_method_raise_type_error(self) -> None:
+        test_param = nn.Parameter(torch.randn(8, 16, device=FLAGS.device))
+        adaptive_opt = AdaptiveMuon([test_param], lr=0.01, momentum=0.9, weight_decay=0.0, moment2_method="unknown")
+
+        with self.assertRaisesRegex(TypeError, "Invalid second moment method"):
+            adaptive_opt._apply_moment2_normalization(
+                torch.randn(8, 16, device=FLAGS.device), torch.zeros(8, 16, device=FLAGS.device), 0.95, 1e-8
+            )
+
+    def test_namo_apply_moment2_normalization_without_raw_grad_raise_runtime_error(self) -> None:
+        test_param = nn.Parameter(torch.randn(8, 16, device=FLAGS.device))
+        adaptive_opt = AdaptiveMuon([test_param], lr=0.01, momentum=0.9, weight_decay=0.0, moment2_method="namo")
+
+        with self.assertRaisesRegex(RuntimeError, "NAMO requires raw_grad and pre_orth_grad"):
+            adaptive_opt._apply_moment2_normalization(
+                torch.randn(8, 16, device=FLAGS.device), torch.zeros(1, device=FLAGS.device), 0.95, 1e-8
+            )
+
+    def test_num_ns_steps_less_than_one_raise_value_error(self) -> None:
+        test_param = nn.Parameter(torch.randn(8, 16, device=FLAGS.device))
+
+        with self.assertRaisesRegex(ValueError, "num_ns_steps must be at least 1"):
+            AdaptiveMuon([test_param], lr=0.01, momentum=0.9, weight_decay=0.0, num_ns_steps=0)
+
     def test_namo_rejects_l2_weight_decay(self) -> None:
         """NAMO tracks raw gradient norms, so in-place L2 decay is unsupported."""
         test_param = nn.Parameter(torch.randint(-5, 5, (8, 16), dtype=torch.float32, device=FLAGS.device))

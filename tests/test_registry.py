@@ -14,6 +14,8 @@
 # limitations under the License.
 
 
+from unittest.mock import patch
+
 import torch
 from absl import flags, logging
 from absl.testing import absltest, parameterized
@@ -92,6 +94,27 @@ class TestRegistry(parameterized.TestCase):
         """Test that validate_optimizer_args raises TypeError for unknown arguments."""
         with self.assertRaisesRegex(TypeError, "does not accept arguments.*nonexistent_arg"):
             registry.validate_optimizer_args(muon.Muon, {"nonexistent_arg": 42})
+
+    def test_validate_optimizer_args_skips_class_without_init(self) -> None:
+        class MuonSubclass(muon.Muon):
+            pass
+
+        registry.validate_optimizer_args(MuonSubclass, {"lr": 0.01, "momentum": 0.9})
+        with self.assertRaisesRegex(TypeError, "does not accept arguments.*nonexistent_arg"):
+            registry.validate_optimizer_args(MuonSubclass, {"nonexistent_arg": 42})
+
+    def test_validate_optimizer_args_all_inits_accept_var_keyword(self) -> None:
+        class VarKeywordOptimizer(torch.optim.Optimizer):
+            def __init__(self, params, lr=0.1, **kwargs):
+                pass
+
+        def optimizer_init_with_var_keyword(self, params, defaults, **kwargs):
+            pass
+
+        with patch.object(torch.optim.Optimizer, "__init__", optimizer_init_with_var_keyword):
+            registry.validate_optimizer_args(VarKeywordOptimizer, {"lr": 0.01, "defaults": {}})
+            with self.assertRaisesRegex(TypeError, "does not accept arguments.*nonexistent_arg"):
+                registry.validate_optimizer_args(VarKeywordOptimizer, {"nonexistent_arg": 1})
 
     def test_get_configured_optimizer_accepts_args_forwarded_to_base_class(self) -> None:
         opt_cls = registry.get_configured_optimizer_cls(

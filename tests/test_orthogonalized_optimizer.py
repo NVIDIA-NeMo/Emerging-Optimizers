@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from unittest.mock import patch
+
 import torch
 import torch.nn as nn
 from _comparison import assert_equal
@@ -298,6 +300,14 @@ class MuonTest(parameterized.TestCase):
             ref_param.data,
         )
 
+    def test_use_syrk_disabled_without_triton_340(self) -> None:
+        test_param = nn.Parameter(torch.randn(32, 32, dtype=torch.float32, device=self.device))
+
+        with patch.object(muon.triton_kernels, "HAS_TRITON_340", False):
+            muon_opt = muon.Muon([test_param], use_syrk=True)
+
+        self.assertFalse(muon_opt.use_syrk)
+
     def test_use_independent_wd(self) -> None:
         """Test that use_independent_wd properly decouples weight decay from learning rate."""
         shape = (32, 32)
@@ -382,6 +392,16 @@ class MopTest(parameterized.TestCase):
             extra_scale_factor=extra_scale_factor,
         )
         mop_opt.step()
+
+    def test_polar_via_svd_return_p(self) -> None:
+        A = torch.randn(7, 5, dtype=torch.float32, device=self.device)
+
+        U, P, S = mop.polar_via_svd(A, return_p=True)
+
+        self.assertEqual(U.shape, A.shape)
+        self.assertEqual(P.shape, (5, 5))
+        self.assertEqual(S.shape, (5,))
+        torch.testing.assert_close(U @ P, A, atol=1e-5, rtol=1e-5)
 
 
 class MuonHyperballTest(parameterized.TestCase):

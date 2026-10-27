@@ -153,7 +153,7 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
         """
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
-                continue
+                continue  # pragma: no cover
             state = self.state[p]
 
             if len(state) == 0:
@@ -285,7 +285,7 @@ class AdaptiveMuon(OrthogonalizedOptimizer):
                     raise ValueError(f"{self.__class__.__name__} only supports 2D parameters")
                 grad = p.grad
                 if grad is None:
-                    continue
+                    continue  # pragma: no cover
                 state = self.state[p]
 
                 exp_avg = state["momentum_buffer"]

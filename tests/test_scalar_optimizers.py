@@ -24,6 +24,8 @@ from emerging_optimizers.scalar_optimizers import (
     SimplifiedAdEMAMix,
     update_functions,
 )
+from emerging_optimizers.scalar_optimizers.base import SingleMomentumOptimizer
+from emerging_optimizers.scalar_optimizers.update_functions import _schedulers
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -362,6 +364,98 @@ class UpdateFunctionTest(parameterized.TestCase):
         # With separate beta2, momentum uses beta2
         expected_exp_avg = torch.lerp(exp_avg_clone, grad, 1 - beta2)
         torch.testing.assert_close(exp_avg, expected_exp_avg, atol=1e-6, rtol=1e-6)
+
+    @parameterized.parameters(True, False)
+    def test_calculate_adam_update_nesterov_smoke(self, correct_bias: bool) -> None:
+        grad = torch.randn(4, 5, device=self.device)
+        exp_avg = torch.randn(4, 5, device=self.device)
+        exp_avg_sq = torch.rand(4, 5, device=self.device)
+
+        update = update_functions.calculate_adam_update(
+            grad,
+            exp_avg,
+            exp_avg_sq,
+            betas=(0.9, 0.99),
+            eps=1e-8,
+            correct_bias=correct_bias,
+            nesterov=True,
+            step=3,
+        )
+
+        self.assertEqual(update.shape, grad.shape)
+        self.assertTrue(torch.isfinite(update).all())
+
+    def test_calculate_ademamix_update_with_alpha_warmup_smoke(self) -> None:
+        grad = torch.randn(4, 5, device=self.device)
+
+        update = update_functions.calculate_ademamix_update(
+            grad,
+            torch.zeros_like(grad),
+            torch.zeros_like(grad),
+            torch.zeros_like(grad),
+            betas=(0.9, 0.99, 0.999),
+            eps=1e-8,
+            correct_bias=True,
+            step=1,
+            num_beta_slow_warmup_steps=4,
+            num_alpha_warmup_steps=4,
+        )
+
+        self.assertEqual(update.shape, grad.shape)
+        self.assertTrue(torch.isfinite(update).all())
+
+    def test_calculate_sim_ademamix_update_with_beta_fast_warmup_smoke(self) -> None:
+        grad = torch.randn(4, 5, device=self.device)
+
+        update = update_functions.calculate_sim_ademamix_update(
+            grad,
+            torch.zeros_like(grad),
+            torch.zeros_like(grad),
+            betas=(0.99, 0.999),
+            eps=1e-8,
+            correct_bias=True,
+            step=1,
+            num_beta_fast_warmup_steps=4,
+            min_beta_fast=0.9,
+        )
+
+        self.assertEqual(update.shape, grad.shape)
+        self.assertTrue(torch.isfinite(update).all())
+
+
+class SchedulersTest(parameterized.TestCase):
+    @parameterized.parameters(0.0, 0.5, 0.9, 0.999)
+    def test_inverse_half_life_beta_inverts_half_life_steps(self, beta: float) -> None:
+        self.assertAlmostEqual(_schedulers._inverse_half_life_beta(_schedulers._half_life_steps(beta)), beta, places=6)
+
+    def test_linear_half_life_warmup_scheduler(self) -> None:
+        kwargs = dict(beta_end=0.999, beta_start=0.9, num_warmup_steps=10)
+
+        self.assertAlmostEqual(_schedulers._linear_half_life_warmup_scheduler(0, **kwargs), 0.9, places=6)
+        mid_beta = _schedulers._linear_half_life_warmup_scheduler(5, **kwargs)
+        self.assertGreater(mid_beta, 0.9)
+        self.assertLess(mid_beta, 0.999)
+        self.assertEqual(_schedulers._linear_half_life_warmup_scheduler(10, **kwargs), 0.999)
+
+    def test_linear_warmup_scheduler(self) -> None:
+        kwargs = dict(alpha_end=2.0, alpha_start=0.0, num_warmup_steps=4)
+
+        self.assertEqual(_schedulers._linear_warmup_scheduler(0, **kwargs), 0.0)
+        self.assertEqual(_schedulers._linear_warmup_scheduler(2, **kwargs), 1.0)
+        self.assertEqual(_schedulers._linear_warmup_scheduler(4, **kwargs), 2.0)
+
+
+class ScalarOptimizerBaseTest(parameterized.TestCase):
+    def test_update_kwarg_names_missing_from_defaults_raises_value_error(self) -> None:
+        param = torch.nn.Parameter(torch.randn(3, 3, device=FLAGS.device))
+
+        with self.assertRaisesRegex(ValueError, r"update_kwarg_names \['betas'\] not present in defaults"):
+            SingleMomentumOptimizer(
+                [param],
+                {"lr": 0.1, "weight_decay": 0.0},
+                update_fn=update_functions.calculate_lion_update,
+                update_kwarg_names=("betas",),
+            )
 
 
 class MAdamUpdateTest(parameterized.TestCase):

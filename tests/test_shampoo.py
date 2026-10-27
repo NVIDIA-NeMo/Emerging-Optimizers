@@ -300,6 +300,14 @@ class KlShampooPreconditionerTest(parameterized.TestCase):
         assert_equal(preconditioner.kronecker_factor_pair.L, reference_factors[0])
         assert_equal(preconditioner.kronecker_factor_pair.R, reference_factors[1])
 
+    def test_rebind_state_missing_key_raises(self) -> None:
+        state = KlShampooPreconditioner.init_state((4, 4), self.device)
+        preconditioner = KlShampooPreconditioner(state, p_root_inv=2, eps=1e-8)
+        del state["eigvals_R"]
+
+        with self.assertRaisesRegex(KeyError, "missing keys.*eigvals_R"):
+            preconditioner.rebind_state(state)
+
     def test_precondition_rebinds_current_eigendecomposition(self) -> None:
         m, n = 6, 4
         state = KlShampooPreconditioner.init_state((m, n), self.device)
