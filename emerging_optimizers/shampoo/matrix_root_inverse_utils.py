@@ -106,8 +106,7 @@ def mat_4th_root_inv_via_scaled_cans(
     Runs the coupled iteration ``Z <- q(M) Z``, ``M <- q(M)^4 M`` with per-step degree-one
     polynomials ``q(m) = beta + alpha * m``, so ``Z`` converges to the inverse fourth root of the
     normalized input. The ten-step schedule was derived by a greedy per-step interval-ratio
-    optimization for normalized eigenvalues in ``[1e-7, 1]`` (see
-    ``benchmarks/fourth_root_inv_cans_schedule.py``, which derives and verifies the table).
+    optimization for normalized eigenvalues in ``[1e-7, 1]``.
     Like :func:`mat_root_inv_via_scaled_cans`, it normalizes with the matrix infinity norm rather
     than the exact spectral norm. The infinity norm is an inexpensive upper bound, but can
     conservatively scale matrices whose rows contain substantial cancellation and consequently
