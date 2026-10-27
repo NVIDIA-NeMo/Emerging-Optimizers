@@ -246,7 +246,9 @@ def main(argv: list[str]) -> None:
     print(f"{'=' * 100}")
     print("_CANS_4TH_ROOT_COEFFS = (")
     for beta, alpha in folded:
-        print(f"    ({beta!r}, {alpha!r}),")
+        beta_str = np.format_float_positional(np.float32(beta), unique=True, trim="0")
+        alpha_str = np.format_float_positional(np.float32(alpha), unique=True, trim="0")
+        print(f"    ({beta_str}, {alpha_str}),")
     print(")")
 
     print(f"\nmatrix check on device={FLAGS.device} (rel spectral err vs float64 eigh ref; max |Z^2 A Z^2 - I|):")
