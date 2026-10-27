@@ -18,7 +18,7 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
-from emerging_optimizers.legacy_soap.matrix_root_inverse_utils import (
+from emerging_optimizers.shampoo.matrix_root_inverse_utils import (
     inv_root_via_eigh,
     mat_4th_root_inv_via_scaled_cans,
     mat_root_inv_via_scaled_cans,
