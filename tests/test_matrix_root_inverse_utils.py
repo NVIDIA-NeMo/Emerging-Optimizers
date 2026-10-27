@@ -195,13 +195,14 @@ class MatrixRootInverseUtilsTest(parameterized.TestCase):
         ):
             mat_4th_root_inv_via_scaled_cans(torch.eye(4, device=FLAGS.device))
 
-    @parameterized.parameters(8, 16, 32)
-    def test_inv_root_via_eigh_reconstruct_idendity(self, m) -> None:
+    @parameterized.product(m=[8, 16, 32], p_root_inv=[2, 4])
+    def test_inv_root_via_eigh_reconstruct_idendity(self, m: int, p_root_inv: int) -> None:
         x = torch.randn(m, m)
         test_matrix = 0.5 * x @ x.mT + torch.eye(m) * 1e-3
 
-        inverse_root = inv_root_via_eigh(test_matrix)
-        assert_close_to_identity(inverse_root @ test_matrix @ inverse_root, off_diag_atol=1e-3, diag_atol=1e-3)
+        inverse_root = inv_root_via_eigh(test_matrix, p_root_inv)
+        whitening = torch.linalg.matrix_power(inverse_root, p_root_inv // 2)
+        assert_close_to_identity(whitening @ test_matrix @ whitening, off_diag_atol=1e-3, diag_atol=1e-3)
 
 
 if __name__ == "__main__":
