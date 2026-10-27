@@ -482,6 +482,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
             fp32_matmul_prec="highest",
             qr_fp32_matmul_prec="highest",
             correct_shampoo_beta_bias=False,
+            use_kl_shampoo=False,
         )
         ref_optimizer = soap_reference.ReferenceSoap(
             [param_ref],
@@ -535,6 +536,7 @@ class SoapVsReferenceTest(parameterized.TestCase):
             weight_decay_method="l2",
             fp32_matmul_prec="highest",
             qr_fp32_matmul_prec="highest",
+            use_kl_shampoo=False,
         )
         ref_optimizer = soap_reference.ReferenceSoap(
             [param_ref],

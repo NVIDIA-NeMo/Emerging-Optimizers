@@ -255,10 +255,10 @@ class MuonTest(parameterized.TestCase):
         """
         test_param = nn.Parameter(torch.randn(5, 7, dtype=torch.float32, device=self.device))
 
-        num_ns_steps = 5
-        coefficient_type = "quintic"
+        num_ns_steps = 8
+        coefficient_type = "polar_express"
         scale_mode = "spectral"
-        extra_scale_factor = 1.0
+        extra_scale_factor = 0.2
         use_syrk = False
 
         muon_opt = muon.Muon([test_param])

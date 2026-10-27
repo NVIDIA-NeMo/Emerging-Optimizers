@@ -56,6 +56,9 @@ class Muon(OrthogonalizedOptimizer[HookStateT]):
           [`arXiv:2410.21265 <https://arxiv.org/abs/2410.21265>`_]
         - *Training Deep Learning Models with Norm-Constrained LMOs.* arXiv:2502.07529 (2025).
           [`arXiv:2502.07529 <https://arxiv.org/abs/2502.07529>`_]
+        - *SOAP, Muon, and Beyond.* arXiv:2607.20548 (2026). Default hyperparameters follow this recipe,
+          except for using 8 Polar Express steps instead of 16.
+          [`arXiv:2607.20548 <https://arxiv.org/abs/2607.20548>`_]
 
     Warning:
         - This optimizer requires that all parameters passed in are 2D.
@@ -68,8 +71,9 @@ class Muon(OrthogonalizedOptimizer[HookStateT]):
             ["simple", "quintic", "polar_express", "cans", "aol", "deepseekv4", "cubic5", "custom"].
         num_ns_steps: The number of iteration steps to use in the Newton-Schulz iteration.
         scale_mode: The type of scale factor to use for the update. Defaults to "spectral" style scaling.
-        extra_scale_factor: The additional scale factor to use for the update. Setting it to 0.2 can closely match
-            the update RMS norm of AdamW as suggested by https://arxiv.org/abs/2502.16982.
+        extra_scale_factor: The additional scale factor to use for the update. Defaults to 0.2, following the recipe
+            in https://arxiv.org/abs/2607.20548, which closely matches the update RMS norm of AdamW as suggested by
+            https://arxiv.org/abs/2502.16982.
         use_syrk: Whether to use the Triton kernel for the Newton-Schulz iteration.
     """
 
@@ -77,16 +81,16 @@ class Muon(OrthogonalizedOptimizer[HookStateT]):
         self,
         params: ParamsT,
         lr: float = 3e-4,
-        momentum: float = 0.95,
-        weight_decay: float = 0.01,
+        momentum: float = 0.9,
+        weight_decay: float = 0.1,
         *,
         nesterov: bool = False,
         weight_decay_method: WeightDecayT = "decoupled",
         fp32_matmul_prec: FP32MatmulPrecT = "medium",
-        coefficient_type: NSCoeffT = "quintic",
-        num_ns_steps: int = 5,
+        coefficient_type: NSCoeffT = "polar_express",
+        num_ns_steps: int = 8,
         scale_mode: MuonScaleT = "spectral",
-        extra_scale_factor: float = 1.0,
+        extra_scale_factor: float = 0.2,
         use_syrk: bool = False,
         weight_update_hook: WeightUpdateHook[HookStateT] | None = None,
     ) -> None:

@@ -48,7 +48,8 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
     SOAP (https://arxiv.org/abs/2409.11321) is a preconditioned optimizer that combines the benefits of Shampoo's
     non-diagonal preconditioning with Adam's adaptive learning rates. It uses
     gradient correlation matrix eigenbasis-based preconditioning to adapt to the local geometry of the
-    optimization landscape.
+    optimization landscape. Default hyperparameters follow the recipe in *SOAP, Muon, and Beyond*
+    (https://arxiv.org/abs/2607.20548).
 
     Args:
         params: Iterable of parameters to optimize or dicts defining parameter groups
@@ -83,7 +84,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         betas: tuple[float, float] = (0.9, 0.95),
         shampoo_beta: float = 0.95,
         eps: float = 1e-8,
-        weight_decay: float = 0.01,
+        weight_decay: float = 0.1,
         *,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         nesterov: bool = False,
@@ -93,7 +94,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         qr_fp32_matmul_prec: FP32MatmulPrecT = "high",
         power_iter_steps: int = 1,
         max_update_rms: float = 0.0,
-        use_kl_shampoo: bool = False,
+        use_kl_shampoo: bool = True,
         correct_shampoo_beta_bias: bool | None = None,
         stream_list: list[torch.cuda.Stream] | None = None,
     ) -> None:

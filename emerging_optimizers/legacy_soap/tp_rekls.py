@@ -130,7 +130,7 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
         betas: tuple[float, float] = (0.9, 0.95),
         shampoo_beta: float = 0.95,
         eps: float = 1e-8,
-        weight_decay: float = 0.01,
+        weight_decay: float = 0.1,
         *,
         weight_decay_method: opt_mixin.WeightDecayT = "decoupled",
         tp_group: dist.ProcessGroup,
