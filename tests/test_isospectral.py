@@ -19,6 +19,7 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import registry
+from emerging_optimizers.riemannian_optimizers import isospectral
 from emerging_optimizers.riemannian_optimizers.isospectral import Iso
 
 
@@ -110,6 +111,28 @@ class IsospectralTest(parameterized.TestCase):
         param = torch.nn.Parameter(torch.randn((2, 2), device=FLAGS.device))
         with self.assertRaisesRegex(ValueError, message):
             Iso([param], **kwargs)
+
+    def test_init_state_rejects_non_matrix_parameter(self) -> None:
+        param = torch.nn.Parameter(torch.randn(4, device=FLAGS.device))
+        optimizer = Iso([param])
+
+        with self.assertRaisesRegex(ValueError, "only supports 2D"):
+            optimizer._init_state(param)
+
+    def test_rejects_sparse_gradient(self) -> None:
+        param = torch.nn.Parameter(torch.randn(4, 4, device=FLAGS.device))
+        optimizer = Iso([param])
+        param.grad = torch.randn_like(param).to_sparse()
+
+        with self.assertRaisesRegex(ValueError, "does not support sparse gradients"):
+            optimizer.step()
+
+    def test_retract_factors_rejects_invalid_retraction(self) -> None:
+        u = torch.randn(4, 2, device=FLAGS.device)
+        v = torch.randn(3, 2, device=FLAGS.device)
+
+        with self.assertRaisesRegex(ValueError, "Invalid retraction"):
+            isospectral._retract_factors(u, v, torch.zeros_like(u), torch.zeros_like(v), 1e-3, "invalid")
 
     def test_registered_as_iso(self) -> None:
         self.assertIs(registry.get_optimizer_cls("iso"), Iso)

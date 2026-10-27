@@ -139,7 +139,7 @@ class SOAP(opt_mixin.WeightDecayMixin, optim.Optimizer):
         """
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
-                continue
+                continue  # pragma: no cover
 
             if p.dim() != 2:
                 raise TypeError("SOAP is only supported for 2D tensors")

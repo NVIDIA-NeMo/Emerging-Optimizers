@@ -90,6 +90,21 @@ class SoapUtilsTest(BaseTestCase):
                 msg=lambda msg: f"eigvals do not match the Rayleigh quotients diag(Q^T K Q)\n\n{msg}",
             )
 
+    def test_get_eigenbasis_svd_smoke(self) -> None:
+        kronecker_factor_list = []
+        for dim in (16, 32):
+            k_factor = torch.randn(dim, dim, device=self.device)
+            kronecker_factor_list.append(k_factor @ k_factor.T + torch.eye(dim, device=self.device) * 1e-5)
+
+        Q_list = soap_utils.get_eigenbasis_svd(kronecker_factor_list)
+
+        self.assertEqual(len(Q_list), len(kronecker_factor_list))
+        for Q, k_factor in zip(Q_list, kronecker_factor_list, strict=True):
+            self.assertEqual(Q.shape, k_factor.shape)
+            with utils.fp32_matmul_precision("highest"):
+                orthogonality_check = Q.T @ Q
+            assert_close_to_identity(orthogonality_check, diag_atol=1e-4, off_diag_atol=1e-4)
+
     @parameterized.parameters(  # type: ignore[misc]
         {"dims": [128, 512]},
         {"dims": []},

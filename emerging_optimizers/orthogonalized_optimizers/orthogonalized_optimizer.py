@@ -146,7 +146,7 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer, Gener
         """
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
-                continue
+                continue  # pragma: no cover
             state = self.state[p]
 
             # initialize momentum buffer

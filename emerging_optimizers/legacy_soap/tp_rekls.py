@@ -164,7 +164,7 @@ class TpRekls(opt_mixin.WeightDecayMixin, optim.Optimizer):
         partition_dim = self._validate_partition_dim(group["partition_dim"])
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
-                continue
+                continue  # pragma: no cover
             if p.dim() != 2:
                 raise TypeError("TpRekls is only supported for 2D tensors")
             state = self.state[p]

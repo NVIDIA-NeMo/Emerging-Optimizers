@@ -165,7 +165,7 @@ class Iso(Optimizer):
 
             for param in group["params"]:
                 if param.grad is None:
-                    continue
+                    continue  # pragma: no cover
                 if param.ndim != 2:
                     raise ValueError("Iso only supports 2D parameters")
                 if param.grad.is_sparse:

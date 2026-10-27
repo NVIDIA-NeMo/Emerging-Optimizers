@@ -83,6 +83,11 @@ class MatrixRootInverseUtilsTest(parameterized.TestCase):
             assert_close_to_identity(whitened_matrix_slice, off_diag_atol=2e-4, diag_atol=2e-4)
         torch.testing.assert_close(reconstructed_matrix, matrix, atol=2e-4, rtol=2e-4)
 
+    @parameterized.parameters((4, 3), (2, 2, 4, 4))
+    def test_mat_root_inv_via_scaled_cans_rejects_non_square_shape(self, *shape: int) -> None:
+        with self.assertRaisesRegex(TypeError, "must be a square matrix"):
+            mat_root_inv_via_scaled_cans(torch.ones(shape, device=FLAGS.device))
+
     def test_mat_root_inv_via_scaled_cans_rejects_non_fp32_tensor(self) -> None:
         with self.assertRaisesRegex(TypeError, "must be in float32"):
             mat_root_inv_via_scaled_cans(torch.eye(4, device=FLAGS.device, dtype=torch.bfloat16))

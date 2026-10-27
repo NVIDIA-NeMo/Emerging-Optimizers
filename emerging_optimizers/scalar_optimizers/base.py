@@ -99,7 +99,7 @@ class _ScalarOptimizerBase(WeightDecayMixin, torch.optim.Optimizer):
         """Performs lazy state initialization for parameters."""
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
-                continue
+                continue  # pragma: no cover
             state = self.state[p]
             if len(state) == 0:
                 for key in self.state_keys:

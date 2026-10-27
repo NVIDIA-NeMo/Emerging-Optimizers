@@ -24,6 +24,7 @@ from emerging_optimizers.riemannian_optimizers import (
     ObliqueSGD,
     ObliqueSteepestAdam,
     ObliqueSteepestSGD,
+    normalized_optimizer,
 )
 
 
@@ -236,6 +237,21 @@ class NormalizedOptimizerFunctionalTest(parameterized.TestCase):
         opt = opt_cls([param])
         with self.assertRaisesRegex(ValueError, "only supports 2D"):
             opt.step()
+
+    def test_oblique_adam_without_bias_correction_smoke(self) -> None:
+        param = torch.nn.Parameter(torch.randn(3, 4, device=self.device))
+        opt = ObliqueAdam([param], lr=0.01, correct_bias=False)
+
+        for _ in range(3):
+            param.grad = torch.randn_like(param)
+            opt.step()
+
+        self.assertTrue(torch.isfinite(param).all())
+
+    def test_compute_scale_factor_invalid_scale_mode_raises_value_error(self) -> None:
+        param = torch.randn(3, 4, device=self.device)
+        with self.assertRaisesRegex(ValueError, "Invalid scale mode"):
+            normalized_optimizer._compute_scale_factor(param, 0, "invalid")
 
     def test_oblique_adam_matches_adamw_oracle(self) -> None:
         """Verify ObliqueAdam's pre-tangent update matches torch.optim.AdamW bias correction."""

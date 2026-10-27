@@ -93,6 +93,14 @@ class TestRegistry(parameterized.TestCase):
         with self.assertRaisesRegex(TypeError, "does not accept arguments.*nonexistent_arg"):
             registry.validate_optimizer_args(muon.Muon, {"nonexistent_arg": 42})
 
+    def test_validate_optimizer_args_skips_class_without_init(self) -> None:
+        class MuonSubclass(muon.Muon):
+            pass
+
+        registry.validate_optimizer_args(MuonSubclass, {"lr": 0.01, "momentum": 0.9})
+        with self.assertRaisesRegex(TypeError, "does not accept arguments.*nonexistent_arg"):
+            registry.validate_optimizer_args(MuonSubclass, {"nonexistent_arg": 42})
+
     def test_get_configured_optimizer_accepts_args_forwarded_to_base_class(self) -> None:
         opt_cls = registry.get_configured_optimizer_cls(
             "muon_hyperball", lr=0.01, momentum=0.9, nesterov=True, hyperball_radius=1.0

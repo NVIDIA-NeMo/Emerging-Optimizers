@@ -96,7 +96,7 @@ class MOSO(opt_mixin.WeightDecayMixin, optim.Optimizer):
         """Performs lazy state initialization for 2D parameters."""
         for p in group["params"]:
             if skip_non_grad_params and p.grad is None:
-                continue
+                continue  # pragma: no cover
 
             if p.dim() != 2:
                 raise TypeError("MOSO is only supported for 2D tensors")

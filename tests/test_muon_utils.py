@@ -551,6 +551,20 @@ class TestNewtonSchulzStepWithTsyrk(parameterized.TestCase):
 
         assert_equal(test_out, test_ref)
 
+    def test_zero_c_match_newton_schulz_step_by_gemm(self):
+        x = torch.randint(-2, 3, (32, 64), device=self.device, dtype=torch.bfloat16)
+        test_out = muon_utils.newton_schulz_step_tsyrk(x, 2**-1, 2**-2, 0.0)
+        test_ref = muon_utils.newton_schulz_step(x, 2**-1, 2**-2, 0.0)
+
+        assert_equal(test_out, test_ref)
+
+    def test_zero_c_batched_match_unbatched_tsyrk_step(self):
+        x = torch.randint(-2, 3, (4, 32, 64), device=self.device, dtype=torch.bfloat16)
+        test_out = muon_utils.batched_newton_schulz_step_tsyrk(x, 2**-1, 2**-2, 0.0)
+        test_ref = torch.stack([muon_utils.newton_schulz_step_tsyrk(x[i], 2**-1, 2**-2, 0.0) for i in range(4)])
+
+        assert_equal(test_out, test_ref)
+
     def test_newton_schulz_3d_use_syrk_matches_gemm_path(self):
         x = torch.randint(-3, 4, (4, 32, 64), device=self.device, dtype=torch.float32)
         with utils.fp32_matmul_precision("medium"):

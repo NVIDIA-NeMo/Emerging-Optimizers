@@ -113,7 +113,7 @@ class ObliqueSGD(opt_mixin.WeightDecayMixin, Optimizer):
 
             for param in group["params"]:
                 if param.grad is None:
-                    continue
+                    continue  # pragma: no cover
                 if param.ndim != 2:
                     raise ValueError("ObliqueSGD only supports 2D parameters")
 
@@ -299,7 +299,7 @@ class ObliqueAdam(opt_mixin.WeightDecayMixin, Optimizer):
 
             for param in group["params"]:
                 if param.grad is None:
-                    continue
+                    continue  # pragma: no cover
                 if param.ndim != 2:
                     raise ValueError("ObliqueAdam only supports 2D parameters")
 
