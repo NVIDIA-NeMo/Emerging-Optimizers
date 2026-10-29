@@ -32,20 +32,19 @@ __all__ = [
 class KlShampooCansPreconditioner(ShampooPreconditioner):
     """KL-corrected Shampoo preconditioner computing root inverses with CANS instead of eigh.
 
-    Each Kronecker factor is applied as ``(A + ridge * I)^(-1/p_root_inv)`` via the fixed-schedule
-    CANS routines, with ``ridge = eps + 1e-7 * ||A||_inf``; the relative term pins the regularized
-    spectrum inside the schedules' ``[1e-7, 1]`` design range, which is normalized by the same
-    infinity norm. The KL-corrected factor update needs the
-    eigendecomposition only through the regularized inverse ``Q diag(lambda^-1) Q^T``, so the dense
-    inverses obtained by squaring the root inverses are stored as ``inv_L``/``inv_R`` state,
-    refreshed at each :meth:`precondition` call and consumed by the next step's
-    :meth:`update_kronecker_factors` -- the same one-step staleness as
+    Each Kronecker factor is applied as ``A^(-1/p_root_inv)`` via the fixed-schedule CANS routines.
+    No explicit regularization is added: eigenvalues below the schedules' design floor (``1e-7``
+    relative to the factor's infinity norm) saturate at a bounded value instead of diverging. The
+    KL-corrected factor update needs the eigendecomposition only through the inverse
+    ``Q diag(lambda^-1) Q^T``, so the dense inverses obtained by squaring the root inverses are
+    stored as ``inv_L``/``inv_R`` state, refreshed at each :meth:`precondition` call and consumed
+    by the next step's :meth:`update_kronecker_factors` -- the same one-step staleness as
     :class:`~emerging_optimizers.shampoo.shampoo.KlShampooPreconditioner`'s eigenbasis.
 
     Args:
         state: Per-parameter optimizer state holding ``L``, ``R``, ``inv_L``, and ``inv_R``.
         p_root_inv: Inverse root order; each factor is applied as ``A^(-1/p_root_inv)``.
-        eps: Absolute term of the ridge added to the factors before inversion.
+        eps: Unused; accepted to match the preconditioner construction interface.
 
     Raises:
         ValueError: If ``p_root_inv`` has no CANS schedule.
@@ -124,9 +123,7 @@ class KlShampooCansPreconditioner(ShampooPreconditioner):
             root_invs = []
             invs = []
             for factor in self.kronecker_factor_pair:
-                ridge = self.eps + 1e-7 * torch.linalg.matrix_norm(factor, ord=float("inf"))
-                regularized = factor + ridge * torch.eye(factor.shape[-1], device=factor.device)
-                root_inv = self._root_inv_fn(regularized)
+                root_inv = self._root_inv_fn(factor)
                 inv = root_inv @ root_inv
                 if self.p_root_inv == 4:
                     inv = inv @ inv

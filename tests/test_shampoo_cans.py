@@ -34,10 +34,6 @@ def setUpModule() -> None:
             torch.cuda.manual_seed_all(FLAGS.seed)
 
 
-def _ridge(factor: torch.Tensor, eps: float) -> torch.Tensor:
-    return eps + 1e-7 * torch.linalg.matrix_norm(factor, ord=float("inf"))
-
-
 class KlShampooCansPreconditionerTest(parameterized.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -85,11 +81,7 @@ class KlShampooCansPreconditionerTest(parameterized.TestCase):
 
         references = {}
         for key in ("L", "R"):
-            factor = state[key]
-            regularized = factor.double() + _ridge(factor, eps).double() * torch.eye(
-                factor.shape[-1], device=self.device, dtype=torch.float64
-            )
-            w, v = torch.linalg.eigh(regularized)
+            w, v = torch.linalg.eigh(state[key].double())
             references[key] = (v * w.pow(-1.0 / p_root_inv)) @ v.mT
         expected = (references["L"] @ x.double() @ references["R"]).float()
 
@@ -102,21 +94,19 @@ class KlShampooCansPreconditionerTest(parameterized.TestCase):
         )
 
     @parameterized.parameters(2, 4)
-    def test_precondition_stores_regularized_inverse(self, p_root_inv: int) -> None:
+    def test_precondition_stores_inverse(self, p_root_inv: int) -> None:
         m, n = 8, 6
-        eps = 1e-8
         state = KlShampooCansPreconditioner.init_state((m, n), self.device)
         for key, dim in (("L", m), ("R", n)):
             seed = torch.randn(dim, dim, device=self.device)
             state[key] = seed @ seed.mT + 0.1 * torch.eye(dim, device=self.device)
-        preconditioner = KlShampooCansPreconditioner(state, p_root_inv=p_root_inv, eps=eps)
+        preconditioner = KlShampooCansPreconditioner(state, p_root_inv=p_root_inv, eps=1e-8)
 
         with utils.fp32_matmul_precision("highest"):
             preconditioner.precondition(torch.randn(m, n, device=self.device))
 
         for factor, inverse in zip(preconditioner.kronecker_factor_pair, preconditioner.inverse_pair, strict=True):
-            regularized = factor + _ridge(factor, eps) * torch.eye(factor.shape[-1], device=self.device)
-            assert_close_to_identity(inverse @ regularized, off_diag_atol=5e-3, diag_atol=5e-3)
+            assert_close_to_identity(inverse @ factor, off_diag_atol=5e-3, diag_atol=5e-3)
 
     @parameterized.product(shape=[(8, 16), (16, 8)], shampoo_beta=[0.5, 0.95])
     def test_update_kronecker_factors_matches_manual(self, shape: tuple[int, int], shampoo_beta: float) -> None:
