@@ -141,13 +141,13 @@ class LKlShampooPreconditionerTest(parameterized.TestCase):
         torch.testing.assert_close(preconditioner.kronecker_factor_pair.L, expected_L, atol=0, rtol=1e-6)
         torch.testing.assert_close(preconditioner.kronecker_factor_pair.R, expected_R, atol=0, rtol=1e-6)
 
-    @parameterized.product(shape=[(8, 16), (16, 8)], shampoo_beta=[0.5, 0.95])
+    @parameterized.product(shape=[(8, 16), (16, 8)], shampoo_beta=[0.5, 0.95], p_root_inv=[2, 4])
     def test_update_kronecker_factors_close_to_eigh_reference(
-        self, shape: tuple[int, int], shampoo_beta: float
+        self, shape: tuple[int, int], shampoo_beta: float, p_root_inv: int
     ) -> None:
         m, n = shape
         state = self._init_state_with_positive_definite_factors(m, n, self.device)
-        preconditioner = LKlShampooPreconditioner(state, p_root_inv=2, eps=1e-8)
+        preconditioner = LKlShampooPreconditioner(state, p_root_inv=p_root_inv, eps=1e-8)
         reference_L = state["L"].clone()
         reference_R = state["R"].clone()
         grad = torch.randn(m, n, device=self.device)
