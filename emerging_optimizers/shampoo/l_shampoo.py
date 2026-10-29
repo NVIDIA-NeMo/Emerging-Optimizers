@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 from typing import Callable, ClassVar, override
 
 import torch
@@ -24,24 +25,48 @@ from emerging_optimizers.utils import eig as eig_utils
 
 
 __all__ = [
-    "KlShampooCans",
-    "KlShampooCansPreconditioner",
+    "LKlShampoo",
+    "LKlShampooPreconditioner",
 ]
 
 
-class KlShampooCansPreconditioner(ShampooPreconditioner):
-    """KL-corrected Shampoo preconditioner computing root inverses with CANS instead of eigh.
+@torch.compile
+def _pack_triu(x: torch.Tensor) -> torch.Tensor:
+    dim = x.shape[-1]
+    k = torch.arange(dim * (dim + 1) // 2, device=x.device)
+    # Invert the triangular numbering: row i of packed entry k, via float64 sqrt (verified exact
+    # for dim up to 8192; the where-guard below never fired in profiling but stays as a safety net).
+    i = ((2 * dim + 1 - torch.sqrt(((2 * dim + 1) ** 2 - 8 * k).double())) // 2).long()
+    i = torch.where(k - i * (2 * dim - i + 1) // 2 < 0, i - 1, i)
+    j = k - i * (2 * dim - i + 1) // 2 + i
+    return x.reshape(-1)[i * dim + j]
 
-    Each Kronecker factor is applied as ``A^(-1/p_root_inv)`` via the fixed-schedule CANS routines.
-    No explicit regularization is added: eigenvalues below the schedules' design floor (``1e-7``
-    relative to the factor's infinity norm) saturate at a bounded value instead of diverging. The
-    KL-corrected factor update needs the eigendecomposition only through the inverse
-    ``Q diag(lambda^-1) Q^T``, which is recomputed from the current factors by squaring the CANS
-    root inverses at each :meth:`update_kronecker_factors` call, so no state is kept beyond ``L``
-    and ``R``.
+
+@torch.compile
+def _unpack_triu(packed: torch.Tensor) -> torch.Tensor:
+    dim = (math.isqrt(8 * packed.shape[-1] + 1) - 1) // 2
+    r = torch.arange(dim * dim, device=packed.device)
+    i, j = r // dim, r % dim
+    lo, hi = torch.minimum(i, j), torch.maximum(i, j)
+    return packed[lo * (2 * dim - lo + 1) // 2 + (hi - lo)].view(dim, dim)
+
+
+class LKlShampooPreconditioner(ShampooPreconditioner):
+    """Limited-memory KL-corrected Shampoo preconditioner using CANS root inverses instead of eigh.
+
+    Optimizer state holds only the packed upper triangles of the Kronecker factors ``L`` and ``R``
+    (1-D tensors of length ``n * (n + 1) / 2``). Construction unpacks them into dense symmetric
+    matrices for the duration of the step, and :meth:`rebind_state` repacks them, which also
+    resymmetrizes by discarding the lower triangle. Each factor is applied as
+    ``A^(-1/p_root_inv)`` via the fixed-schedule CANS routines. No explicit regularization is
+    added: eigenvalues below the schedules' design floor (``1e-7`` relative to the factor's
+    infinity norm) saturate at a bounded value instead of diverging. The KL-corrected factor
+    update needs the eigendecomposition only through the inverse ``Q diag(lambda^-1) Q^T``, which
+    is recomputed from the current factors by squaring the CANS root inverses at each
+    :meth:`update_kronecker_factors` call, so no state is kept beyond the packed ``L`` and ``R``.
 
     Args:
-        state: Per-parameter optimizer state holding ``L`` and ``R``.
+        state: Per-parameter optimizer state holding the packed ``L`` and ``R``.
         p_root_inv: Inverse root order; each factor is applied as ``A^(-1/p_root_inv)``.
         eps: Unused; accepted to match the preconditioner construction interface.
 
@@ -65,6 +90,34 @@ class KlShampooCansPreconditioner(ShampooPreconditioner):
         else:
             raise ValueError(f"p_root_inv={p_root_inv} is not supported by CANS, supported orders: [2, 4]")
         super().__init__(state, p_root_inv, eps)
+        self.kronecker_factor_pair = precond_base.TensorPair(_unpack_triu(state["L"]), _unpack_triu(state["R"]))
+        state["L"] = self.kronecker_factor_pair.L
+        state["R"] = self.kronecker_factor_pair.R
+
+    @staticmethod
+    @override
+    def init_state(
+        shape: tuple[int, ...],
+        device: torch.device,
+    ) -> dict[str, torch.Tensor]:
+        if len(shape) != 2:
+            raise TypeError(f"LKlShampooPreconditioner is only supported for 2D tensors, got shape {tuple(shape)}")
+        m, n = shape
+        return {
+            "L": torch.zeros(m * (m + 1) // 2, device=device),
+            "R": torch.zeros(n * (n + 1) // 2, device=device),
+        }
+
+    @override
+    def rebind_state(self, state: dict) -> None:
+        updates = {
+            "L": _pack_triu(self.kronecker_factor_pair.L),
+            "R": _pack_triu(self.kronecker_factor_pair.R),
+        }
+        missing = updates.keys() - state.keys()
+        if missing:
+            raise KeyError(f"rebind_state: state missing keys {sorted(missing)}")
+        state.update(updates)
 
     @override
     def init_step(self, grad: torch.Tensor, shampoo_beta: float) -> None:
@@ -103,11 +156,14 @@ class KlShampooCansPreconditioner(ShampooPreconditioner):
             return root_inv_L @ x @ root_inv_R
 
 
-@registry.register_optimizer("kl_shampoo_cans")
-class KlShampooCans(KlShampoo):
-    """KL-Shampoo computing root inverses with CANS instead of eigh; supports ``p_root_inv`` in {2, 4}."""
+@registry.register_optimizer("l_kl_shampoo")
+class LKlShampoo(KlShampoo):
+    """Limited-memory KL-Shampoo: packed-triangle factor state and CANS root inverses, no eigh.
 
-    PreconditionerCls: ClassVar[type[precond_base.ShampooPreconditionerProtocol]] = KlShampooCansPreconditioner
+    Supports ``p_root_inv`` in {2, 4}.
+    """
+
+    PreconditionerCls: ClassVar[type[precond_base.ShampooPreconditionerProtocol]] = LKlShampooPreconditioner
 
     def __init__(
         self,

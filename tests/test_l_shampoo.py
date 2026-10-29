@@ -19,7 +19,7 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
 from emerging_optimizers.shampoo import matrix_root_inverse_utils
-from emerging_optimizers.shampoo.shampoo_cans import KlShampooCans, KlShampooCansPreconditioner
+from emerging_optimizers.shampoo.l_shampoo import LKlShampoo, LKlShampooPreconditioner, _pack_triu, _unpack_triu
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -35,16 +35,48 @@ def setUpModule() -> None:
             torch.cuda.manual_seed_all(FLAGS.seed)
 
 
-class KlShampooCansPreconditionerTest(parameterized.TestCase):
+class PackTriuTest(parameterized.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.device = torch.device(FLAGS.device)
 
+    @parameterized.parameters(1, 3, 7, 16, 33)
+    def test_pack_unpack_round_trip(self, m: int) -> None:
+        x = torch.randn(m, m, device=self.device)
+        sym = (x + x.mT) * 0.5
+
+        packed = _pack_triu(sym)
+
+        self.assertEqual(packed.shape, (m * (m + 1) // 2,))
+        assert_equal(_unpack_triu(packed), sym)
+
+    @parameterized.parameters(1, 3, 7, 16, 33)
+    def test_pack_matches_triu_indices_reference(self, m: int) -> None:
+        x = torch.randn(m, m, device=self.device)
+        sym = (x + x.mT) * 0.5
+
+        tri = torch.triu_indices(m, m)
+        assert_equal(_pack_triu(sym), sym[tri[0], tri[1]])
+
+
+class LKlShampooPreconditionerTest(parameterized.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.device = torch.device(FLAGS.device)
+
+    @staticmethod
+    def _spd_state(m: int, n: int, device: torch.device) -> dict[str, torch.Tensor]:
+        state = LKlShampooPreconditioner.init_state((m, n), device)
+        for key, dim in (("L", m), ("R", n)):
+            seed = torch.randn(dim, dim, device=device)
+            state[key] = _pack_triu(seed @ seed.mT + 0.1 * torch.eye(dim, device=device))
+        return state
+
     @parameterized.parameters((8, 16), (16, 8), (13, 15))
     def test_init_state_layout(self, m: int, n: int) -> None:
-        state = KlShampooCansPreconditioner.init_state((m, n), self.device)
+        state = LKlShampooPreconditioner.init_state((m, n), self.device)
 
-        expected_shapes = {"L": (m, m), "R": (n, n)}
+        expected_shapes = {"L": (m * (m + 1) // 2,), "R": (n * (n + 1) // 2,)}
         self.assertCountEqual(state, expected_shapes)
         for key, shape in expected_shapes.items():
             self.assertEqual(state[key].shape, shape, msg=key)
@@ -52,22 +84,33 @@ class KlShampooCansPreconditionerTest(parameterized.TestCase):
             self.assertEqual(state[key].device.type, self.device.type, msg=key)
             assert_equal(state[key], torch.zeros(shape, device=self.device))
 
+    def test_init_state_rejects_non_2d(self) -> None:
+        with self.assertRaisesRegex(TypeError, "only supported for 2D"):
+            LKlShampooPreconditioner.init_state((2, 3, 4), self.device)
+
     @parameterized.parameters(1, 3, 8)
     def test_unsupported_p_root_inv_raises(self, p_root_inv: int) -> None:
-        state = KlShampooCansPreconditioner.init_state((4, 4), self.device)
+        state = LKlShampooPreconditioner.init_state((4, 4), self.device)
 
         with self.assertRaisesRegex(ValueError, "not supported by CANS"):
-            KlShampooCansPreconditioner(state, p_root_inv=p_root_inv, eps=1e-8)
+            LKlShampooPreconditioner(state, p_root_inv=p_root_inv, eps=1e-8)
+
+    def test_init_unpacks_state_dense(self) -> None:
+        m, n = 6, 4
+        state = LKlShampooPreconditioner.init_state((m, n), self.device)
+
+        preconditioner = LKlShampooPreconditioner(state, p_root_inv=2, eps=1e-8)
+
+        self.assertEqual(state["L"].shape, (m, m))
+        self.assertEqual(state["R"].shape, (n, n))
+        self.assertIs(state["L"], preconditioner.kronecker_factor_pair.L)
+        self.assertIs(state["R"], preconditioner.kronecker_factor_pair.R)
 
     @parameterized.product(shape=[(8, 16), (16, 8)], p_root_inv=[2, 4])
     def test_precondition_close_to_eigh_reference(self, shape: tuple[int, int], p_root_inv: int) -> None:
         m, n = shape
-        eps = 1e-8
-        state = KlShampooCansPreconditioner.init_state((m, n), self.device)
-        for key, dim in (("L", m), ("R", n)):
-            seed = torch.randn(dim, dim, device=self.device)
-            state[key] = seed @ seed.mT + 0.1 * torch.eye(dim, device=self.device)
-        preconditioner = KlShampooCansPreconditioner(state, p_root_inv=p_root_inv, eps=eps)
+        state = self._spd_state(m, n, self.device)
+        preconditioner = LKlShampooPreconditioner(state, p_root_inv=p_root_inv, eps=1e-8)
         x = torch.randn(m, n, device=self.device)
 
         with utils.fp32_matmul_precision("highest"):
@@ -89,8 +132,8 @@ class KlShampooCansPreconditionerTest(parameterized.TestCase):
 
     @parameterized.parameters((8, 16), (16, 8))
     def test_init_step_identity_correction(self, m: int, n: int) -> None:
-        preconditioner = KlShampooCansPreconditioner(
-            KlShampooCansPreconditioner.init_state((m, n), self.device), p_root_inv=2, eps=1e-8
+        preconditioner = LKlShampooPreconditioner(
+            LKlShampooPreconditioner.init_state((m, n), self.device), p_root_inv=2, eps=1e-8
         )
         grad = torch.randn(m, n, device=self.device)
 
@@ -105,11 +148,8 @@ class KlShampooCansPreconditionerTest(parameterized.TestCase):
     @parameterized.product(shape=[(8, 16), (16, 8)], shampoo_beta=[0.5, 0.95])
     def test_update_kronecker_factors_matches_manual(self, shape: tuple[int, int], shampoo_beta: float) -> None:
         m, n = shape
-        state = KlShampooCansPreconditioner.init_state((m, n), self.device)
-        for key, dim in (("L", m), ("R", n)):
-            seed = torch.randn(dim, dim, device=self.device)
-            state[key] = seed @ seed.mT + 0.1 * torch.eye(dim, device=self.device)
-        preconditioner = KlShampooCansPreconditioner(state, p_root_inv=2, eps=1e-8)
+        state = self._spd_state(m, n, self.device)
+        preconditioner = LKlShampooPreconditioner(state, p_root_inv=2, eps=1e-8)
         reference_L = state["L"].clone()
         reference_R = state["R"].clone()
         grad = torch.randn(m, n, device=self.device)
@@ -125,16 +165,29 @@ class KlShampooCansPreconditionerTest(parameterized.TestCase):
         torch.testing.assert_close(preconditioner.kronecker_factor_pair.L, expected_L, atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(preconditioner.kronecker_factor_pair.R, expected_R, atol=1e-5, rtol=1e-5)
 
+    def test_rebind_state_packs_upper_triangle(self) -> None:
+        m, n = 6, 4
+        state = LKlShampooPreconditioner.init_state((m, n), self.device)
+        preconditioner = LKlShampooPreconditioner(state, p_root_inv=2, eps=1e-8)
+        preconditioner.init_step(torch.randn(m, n, device=self.device), shampoo_beta=0)
+
+        preconditioner.rebind_state(state)
+
+        self.assertEqual(state["L"].shape, (m * (m + 1) // 2,))
+        self.assertEqual(state["R"].shape, (n * (n + 1) // 2,))
+        assert_equal(state["L"], _pack_triu(preconditioner.kronecker_factor_pair.L))
+        assert_equal(state["R"], _pack_triu(preconditioner.kronecker_factor_pair.R))
+
     def test_rebind_state_missing_key_raises(self) -> None:
-        state = KlShampooCansPreconditioner.init_state((4, 4), self.device)
-        preconditioner = KlShampooCansPreconditioner(state, p_root_inv=2, eps=1e-8)
+        state = LKlShampooPreconditioner.init_state((4, 4), self.device)
+        preconditioner = LKlShampooPreconditioner(state, p_root_inv=2, eps=1e-8)
         del state["R"]
 
         with self.assertRaisesRegex(KeyError, "missing keys"):
             preconditioner.rebind_state(state)
 
 
-class KlShampooCansTest(parameterized.TestCase):
+class LKlShampooTest(parameterized.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.device = torch.device(FLAGS.device)
@@ -144,7 +197,7 @@ class KlShampooCansTest(parameterized.TestCase):
         m, n = shape
         p = torch.nn.Parameter(torch.randn(m, n, device=self.device))
         initial = p.detach().clone()
-        optimizer = KlShampooCans([p], lr=1e-2, p_root_inv=p_root_inv)
+        optimizer = LKlShampoo([p], lr=1e-2, p_root_inv=p_root_inv)
 
         for _ in range(3):
             p.grad = torch.randn_like(p)
@@ -156,11 +209,13 @@ class KlShampooCansTest(parameterized.TestCase):
             optimizer.state[p],
             {"step", "exp_avg", "L", "R"},
         )
+        self.assertEqual(optimizer.state[p]["L"].shape, (m * (m + 1) // 2,))
+        self.assertEqual(optimizer.state[p]["R"].shape, (n * (n + 1) // 2,))
 
     @parameterized.parameters(1, 3, 8)
     def test_unsupported_p_root_inv_raises(self, p_root_inv: int) -> None:
         with self.assertRaisesRegex(ValueError, "not supported by CANS"):
-            KlShampooCans([torch.nn.Parameter(torch.randn(4, 4, device=self.device))], lr=1e-3, p_root_inv=p_root_inv)
+            LKlShampoo([torch.nn.Parameter(torch.randn(4, 4, device=self.device))], lr=1e-3, p_root_inv=p_root_inv)
 
 
 if __name__ == "__main__":
