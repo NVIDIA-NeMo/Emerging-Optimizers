@@ -18,7 +18,11 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
-from emerging_optimizers.legacy_soap.matrix_root_inverse_utils import inv_root_via_eigh, mat_root_inv_via_scaled_cans
+from emerging_optimizers.shampoo.matrix_root_inverse_utils import (
+    inv_root_via_eigh,
+    mat_4th_root_inv_via_scaled_cans,
+    mat_root_inv_via_scaled_cans,
+)
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -99,13 +103,106 @@ class MatrixRootInverseUtilsTest(parameterized.TestCase):
         ):
             mat_root_inv_via_scaled_cans(torch.eye(4, device=FLAGS.device))
 
-    @parameterized.parameters(8, 16, 32)
-    def test_inv_root_via_eigh_reconstruct_idendity(self, m) -> None:
+    @parameterized.product(
+        shape=[(4, 4), (2, 4, 4)],
+        fp32_matmul_prec=["high", "highest"],
+    )
+    def test_mat_4th_root_inv_via_scaled_cans_smoke(
+        self,
+        shape: tuple[int, ...],
+        fp32_matmul_prec: utils.FP32MatmulPrecT,
+    ) -> None:
+        x = torch.randn(*shape, device=FLAGS.device)
+        matrix = x @ x.mT + 0.1 * torch.eye(shape[-1], device=FLAGS.device)
+        previous_precision = torch.get_float32_matmul_precision()
+
+        with utils.fp32_matmul_precision(fp32_matmul_prec):
+            inverse_fourth_root = mat_4th_root_inv_via_scaled_cans(matrix)
+
+        self.assertEqual(inverse_fourth_root.shape, matrix.shape)
+        self.assertEqual(inverse_fourth_root.dtype, torch.float32)
+        self.assertEqual(torch.get_float32_matmul_precision(), previous_precision)
+
+    @parameterized.product(shape=[(8, 8), (16, 16), (2, 8, 8), (3, 16, 16)])
+    def test_mat_4th_root_inv_via_scaled_cans_accuracy_tridiag_toeplitz(self, shape: tuple[int, ...]) -> None:
+        # Generate a symmetric positive-definite tridiagonal Toeplitz matrix, then scale each
+        # batched copy by a positive integer to exercise matrices with different norms.
+        matrix_size = shape[-1]
+        base_matrix = 2.0 * torch.eye(matrix_size, device=FLAGS.device)
+        base_matrix.diagonal(offset=1).fill_(0.25)
+        base_matrix.diagonal(offset=-1).fill_(0.25)
+        if len(shape) == 2:
+            matrix = base_matrix
+        else:
+            batch_scale = torch.arange(
+                1,
+                shape[0] + 1,
+                device=FLAGS.device,
+                dtype=base_matrix.dtype,
+            ).view(-1, 1, 1)
+            matrix = base_matrix.unsqueeze(0) * batch_scale
+
+        inverse_fourth_root = mat_4th_root_inv_via_scaled_cans(matrix)
+        inverse_root = inverse_fourth_root @ inverse_fourth_root
+        whitened_matrix = inverse_root @ matrix @ inverse_root
+
+        w, v = torch.linalg.eigh(matrix.double())
+        reference = ((v * w.pow(-0.25).unsqueeze(-2)) @ v.mT).float()
+
+        for whitened_matrix_slice in whitened_matrix.reshape(-1, matrix_size, matrix_size):
+            assert_close_to_identity(whitened_matrix_slice, off_diag_atol=1e-3, diag_atol=1e-3)
+        torch.testing.assert_close(inverse_fourth_root, reference, atol=5e-4, rtol=5e-4)
+
+    def test_mat_4th_root_inv_via_scaled_cans_accuracy_ill_conditioned(self) -> None:
+        matrix_size = 32
+        q_mat, _ = torch.linalg.qr(torch.randn(matrix_size, matrix_size, device=FLAGS.device, dtype=torch.float64))
+        eigenvalues = torch.logspace(0.0, -4.0, matrix_size, device=FLAGS.device, dtype=torch.float64)
+        matrix64 = (q_mat * eigenvalues) @ q_mat.mT
+        matrix = ((matrix64 + matrix64.mT) * 0.5).float()
+
+        inverse_fourth_root = mat_4th_root_inv_via_scaled_cans(matrix)
+        inverse_root = inverse_fourth_root @ inverse_fourth_root
+        whitened_matrix = inverse_root @ matrix @ inverse_root
+
+        w, v = torch.linalg.eigh(matrix.double())
+        reference = ((v * w.pow(-0.25)) @ v.mT).float()
+
+        assert_close_to_identity(whitened_matrix, off_diag_atol=1.5e-2, diag_atol=1.5e-2)
+        torch.testing.assert_close(inverse_fourth_root, reference, atol=5e-3, rtol=5e-3)
+
+    @parameterized.parameters(1.0, 16.0)
+    def test_mat_4th_root_inv_via_scaled_cans_scaled_identity(self, scale: float) -> None:
+        matrix = scale * torch.eye(16, device=FLAGS.device)
+
+        inverse_fourth_root = mat_4th_root_inv_via_scaled_cans(matrix)
+
+        expected = scale**-0.25 * torch.eye(16, device=FLAGS.device)
+        torch.testing.assert_close(inverse_fourth_root, expected, atol=1e-3, rtol=1e-3)
+
+    @parameterized.parameters((4, 3), (2, 2, 4, 4))
+    def test_mat_4th_root_inv_via_scaled_cans_rejects_non_square_shape(self, *shape: int) -> None:
+        with self.assertRaisesRegex(TypeError, "must be a square matrix"):
+            mat_4th_root_inv_via_scaled_cans(torch.ones(shape, device=FLAGS.device))
+
+    def test_mat_4th_root_inv_via_scaled_cans_rejects_non_fp32_tensor(self) -> None:
+        with self.assertRaisesRegex(TypeError, "must be in float32"):
+            mat_4th_root_inv_via_scaled_cans(torch.eye(4, device=FLAGS.device, dtype=torch.bfloat16))
+
+    def test_mat_4th_root_inv_via_scaled_cans_rejects_medium_fp32_matmul_precision(self) -> None:
+        with (
+            utils.fp32_matmul_precision("medium"),
+            self.assertRaisesRegex(RuntimeError, "`medium`.*insufficient for CANS"),
+        ):
+            mat_4th_root_inv_via_scaled_cans(torch.eye(4, device=FLAGS.device))
+
+    @parameterized.product(m=[8, 16, 32], p_root_inv=[2, 4])
+    def test_inv_root_via_eigh_reconstruct_idendity(self, m: int, p_root_inv: int) -> None:
         x = torch.randn(m, m)
         test_matrix = 0.5 * x @ x.mT + torch.eye(m) * 1e-3
 
-        inverse_root = inv_root_via_eigh(test_matrix)
-        assert_close_to_identity(inverse_root @ test_matrix @ inverse_root, off_diag_atol=1e-3, diag_atol=1e-3)
+        inverse_root = inv_root_via_eigh(test_matrix, p_root_inv)
+        whitening = torch.linalg.matrix_power(inverse_root, p_root_inv // 2)
+        assert_close_to_identity(whitening @ test_matrix @ whitening, off_diag_atol=1e-3, diag_atol=1e-3)
 
 
 if __name__ == "__main__":
