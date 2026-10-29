@@ -30,16 +30,9 @@ __all__ = [
 ]
 
 
-@torch.compile
 def _pack_triu(x: torch.Tensor) -> torch.Tensor:
-    dim = x.shape[-1]
-    k = torch.arange(dim * (dim + 1) // 2, device=x.device)
-    # Invert the triangular numbering: row i of packed entry k, via float64 sqrt (verified exact
-    # for dim up to 8192; the where-guard below never fired in profiling but stays as a safety net).
-    i = ((2 * dim + 1 - torch.sqrt(((2 * dim + 1) ** 2 - 8 * k).double())) // 2).long()
-    i = torch.where(k - i * (2 * dim - i + 1) // 2 < 0, i - 1, i)
-    j = k - i * (2 * dim - i + 1) // 2 + i
-    return x.reshape(-1)[i * dim + j]
+    tri = torch.triu_indices(x.shape[-1], x.shape[-1], device=x.device)
+    return x[tri[0], tri[1]]
 
 
 @torch.compile
