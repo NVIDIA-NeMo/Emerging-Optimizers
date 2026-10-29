@@ -30,7 +30,6 @@ __all__ = [
 ]
 
 
-@torch.compile
 def _pack_triu(x: torch.Tensor) -> torch.Tensor:
     tri = torch.triu_indices(x.shape[-1], x.shape[-1], device=x.device)
     return x[tri[0], tri[1]]
@@ -152,7 +151,7 @@ class LKlShampooPreconditioner(ShampooPreconditioner):
 
 @registry.register_optimizer("l_kl_shampoo")
 class LKlShampoo(KlShampoo):
-    """Limited-memory KL-Shampoo: packed-triangle factor state and CANS root inverses, no eigh.
+    """Limited-memory KL-Shampoo: packed-triangle factor state and CANS root inverses.
 
     Supports ``p_root_inv`` in {2, 4}.
     """

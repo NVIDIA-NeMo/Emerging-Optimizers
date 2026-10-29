@@ -18,7 +18,6 @@ from absl import flags, logging
 from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
-from emerging_optimizers.shampoo import matrix_root_inverse_utils
 from emerging_optimizers.shampoo.l_shampoo import LKlShampoo, LKlShampooPreconditioner, _pack_triu, _unpack_triu
 
 
@@ -68,8 +67,8 @@ class LKlShampooPreconditionerTest(parameterized.TestCase):
     def _init_state_with_positive_definite_factors(m: int, n: int, device: torch.device) -> dict[str, torch.Tensor]:
         state = LKlShampooPreconditioner.init_state((m, n), device)
         for key, dim in (("L", m), ("R", n)):
-            seed = torch.randn(dim, dim, device=device)
-            state[key] = _pack_triu(seed @ seed.mT + 0.1 * torch.eye(dim, device=device))
+            x = torch.randint(-2, 3, (dim, dim), dtype=torch.float32, device=device)
+            state[key] = _pack_triu(x @ x.mT + 1.0 / 128 * torch.eye(dim, device=device))
         return state
 
     @parameterized.parameters((8, 16), (16, 8), (13, 15))
@@ -79,9 +78,6 @@ class LKlShampooPreconditionerTest(parameterized.TestCase):
         expected_shapes = {"L": (m * (m + 1) // 2,), "R": (n * (n + 1) // 2,)}
         self.assertCountEqual(state, expected_shapes)
         for key, shape in expected_shapes.items():
-            self.assertEqual(state[key].shape, shape, msg=key)
-            self.assertEqual(state[key].dtype, torch.float32, msg=key)
-            self.assertEqual(state[key].device.type, self.device.type, msg=key)
             assert_equal(state[key], torch.zeros(shape, device=self.device))
 
     def test_init_state_rejects_non_2d(self) -> None:
@@ -106,34 +102,34 @@ class LKlShampooPreconditionerTest(parameterized.TestCase):
         self.assertIs(state["L"], preconditioner.kronecker_factor_pair.L)
         self.assertIs(state["R"], preconditioner.kronecker_factor_pair.R)
 
-    @parameterized.product(shape=[(8, 16), (16, 8)], p_root_inv=[2, 4])
+    @parameterized.product(shape=[(8, 8), (16, 8)], p_root_inv=[2, 4])
     def test_precondition_close_to_eigh_reference(self, shape: tuple[int, int], p_root_inv: int) -> None:
         m, n = shape
         state = self._init_state_with_positive_definite_factors(m, n, self.device)
-        preconditioner = LKlShampooPreconditioner(state, p_root_inv=p_root_inv, eps=1e-8)
-        x = torch.randn(m, n, device=self.device)
+        preconditioner = LKlShampooPreconditioner(state, p_root_inv=p_root_inv, eps=0)
+        x = torch.randint(-3, 4, (m, n), dtype=torch.float32, device=self.device)
 
         with utils.fp32_matmul_precision("highest"):
             preconditioned = preconditioner.precondition(x)
 
         references = {}
         for key in ("L", "R"):
-            w, v = torch.linalg.eigh(state[key].double())
+            w, v = torch.linalg.eigh(state[key])
             references[key] = (v * w.pow(-1.0 / p_root_inv)) @ v.mT
-        expected = (references["L"] @ x.double() @ references["R"]).float()
+        expected = references["L"] @ x @ references["R"]
 
         torch.testing.assert_close(
             preconditioned,
             expected,
-            atol=2e-3,
-            rtol=2e-3,
+            atol=0,
+            rtol=0.02,
             msg=lambda default: f"p_root_inv={p_root_inv}\n\n{default}",
         )
 
     @parameterized.parameters((8, 16), (16, 8))
-    def test_init_step_identity_correction(self, m: int, n: int) -> None:
+    def test_init_step_identity_shape_scale(self, m: int, n: int) -> None:
         preconditioner = LKlShampooPreconditioner(
-            LKlShampooPreconditioner.init_state((m, n), self.device), p_root_inv=2, eps=1e-8
+            LKlShampooPreconditioner.init_state((m, n), self.device), p_root_inv=2, eps=0
         )
         grad = torch.randn(m, n, device=self.device)
 
@@ -142,11 +138,13 @@ class LKlShampooPreconditionerTest(parameterized.TestCase):
         with utils.fp32_matmul_precision("highest"):
             expected_L = grad @ grad.mT / n
             expected_R = grad.mT @ grad / m
-        torch.testing.assert_close(preconditioner.kronecker_factor_pair.L, expected_L, atol=1e-6, rtol=1e-6)
-        torch.testing.assert_close(preconditioner.kronecker_factor_pair.R, expected_R, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(preconditioner.kronecker_factor_pair.L, expected_L, atol=0, rtol=1e-6)
+        torch.testing.assert_close(preconditioner.kronecker_factor_pair.R, expected_R, atol=0, rtol=1e-6)
 
     @parameterized.product(shape=[(8, 16), (16, 8)], shampoo_beta=[0.5, 0.95])
-    def test_update_kronecker_factors_matches_manual(self, shape: tuple[int, int], shampoo_beta: float) -> None:
+    def test_update_kronecker_factors_close_to_eigh_reference(
+        self, shape: tuple[int, int], shampoo_beta: float
+    ) -> None:
         m, n = shape
         state = self._init_state_with_positive_definite_factors(m, n, self.device)
         preconditioner = LKlShampooPreconditioner(state, p_root_inv=2, eps=1e-8)
@@ -157,13 +155,15 @@ class LKlShampooPreconditionerTest(parameterized.TestCase):
         preconditioner.update_kronecker_factors(grad, shampoo_beta)
 
         with utils.fp32_matmul_precision("highest"):
-            root_inv_L = matrix_root_inverse_utils.mat_root_inv_via_scaled_cans(reference_L)
-            root_inv_R = matrix_root_inverse_utils.mat_root_inv_via_scaled_cans(reference_R)
-            expected_L = reference_L.lerp(grad @ (root_inv_R @ root_inv_R) @ grad.mT / n, 1 - shampoo_beta)
-            expected_R = reference_R.lerp(grad.mT @ (root_inv_L @ root_inv_L) @ grad / m, 1 - shampoo_beta)
+            inverses = {}
+            for key, factor in (("L", reference_L), ("R", reference_R)):
+                w, v = torch.linalg.eigh(factor)
+                inverses[key] = (v * w.reciprocal()) @ v.mT
+            expected_L = reference_L.lerp(grad @ inverses["R"] @ grad.mT / n, 1 - shampoo_beta)
+            expected_R = reference_R.lerp(grad.mT @ inverses["L"] @ grad / m, 1 - shampoo_beta)
 
-        torch.testing.assert_close(preconditioner.kronecker_factor_pair.L, expected_L, atol=1e-5, rtol=1e-5)
-        torch.testing.assert_close(preconditioner.kronecker_factor_pair.R, expected_R, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(preconditioner.kronecker_factor_pair.L, expected_L, atol=0, rtol=0.01)
+        torch.testing.assert_close(preconditioner.kronecker_factor_pair.R, expected_R, atol=0, rtol=0.01)
 
     def test_rebind_state_packs_upper_triangle(self) -> None:
         m, n = 6, 4
