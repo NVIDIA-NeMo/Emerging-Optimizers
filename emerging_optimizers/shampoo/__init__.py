@@ -14,4 +14,5 @@
 # limitations under the License.
 
 from emerging_optimizers.shampoo.shampoo import KlShampoo, Shampoo
+from emerging_optimizers.shampoo.shampoo_cans import KlShampooCans
 from emerging_optimizers.shampoo.soap_v3 import KlMSoap, KlSoapV3, ReklsV3
