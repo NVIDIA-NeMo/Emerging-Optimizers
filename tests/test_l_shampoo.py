@@ -65,7 +65,7 @@ class LKlShampooPreconditionerTest(parameterized.TestCase):
         cls.device = torch.device(FLAGS.device)
 
     @staticmethod
-    def _spd_state(m: int, n: int, device: torch.device) -> dict[str, torch.Tensor]:
+    def _init_state_with_positive_definite_factors(m: int, n: int, device: torch.device) -> dict[str, torch.Tensor]:
         state = LKlShampooPreconditioner.init_state((m, n), device)
         for key, dim in (("L", m), ("R", n)):
             seed = torch.randn(dim, dim, device=device)
@@ -109,7 +109,7 @@ class LKlShampooPreconditionerTest(parameterized.TestCase):
     @parameterized.product(shape=[(8, 16), (16, 8)], p_root_inv=[2, 4])
     def test_precondition_close_to_eigh_reference(self, shape: tuple[int, int], p_root_inv: int) -> None:
         m, n = shape
-        state = self._spd_state(m, n, self.device)
+        state = self._init_state_with_positive_definite_factors(m, n, self.device)
         preconditioner = LKlShampooPreconditioner(state, p_root_inv=p_root_inv, eps=1e-8)
         x = torch.randn(m, n, device=self.device)
 
@@ -148,7 +148,7 @@ class LKlShampooPreconditionerTest(parameterized.TestCase):
     @parameterized.product(shape=[(8, 16), (16, 8)], shampoo_beta=[0.5, 0.95])
     def test_update_kronecker_factors_matches_manual(self, shape: tuple[int, int], shampoo_beta: float) -> None:
         m, n = shape
-        state = self._spd_state(m, n, self.device)
+        state = self._init_state_with_positive_definite_factors(m, n, self.device)
         preconditioner = LKlShampooPreconditioner(state, p_root_inv=2, eps=1e-8)
         reference_L = state["L"].clone()
         reference_R = state["R"].clone()
