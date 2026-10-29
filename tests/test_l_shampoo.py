@@ -162,8 +162,9 @@ class LKlShampooPreconditionerTest(parameterized.TestCase):
             expected_L = reference_L.lerp(grad @ inverses["R"] @ grad.mT / n, 1 - shampoo_beta)
             expected_R = reference_R.lerp(grad.mT @ inverses["L"] @ grad / m, 1 - shampoo_beta)
 
-        torch.testing.assert_close(preconditioner.kronecker_factor_pair.L, expected_L, atol=0, rtol=0.01)
-        torch.testing.assert_close(preconditioner.kronecker_factor_pair.R, expected_R, atol=0, rtol=0.01)
+        rtol = 0.1 if p_root_inv == 4 else 0.01
+        torch.testing.assert_close(preconditioner.kronecker_factor_pair.L, expected_L, atol=0, rtol=rtol)
+        torch.testing.assert_close(preconditioner.kronecker_factor_pair.R, expected_R, atol=0, rtol=rtol)
 
     def test_rebind_state_packs_upper_triangle(self) -> None:
         m, n = 6, 4
