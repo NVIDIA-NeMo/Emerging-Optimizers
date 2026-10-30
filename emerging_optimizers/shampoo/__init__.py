@@ -13,5 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from emerging_optimizers.shampoo.l_shampoo import LKlShampoo
 from emerging_optimizers.shampoo.shampoo import KlShampoo, Shampoo
 from emerging_optimizers.shampoo.soap_v3 import KlMSoap, KlSoapV3, ReklsV3
