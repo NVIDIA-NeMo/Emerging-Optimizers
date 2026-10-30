@@ -155,6 +155,8 @@ jobs:
         with:
           file: ./docker/Dockerfile.ci
           push: true
+          provenance: false
+          sbom: false
           context: .
           platforms: linux/amd64
           cache-from: |
