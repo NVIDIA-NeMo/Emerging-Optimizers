@@ -66,6 +66,23 @@ mixed precision, generation, and PyTorch DDP.
 
 Emerging optimizer has been integrated into Megatron Core with tensor parallel support and many other features (split QKV for example), check out [emerging_optimizers.py](https://github.com/NVIDIA/Megatron-LM/blob/core_v0.18.0/megatron/core/optimizer/emerging_optimizers.py).
 
+## Pitfalls
+
+### Resuming bf16 training from an optimizer checkpoint
+
+Several optimizers (SOAP, Shampoo, Iso and their KL variants, for example) keep their state in fp32 even when the
+parameters are bf16. `torch.optim.Optimizer.load_state_dict` casts floating point state to the parameter dtype, so
+after loading a checkpoint that state comes back as bf16 and the next `step()` fails with a dtype mismatch. From
+PyTorch 2.16 this cast emits a `FutureWarning`, and loading inside `torch.optim.preserve_state_dtype_on_load()` keeps
+the saved dtypes:
+
+```python
+with torch.optim.preserve_state_dtype_on_load():
+    optimizer.load_state_dict(state_dict)
+```
+
+On older PyTorch versions, copy the saved fp32 state tensors back into `optimizer.state` after loading.
+
 ## Benchmarks
 
 Benchmark of Muon can be found in our [blog](https://developer.nvidia.com/blog/advancing-emerging-optimizers-for-accelerated-llm-training-with-nvidia-megatron/).
