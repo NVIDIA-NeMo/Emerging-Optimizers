@@ -33,6 +33,27 @@ emerging_optimizers.legacy_soap
 .. autoclass:: REKLS
     :members:
 
+:hidden:`StackedSoap`
+~~~~~~~~~~~~~~~~~~~~~
+.. currentmodule:: emerging_optimizers.legacy_soap.stacked_soap
+
+.. autoclass:: StackedSoap
+    :members:
+
+:hidden:`MOSO`
+~~~~~~~~~~~~~~
+.. currentmodule:: emerging_optimizers.legacy_soap.moso
+
+.. autoclass:: MOSO
+    :members:
+
+:hidden:`TpRekls`
+~~~~~~~~~~~~~~~~~
+.. currentmodule:: emerging_optimizers.legacy_soap.tp_rekls
+
+.. autoclass:: TpRekls
+    :members:
+
 
 emerging_optimizers.legacy_soap.soap_utils
 ==========================================

@@ -5,6 +5,9 @@
 emerging_optimizers.psgd
 ========================================
 
+.. automodule:: emerging_optimizers.psgd.psgd
+    :members:
+
 .. automodule:: emerging_optimizers.psgd.procrustes_step
     :members:
 
