@@ -10,4 +10,7 @@ emerging_optimizers.riemannian_optimizers
 
 .. automodule:: emerging_optimizers.riemannian_optimizers.isospectral
     :members:
+
+.. automodule:: emerging_optimizers.riemannian_optimizers.retractions.stiefel
+    :members:
 ```

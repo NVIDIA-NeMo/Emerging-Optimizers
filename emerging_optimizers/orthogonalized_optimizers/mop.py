@@ -14,6 +14,7 @@
 # limitations under the License.
 
 
+import inspect
 from typing import Literal
 
 import torch
@@ -79,7 +80,7 @@ class MOP(OrthogonalizedOptimizer):
         )
 
 
-MOP.__doc__ = MOP.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
+MOP.__doc__ = inspect.cleandoc(MOP.__doc__).format(_args_doc=_args_doc)  # type: ignore[arg-type]
 
 
 def polar_via_svd(A: torch.Tensor, return_p: bool = False) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:

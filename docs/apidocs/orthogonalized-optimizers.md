@@ -60,6 +60,17 @@ emerging_optimizers.orthogonalized_optimizers
     :members:
 
 
+:hidden:`Spel`
+~~~~~~~~~~~~~~~
+
+.. currentmodule:: emerging_optimizers.orthogonalized_optimizers.spel
+
+.. autoclass:: Spel
+    :members:
+
+.. autofunction:: get_spel_scale_factor
+
+
 :hidden:`Newton-Schulz`
 ~~~~~~~~~~~~~~~~~~~~~~~~
 .. automodule:: emerging_optimizers.orthogonalized_optimizers.muon_utils

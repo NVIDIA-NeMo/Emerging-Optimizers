@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 from typing import Literal
 
 import torch
@@ -188,7 +189,7 @@ class Muon(OrthogonalizedOptimizer[HookStateT]):
         raise AttributeError("Cannot set `use_syrk` post-initialization.")
 
 
-Muon.__doc__ = Muon.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
+Muon.__doc__ = inspect.cleandoc(Muon.__doc__).format(_args_doc=_args_doc)  # type: ignore[arg-type]
 
 
 def get_muon_scale_factor(size_out: int, size_in: int, mode: MuonScaleT = "spectral") -> float:

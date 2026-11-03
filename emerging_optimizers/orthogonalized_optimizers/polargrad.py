@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 from typing import Literal
 
 import torch
@@ -108,7 +109,7 @@ class PolarGrad(OrthogonalizedOptimizer):
         )
 
 
-PolarGrad.__doc__ = PolarGrad.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
+PolarGrad.__doc__ = inspect.cleandoc(PolarGrad.__doc__).format(_args_doc=_args_doc)  # type: ignore[arg-type]
 
 
 def one_sided_polargrad_orth_fn(
