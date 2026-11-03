@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 from typing import Any, Literal, override
 
 import torch
@@ -39,6 +40,7 @@ def get_spel_scale_factor(size_out: int, size_in: int, mode: SpelScaleT = "unit_
         size_out: The output dimension (rows) of the weight matrix.
         size_in: The input dimension (columns) of the weight matrix.
         mode: The scaling mode.
+
             - "unit_spectral_norm": Unscaled Stiefel manifold where W^T W = I.
             - "unit_rms_to_rms_norm": Scaled Stiefel manifold preserving the RMS norm
               of activations across the layer. For tall matrices (size_out >= size_in),
@@ -151,10 +153,12 @@ class Spel(OrthogonalizedOptimizer):
         of the Euclidean gradient onto the tangent space of the manifold at the current weights :math:`p`.
 
         For tall/square matrices (:math:`m \ge n`), column-isometry :math:`p^\top p = \sigma^2 I_n` gives:
+
         .. math::
             P_{T_p}(G) = G - \frac{1}{\sigma^2} p \, \text{sym}(p^\top G)
 
         For wide matrices (:math:`m < n`), row-isometry :math:`p p^\top = \sigma^2 I_m` gives:
+
         .. math::
             P_{T_p}(G) = G - \frac{1}{\sigma^2} \text{sym}(G p^\top) p
 
@@ -207,4 +211,4 @@ class Spel(OrthogonalizedOptimizer):
         p.copy_(scale * orth_p)
 
 
-Spel.__doc__ = Spel.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
+Spel.__doc__ = inspect.cleandoc(Spel.__doc__).format(_args_doc=_args_doc)  # type: ignore[arg-type]

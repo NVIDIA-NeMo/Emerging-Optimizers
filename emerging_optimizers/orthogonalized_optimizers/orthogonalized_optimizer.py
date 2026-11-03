@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import inspect
 from typing import TYPE_CHECKING, Any, Callable, Generic, cast, override
 
 
@@ -31,15 +32,15 @@ from emerging_optimizers.weight_update_hooks.base import HookStateT
 
 
 _args_doc = """params: Iterable of parameters to optimize or dicts defining parameter groups
-        lr: The learning rate used by the internal SGD.
-        momentum: The momentum used by the internal SGD, EMA-style.
-        weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
-            See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
-        nesterov: Whether to use Nesterov-style momentum in the internal SGD.
-        weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
-            for more details.
-        fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
-        weight_update_hook: Optional hook that runs around the final in-place weight update.
+    lr: The learning rate used by the internal SGD.
+    momentum: The momentum used by the internal SGD, EMA-style.
+    weight_decay: The weight decay used by the optimizer, default to be decoupled weight decay.
+        See Decoupled Weight Decay Regularization: https://arxiv.org/abs/1711.05101
+    nesterov: Whether to use Nesterov-style momentum in the internal SGD.
+    weight_decay_method: Method to apply weight decay, see :class:`~emerging_optimizers.mixin.WeightDecayMixin`
+        for more details.
+    fp32_matmul_prec: Precision of the matmul operations in optimizer states GEMM operations.
+    weight_update_hook: Optional hook that runs around the final in-place weight update.
 """
 
 
@@ -269,4 +270,4 @@ class OrthogonalizedOptimizer(opt_mixin.WeightDecayMixin, optim.Optimizer, Gener
         pass
 
 
-OrthogonalizedOptimizer.__doc__ = OrthogonalizedOptimizer.__doc__.format(_args_doc=_args_doc)  # type: ignore[union-attr]
+OrthogonalizedOptimizer.__doc__ = inspect.cleandoc(OrthogonalizedOptimizer.__doc__).format(_args_doc=_args_doc)  # type: ignore[arg-type]
