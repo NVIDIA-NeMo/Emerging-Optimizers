@@ -55,7 +55,7 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    "torch",
+    "torch>=2.10",
     "absl-py",
 ]
 
@@ -89,6 +89,9 @@ dev = [
 
 [tool.uv]
 managed = true
+override-dependencies = [
+    "fsspec[http]>=2026.6.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["emerging_optimizers", "emerging_optimizers.*"]

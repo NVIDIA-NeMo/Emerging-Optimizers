@@ -34,6 +34,8 @@ RUN --mount=type=bind,source=pyproject.toml,target=/workspace/pyproject.toml \
     uv sync --link-mode symlink --locked --all-groups \
         --no-install-package absl-py \
         --no-install-package torch \
+        --no-install-package cuda-bindings \
+        --no-install-package cuda-pathfinder \
         --no-install-package triton \
         --no-install-package nvidia-cublas-cu12 \
         --no-install-package nvidia-cuda-cupti-cu12 \
@@ -48,5 +50,6 @@ RUN --mount=type=bind,source=pyproject.toml,target=/workspace/pyproject.toml \
         --no-install-package nvidia-cusparselt-cu12 \
         --no-install-package nvidia-nccl-cu12 \
         --no-install-package nvidia-nvjitlink-cu12 \
-        --no-install-package nvidia-nvtx-cu12
+        --no-install-package nvidia-nvtx-cu12 \
+        --no-install-package nvidia-nvshmem-cu12
 EOF
