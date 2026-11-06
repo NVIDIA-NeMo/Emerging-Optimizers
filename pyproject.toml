@@ -89,6 +89,10 @@ dev = [
 
 [tool.uv]
 managed = true
+override-dependencies = [
+    "torch>=2.10",
+    "fsspec[http]>=2026.6.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["emerging_optimizers", "emerging_optimizers.*"]
