@@ -11,10 +11,7 @@ resolution-markers = [
 ]
 
 [manifest]
-overrides = [
-    { name = "fsspec", extras = ["http"], specifier = ">=2026.6.0" },
-    { name = "torch", specifier = ">=2.10" },
-]
+overrides = [{ name = "fsspec", extras = ["http"], specifier = ">=2026.6.0" }]
 
 [[package]]
 name = "absl-py"
@@ -473,7 +470,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "absl-py" },
-    { name = "torch" },
+    { name = "torch", specifier = ">=2.10" },
 ]
 
 [package.metadata.requires-dev]
