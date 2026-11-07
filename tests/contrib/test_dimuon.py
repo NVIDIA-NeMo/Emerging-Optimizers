@@ -130,8 +130,9 @@ class DimuonTest(parameterized.TestCase):
             self.assertLess(error.item(), 0.1)
             p.data.copy_(p_fp32.detach())
 
-    def test_zero_gradient_applies_only_weight_decay(self):
-        p = torch.nn.Parameter(torch.randn((8, 16), device=self.device))
+    @parameterized.product(shape=[(8, 16), (64, 96)])
+    def test_zero_gradient_applies_only_weight_decay(self, shape):
+        p = torch.nn.Parameter(torch.randn(shape, device=self.device))
         initial = p.detach().clone()
         opt = Dimuon([p], lr=0.1, weight_decay=0.5)
         p.grad = torch.zeros_like(p)

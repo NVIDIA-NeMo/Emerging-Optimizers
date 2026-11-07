@@ -164,4 +164,4 @@ class Dimuon(OrthogonalizedOptimizer[HookStateT]):
         energy = grad.square()
         torch.sum(energy, dim=1, out=state["row_energy"])
         torch.sum(energy, dim=0, out=state["col_energy"])
-        return direction * (min(grad.shape) ** 0.5 * scale_factor * self.extra_scale_factor / norm)
+        return (direction / norm) * (min(grad.shape) ** 0.5 * scale_factor * self.extra_scale_factor)
