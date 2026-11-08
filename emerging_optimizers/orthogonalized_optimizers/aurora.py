@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -26,11 +27,13 @@ from emerging_optimizers.weight_update_hooks.base import HookStateT
 __all__ = ["Aurora", "aurora_orthogonalize"]
 
 
-def _validate_aurora_args(iterations: int, beta: float) -> None:
+def _validate_aurora_args(iterations: int, beta: float, eps: float) -> None:
     if isinstance(iterations, bool) or not isinstance(iterations, int) or iterations < 1:
         raise ValueError(f"Aurora iterations must be a positive integer, got {iterations}")
     if not 0.0 < beta <= 1.0:
         raise ValueError(f"Aurora beta must be in (0, 1], got {beta}")
+    if not math.isfinite(eps) or eps <= 0:
+        raise ValueError(f"Aurora eps must be finite and positive, got {eps}")
 
 
 def aurora_orthogonalize(
@@ -39,12 +42,13 @@ def aurora_orthogonalize(
     *,
     iterations: int = 2,
     beta: float = 0.5,
+    eps: float = 1e-14,
 ) -> torch.Tensor:
     r"""Balance tall update rows by diagonally preconditioning an unscaled polar solver.
 
     For a matrix :math:`M` with shape :math:`(m, n)`, where :math:`m > n`, start with
-    :math:`D_i = 1 / \max(\|M_{i,:}\|_2, 10^{-7})` and compute :math:`U = \mathrm{NS}(DM)`.
-    Between solves, refine :math:`D_i \leftarrow D_i ((n/m) / \max(\|U_{i,:}\|_2^2, 10^{-14}))^\beta`.
+    :math:`D_i = 1 / \sqrt{\max(\|M_{i,:}\|_2^2, \varepsilon)}` and compute :math:`U = \mathrm{NS}(DM)`.
+    Between solves, refine :math:`D_i \leftarrow D_i ((n/m) / \max(\|U_{i,:}\|_2^2, \varepsilon))^\beta`.
     Every solve uses the original momentum and the refined diagonal, not the preceding solver output.
     Exact zero rows remain zero. Square and wide matrices call the supplied solver once, unchanged.
 
@@ -58,6 +62,7 @@ def aurora_orthogonalize(
         orthogonalize_fn: Unscaled solver, such as :func:`muon_utils.newton_schulz` with its options bound.
         iterations: Positive number of outer solver calls for tall matrices.
         beta: Damping exponent for diagonal refinement, in ``(0, 1]``.
+        eps: Finite positive floor for squared row norms; defaults to ``1e-14``.
 
     Returns:
         The unscaled solver output, with batch elements handled independently and input left unchanged.
@@ -66,7 +71,7 @@ def aurora_orthogonalize(
         TypeError: If the input is not a 2D or 3D FP32 tensor.
         ValueError: If a numerical argument is invalid or a matrix dimension is empty.
     """
-    _validate_aurora_args(iterations, beta)
+    _validate_aurora_args(iterations, beta, eps)
     if momentum.ndim not in (2, 3):
         raise TypeError(f"Aurora requires a 2D or 3D tensor, got {momentum.ndim}D")
     if momentum.dtype != torch.float32:
@@ -78,11 +83,11 @@ def aurora_orthogonalize(
         return orthogonalize_fn(momentum)
 
     row_sq = momentum.square().sum(dim=-1, keepdim=True)
-    diagonal = row_sq.clamp_min(1e-14).rsqrt().masked_fill(row_sq == 0, 0)
+    diagonal = row_sq.clamp_min(eps).rsqrt().masked_fill(row_sq == 0, 0)
     orthogonalized = orthogonalize_fn(momentum * diagonal)
     for _ in range(1, iterations):
         row_sq = orthogonalized.float().square().sum(dim=-1, keepdim=True)
-        diagonal = diagonal * ((cols / rows) / row_sq.clamp_min(1e-14)).pow(beta)
+        diagonal = diagonal * ((cols / rows) / row_sq.clamp_min(eps)).pow(beta)
         orthogonalized = orthogonalize_fn(momentum * diagonal)
     return orthogonalized
 
@@ -105,6 +110,7 @@ class Aurora(Muon[HookStateT]):
         num_aurora_steps: Number of outer Newton-Schulz solves for tall matrices. Each solve runs
             ``num_ns_steps`` inner iterations; defaults to two solves.
         aurora_beta: Damping exponent for diagonal refinement, in ``(0, 1]``; defaults to 0.5.
+        eps: Finite positive floor for Aurora's squared row norms; defaults to ``1e-14``.
         **kwargs: Keyword arguments passed to Muon, including ``weight_update_hook``.
 
     References:
@@ -117,12 +123,14 @@ class Aurora(Muon[HookStateT]):
         *args: Any,
         num_aurora_steps: int = 2,
         aurora_beta: float = 0.5,
+        eps: float = 1e-14,
         **kwargs: Any,
     ) -> None:
-        _validate_aurora_args(num_aurora_steps, aurora_beta)
+        _validate_aurora_args(num_aurora_steps, aurora_beta, eps)
         super().__init__(*args, **kwargs)
         self._num_aurora_steps = num_aurora_steps
         self._aurora_beta = aurora_beta
+        self._eps = eps
         muon_scaled_orthogonalize_fn = self.scaled_orthogonalize_fn
 
         def orthogonalize_fn(momentum: torch.Tensor) -> torch.Tensor:
@@ -136,7 +144,9 @@ class Aurora(Muon[HookStateT]):
         def scaled_orthogonalize_fn(momentum: torch.Tensor) -> torch.Tensor:
             if momentum.size(-2) <= momentum.size(-1):
                 return muon_scaled_orthogonalize_fn(momentum)
-            update = aurora_orthogonalize(momentum, orthogonalize_fn, iterations=num_aurora_steps, beta=aurora_beta)
+            update = aurora_orthogonalize(
+                momentum, orthogonalize_fn, iterations=num_aurora_steps, beta=aurora_beta, eps=eps
+            )
             scale = get_muon_scale_factor(momentum.size(-2), momentum.size(-1), mode=self.scale_mode)
             return update * scale * self.extra_scale_factor
 
@@ -149,3 +159,7 @@ class Aurora(Muon[HookStateT]):
     @property
     def aurora_beta(self) -> float:
         return self._aurora_beta
+
+    @property
+    def eps(self) -> float:
+        return self._eps

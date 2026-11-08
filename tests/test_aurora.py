@@ -43,15 +43,17 @@ def _ns(matrix: torch.Tensor) -> torch.Tensor:
     return newton_schulz(matrix, steps=5, coefficient_type="quintic")
 
 
-def _reference(matrix: torch.Tensor, iterations: int = 2, beta: float = 0.5, solver=_ns) -> torch.Tensor:
+def _reference(
+    matrix: torch.Tensor, iterations: int = 2, beta: float = 0.5, solver=_ns, eps: float = 1e-14
+) -> torch.Tensor:
     """Independent norm/reciprocal expression of the released diagonal refinement."""
     if matrix.size(-2) <= matrix.size(-1):
         return solver(matrix)
-    diagonal = torch.linalg.vector_norm(matrix, dim=-1, keepdim=True).clamp_min(1e-7).reciprocal()
+    diagonal = torch.linalg.vector_norm(matrix, dim=-1, keepdim=True).clamp_min(eps**0.5).reciprocal()
     for index in range(iterations):
         update = solver(diagonal * matrix)
         if index + 1 < iterations:
-            squared_row_norm = torch.linalg.vector_norm(update, dim=-1, keepdim=True).square().clamp_min(1e-14)
+            squared_row_norm = torch.linalg.vector_norm(update, dim=-1, keepdim=True).square().clamp_min(eps)
             diagonal = diagonal * (matrix.size(-1) / matrix.size(-2) / squared_row_norm).pow(beta)
     return update
 
@@ -212,6 +214,29 @@ class AuroraTest(parameterized.TestCase):
         torch.testing.assert_close(actual, expected, atol=2e-5, rtol=2e-5)
         self.assertEqual(torch.count_nonzero(actual[1]).item(), 0)
 
+    def test_custom_eps_controls_initial_and_refinement_floors(self) -> None:
+        matrix = torch.tensor([[0.0], [0.01], [1.0]], device=self.device)
+        # Both the tiny input row and the solver's small output require the custom floor.
+        solver = lambda value: value * 0.01
+        actual = aurora_orthogonalize(matrix, solver, eps=0.25)
+        torch.testing.assert_close(actual, _reference(matrix, solver=solver, eps=0.25))
+        self.assertEqual(actual[0].item(), 0)
+        self.assertFalse(torch.allclose(actual, aurora_orthogonalize(matrix, solver)))
+
+        optimizer = self._optimizer([torch.nn.Parameter(matrix.clone())], eps=0.25)
+        with patch.object(muon_utils, "newton_schulz", side_effect=lambda value, **kwargs: solver(value)):
+            scaled = optimizer.scaled_orthogonalize_fn(matrix)
+        scale = get_muon_scale_factor(*matrix.shape, mode=optimizer.scale_mode) * optimizer.extra_scale_factor
+        torch.testing.assert_close(scaled, actual * scale)
+
+    @parameterized.parameters(0.0, -1e-14, float("inf"), float("nan"))
+    def test_rejects_invalid_eps(self, eps) -> None:
+        matrix = self._matrix()
+        with self.assertRaisesRegex(ValueError, "eps"):
+            aurora_orthogonalize(matrix, _ns, eps=eps)
+        with self.assertRaisesRegex(ValueError, "eps"):
+            self._optimizer([torch.nn.Parameter(matrix)], eps=eps)
+
     @parameterized.product(
         scale_mode=["spectral", "shape_scaling", "unit_rms_norm"],
         nesterov=[False, True],
@@ -293,10 +318,13 @@ class AuroraTest(parameterized.TestCase):
         self.assertIsInstance(optimizer, Aurora)
 
     def test_aurora_configuration_properties_are_read_only(self) -> None:
-        optimizer = self._optimizer([torch.nn.Parameter(self._matrix())], num_aurora_steps=3, aurora_beta=0.25)
+        optimizer = self._optimizer(
+            [torch.nn.Parameter(self._matrix())], num_aurora_steps=3, aurora_beta=0.25, eps=1e-10
+        )
         self.assertEqual(optimizer.num_aurora_steps, 3)
         self.assertEqual(optimizer.aurora_beta, 0.25)
-        for name, value in [("num_aurora_steps", 4), ("aurora_beta", 0.5)]:
+        self.assertEqual(optimizer.eps, 1e-10)
+        for name, value in [("num_aurora_steps", 4), ("aurora_beta", 0.5), ("eps", 1e-8)]:
             with self.assertRaises(AttributeError):
                 setattr(optimizer, name, value)
 

@@ -102,7 +102,7 @@ emerging_optimizers.orthogonalized_optimizers
 output-neuron rows with a diagonal preconditioner around the existing
 Newton–Schulz solver. Square and wide updates keep the Muon path. Norm reductions
 use FP32; exact zero rows remain zero. The update scale is applied once after all
-outer solves.
+outer solves. `eps` controls the floor for squared row norms and defaults to `1e-14`.
 
 ```python
 from emerging_optimizers.orthogonalized_optimizers import Aurora
