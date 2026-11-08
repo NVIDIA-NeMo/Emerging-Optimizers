@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
+import inspect
 from functools import partial
 from unittest.mock import patch
 
@@ -20,8 +21,14 @@ import torch
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers import registry, utils
-from emerging_optimizers.orthogonalized_optimizers import Aurora, Muon, aurora_orthogonalize, muon_utils
+from emerging_optimizers import registry, triton_kernels, utils
+from emerging_optimizers.orthogonalized_optimizers import (
+    Aurora,
+    Muon,
+    OrthogonalizedOptimizer,
+    aurora_orthogonalize,
+    muon_utils,
+)
 from emerging_optimizers.orthogonalized_optimizers.muon import get_muon_scale_factor
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schulz
 
@@ -75,6 +82,28 @@ class AuroraTest(parameterized.TestCase):
         options = dict(fp32_matmul_prec="highest", coefficient_type="quintic", num_ns_steps=5)
         options.update(kwargs)
         return Aurora(params, **options)
+
+    def test_uses_orthogonalized_optimizer_directly(self) -> None:
+        self.assertEqual(Aurora.__bases__, (OrthogonalizedOptimizer,))
+        # PyTorch installs profiling wrappers on optimizer subclasses during construction.
+        self.assertIs(inspect.unwrap(Aurora.step), inspect.unwrap(OrthogonalizedOptimizer.step))
+
+    def test_defaults_preserve_muon_configuration(self) -> None:
+        matrix = self._matrix()
+        aurora = Aurora([torch.nn.Parameter(matrix.clone())])
+        muon = Muon([torch.nn.Parameter(matrix.clone())])
+        self.assertEqual(aurora.defaults, muon.defaults)
+        for name in (
+            "nesterov",
+            "weight_decay_method",
+            "fp32_matmul_prec",
+            "coefficient_type",
+            "num_ns_steps",
+            "scale_mode",
+            "extra_scale_factor",
+            "use_syrk",
+        ):
+            self.assertEqual(getattr(aurora, name), getattr(muon, name))
 
     @parameterized.product(iterations=[1, 2, 4], beta=[0.25, 0.5, 1.0])
     def test_matches_diagonal_refinement_reference(self, iterations, beta) -> None:
@@ -140,6 +169,30 @@ class AuroraTest(parameterized.TestCase):
         scale = get_muon_scale_factor(32, 8, mode="unit_rms_norm")
         torch.testing.assert_close(parameter, -(calls[-1][-1] * scale * 1.7), atol=0, rtol=0)
         self.assertEqual(torch.get_float32_matmul_precision(), "highest")
+
+    @parameterized.named_parameters(
+        ("supported", True, True, (10, 3), True),
+        ("old_triton", False, True, (10, 3), False),
+        ("unsupported_device", True, True, (12, 0), False),
+        ("no_cuda", True, False, (0, 0), False),
+    )
+    def test_syrk_capability_guard_reaches_every_solver_call(
+        self, has_triton, cuda_available, capability, expected_syrk
+    ) -> None:
+        matrix = self._matrix((16, 8))
+        with (
+            patch.object(triton_kernels, "HAS_TRITON_340", has_triton, create=True),
+            patch.object(torch.cuda, "is_available", return_value=cuda_available),
+            patch.object(torch.cuda, "get_device_capability", return_value=capability),
+        ):
+            optimizer = self._optimizer([torch.nn.Parameter(matrix.clone())], use_syrk=True)
+        self.assertEqual(optimizer.use_syrk, expected_syrk)
+        for value, solves in ((matrix, 2), (matrix[:8], 1), (matrix.T, 1)):
+            with patch.object(muon_utils, "newton_schulz", side_effect=lambda x, **kwargs: x.clone()) as solver:
+                optimizer.scaled_orthogonalize_fn(value)
+            self.assertEqual(solver.call_count, solves)
+            for call in solver.call_args_list:
+                self.assertEqual(call.kwargs["use_syrk"], expected_syrk)
 
     @parameterized.parameters(1, 2, 3)
     def test_each_solve_uses_original_momentum_with_refined_diagonal(self, iterations) -> None:
@@ -324,7 +377,16 @@ class AuroraTest(parameterized.TestCase):
         self.assertEqual(optimizer.num_aurora_steps, 3)
         self.assertEqual(optimizer.aurora_beta, 0.25)
         self.assertEqual(optimizer.eps, 1e-10)
-        for name, value in [("num_aurora_steps", 4), ("aurora_beta", 0.5), ("eps", 1e-8)]:
+        for name, value in [
+            ("num_aurora_steps", 4),
+            ("aurora_beta", 0.5),
+            ("eps", 1e-8),
+            ("num_ns_steps", 4),
+            ("coefficient_type", "simple"),
+            ("scale_mode", "unit_rms_norm"),
+            ("extra_scale_factor", 1.7),
+            ("use_syrk", True),
+        ]:
             with self.assertRaises(AttributeError):
                 setattr(optimizer, name, value)
 
@@ -370,6 +432,11 @@ class AuroraTest(parameterized.TestCase):
             aurora_orthogonalize(matrix, _ns, iterations=value)
         with self.assertRaises(ValueError):
             self._optimizer([torch.nn.Parameter(matrix)], num_aurora_steps=value)
+
+    @parameterized.parameters(0, -1)
+    def test_rejects_nonpositive_inner_iteration_count(self, value) -> None:
+        with self.assertRaisesRegex(ValueError, "num_ns_steps"):
+            self._optimizer([torch.nn.Parameter(self._matrix())], num_ns_steps=value)
 
     @parameterized.parameters(0.0, -0.1, 1.1, float("nan"), float("inf"))
     def test_invalid_beta(self, value) -> None:

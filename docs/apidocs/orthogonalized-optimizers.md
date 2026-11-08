@@ -97,8 +97,9 @@ emerging_optimizers.orthogonalized_optimizers
 .. autofunction:: sinkhorn_balance
 ```
 
-`Aurora` uses the same optimizer loop and state as `Muon`, replacing only
-`scaled_orthogonalize_fn`. For tall updates stored as `[out, in]`, it balances
+`Aurora` subclasses `OrthogonalizedOptimizer` directly and supplies its own
+`scaled_orthogonalize_fn`, sharing the base optimizer loop and state with `Muon`.
+For tall updates stored as `[out, in]`, it balances
 output-neuron rows with a diagonal preconditioner around the existing
 Newton–Schulz solver. Square and wide updates keep the Muon path. Norm reductions
 use FP32; exact zero rows remain zero. The update scale is applied once after all
@@ -120,7 +121,7 @@ optimizer = Aurora(
 `num_ns_steps` counts inner iterations **per solve**, so two Aurora steps double
 the number of Newton–Schulz solves for tall matrices. The coefficient schedule,
 precision, shape scaling, and optional SYRK backend remain configurable through
-the inherited Muon options. These defaults preserve this library's Muon recipe;
+Aurora's constructor options. These defaults preserve this library's Muon recipe;
 they do not reproduce every hyperparameter of the released Aurora optimizer.
 The stateless `aurora_orthogonalize` helper also supports independent batches of
 matrices, but the optimizer follows Muon's 2D-parameter contract. Pass complete,

@@ -12,15 +12,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import inspect
 import math
 from collections.abc import Callable
-from typing import Any
 
 import torch
+from absl import logging
+from torch.optim.optimizer import ParamsT
 
-from emerging_optimizers import registry
+from emerging_optimizers import registry, triton_kernels
+from emerging_optimizers.mixin import WeightDecayT
 from emerging_optimizers.orthogonalized_optimizers import muon_utils
-from emerging_optimizers.orthogonalized_optimizers.muon import Muon, get_muon_scale_factor
+from emerging_optimizers.orthogonalized_optimizers.muon import MuonScaleT, get_muon_scale_factor
+from emerging_optimizers.orthogonalized_optimizers.muon_utils import NSCoeffT
+from emerging_optimizers.orthogonalized_optimizers.orthogonalized_optimizer import OrthogonalizedOptimizer, _args_doc
+from emerging_optimizers.utils import FP32MatmulPrecT
+from emerging_optimizers.weight_update_hooks import WeightUpdateHook
 from emerging_optimizers.weight_update_hooks.base import HookStateT
 
 
@@ -93,25 +100,29 @@ def aurora_orthogonalize(
 
 
 @registry.register_optimizer("aurora")
-class Aurora(Muon[HookStateT]):
-    """Muon with Aurora row balancing for tall matrix updates.
+class Aurora(OrthogonalizedOptimizer[HookStateT]):
+    """Orthogonalized optimizer with Aurora row balancing for tall matrix updates.
 
-    Replaces ``scaled_orthogonalize_fn`` while retaining Muon's momentum, Nesterov blending, weight
-    decay, update hooks, and optimizer state. Tall matrices use :func:`aurora_orthogonalize` with the
-    existing Newton-Schulz coefficients, precision, and backend. The Muon shape scale and extra scale
+    Supplies ``scaled_orthogonalize_fn`` to :class:`OrthogonalizedOptimizer`, retaining its momentum,
+    Nesterov blending, weight decay, update hooks, and optimizer state. Tall matrices use
+    :func:`aurora_orthogonalize` with the configured Newton-Schulz coefficients, precision, and backend.
+    The Muon shape scale and extra scale
     factor are applied once, after all refinements. Square and wide matrices retain the Muon update.
 
-    See :class:`Muon` for the inherited optimizer options and 2D FP32 parameter requirements. This
-    implementation retains Muon's defaults, including Polar Express, rather than switching to the
-    released Aurora solver's coefficient schedule. No additional persistent tensor state is introduced.
+    Parameters must be 2D and FP32. This implementation retains Muon's defaults, including Polar
+    Express. No additional persistent tensor state is introduced.
 
     Args:
-        *args: Positional arguments passed to Muon.
+        {_args_doc}
+        coefficient_type: Coefficient set for Newton-Schulz; defaults to ``"polar_express"``.
+        num_ns_steps: Number of inner Newton-Schulz iterations per solve; defaults to 8.
+        scale_mode: Shape-dependent update scaling; defaults to ``"spectral"``.
+        extra_scale_factor: Additional multiplier applied after refinement; defaults to 0.2.
+        use_syrk: Whether to use the Triton Newton-Schulz kernel on a supported GPU.
         num_aurora_steps: Number of outer Newton-Schulz solves for tall matrices. Each solve runs
             ``num_ns_steps`` inner iterations; defaults to two solves.
         aurora_beta: Damping exponent for diagonal refinement, in ``(0, 1]``; defaults to 0.5.
         eps: Finite positive floor for Aurora's squared row norms; defaults to ``1e-14``.
-        **kwargs: Keyword arguments passed to Muon, including ``weight_update_hook``.
 
     References:
         - Aurora's released optimizer implementation.
@@ -120,18 +131,48 @@ class Aurora(Muon[HookStateT]):
 
     def __init__(
         self,
-        *args: Any,
+        params: ParamsT,
+        lr: float = 3e-4,
+        momentum: float = 0.9,
+        weight_decay: float = 0.1,
+        *,
+        nesterov: bool = False,
+        weight_decay_method: WeightDecayT = "decoupled",
+        fp32_matmul_prec: FP32MatmulPrecT = "medium",
+        coefficient_type: NSCoeffT = "polar_express",
+        num_ns_steps: int = 8,
+        scale_mode: MuonScaleT = "spectral",
+        extra_scale_factor: float = 0.2,
+        use_syrk: bool = False,
         num_aurora_steps: int = 2,
         aurora_beta: float = 0.5,
         eps: float = 1e-14,
-        **kwargs: Any,
+        weight_update_hook: WeightUpdateHook[HookStateT] | None = None,
     ) -> None:
         _validate_aurora_args(num_aurora_steps, aurora_beta, eps)
-        super().__init__(*args, **kwargs)
+        if num_ns_steps < 1:
+            raise ValueError(f"num_ns_steps must be at least 1, got {num_ns_steps}")
+
+        self._num_ns_steps = num_ns_steps
+        self._coefficient_type = coefficient_type
+        self._scale_mode = scale_mode
+        self._extra_scale_factor = extra_scale_factor
         self._num_aurora_steps = num_aurora_steps
         self._aurora_beta = aurora_beta
         self._eps = eps
-        muon_scaled_orthogonalize_fn = self.scaled_orthogonalize_fn
+
+        if use_syrk:
+            sm_version = torch.cuda.get_device_capability() if torch.cuda.is_available() else (0, 0)
+            if not triton_kernels.HAS_TRITON_340:  # type: ignore[attr-defined]
+                logging.error("Triton 3.4.0 or higher is required for use_syrk to be True.")
+                use_syrk = False
+            elif sm_version not in ((8, 0), (9, 0), (10, 0), (10, 3)):
+                logging.error(
+                    "Correctness of Triton kernel on SM %s cannot be guaranteed. Setting use_syrk to False.",
+                    sm_version,
+                )
+                use_syrk = False
+        self._use_syrk = use_syrk
 
         def orthogonalize_fn(momentum: torch.Tensor) -> torch.Tensor:
             return muon_utils.newton_schulz(
@@ -142,15 +183,43 @@ class Aurora(Muon[HookStateT]):
             )
 
         def scaled_orthogonalize_fn(momentum: torch.Tensor) -> torch.Tensor:
-            if momentum.size(-2) <= momentum.size(-1):
-                return muon_scaled_orthogonalize_fn(momentum)
             update = aurora_orthogonalize(
                 momentum, orthogonalize_fn, iterations=num_aurora_steps, beta=aurora_beta, eps=eps
             )
             scale = get_muon_scale_factor(momentum.size(-2), momentum.size(-1), mode=self.scale_mode)
             return update * scale * self.extra_scale_factor
 
-        self.scaled_orthogonalize_fn = scaled_orthogonalize_fn
+        super().__init__(
+            params,
+            lr,
+            momentum,
+            weight_decay,
+            nesterov=nesterov,
+            weight_decay_method=weight_decay_method,
+            fp32_matmul_prec=fp32_matmul_prec,
+            scaled_orthogonalize_fn=scaled_orthogonalize_fn,
+            weight_update_hook=weight_update_hook,
+        )
+
+    @property
+    def num_ns_steps(self) -> int:
+        return self._num_ns_steps
+
+    @property
+    def coefficient_type(self) -> NSCoeffT:
+        return self._coefficient_type
+
+    @property
+    def scale_mode(self) -> MuonScaleT:
+        return self._scale_mode
+
+    @property
+    def extra_scale_factor(self) -> float:
+        return self._extra_scale_factor
+
+    @property
+    def use_syrk(self) -> bool:
+        return self._use_syrk
 
     @property
     def num_aurora_steps(self) -> int:
@@ -163,3 +232,6 @@ class Aurora(Muon[HookStateT]):
     @property
     def eps(self) -> float:
         return self._eps
+
+
+Aurora.__doc__ = inspect.cleandoc(Aurora.__doc__).format(_args_doc=_args_doc)  # type: ignore[arg-type]
