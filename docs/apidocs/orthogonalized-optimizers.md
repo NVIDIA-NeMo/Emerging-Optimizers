@@ -27,8 +27,6 @@ emerging_optimizers.orthogonalized_optimizers
 .. autoclass:: Aurora
     :members:
 
-.. autofunction:: aurora_orthogonalize
-
 
 :hidden:`Scion`
 ~~~~~~~~~~~~~~~
@@ -104,28 +102,6 @@ output-neuron rows with a diagonal preconditioner around the existing
 Newton–Schulz solver. Square and wide updates keep the Muon path. Norm reductions
 use FP32; exact zero rows remain zero. The update scale is applied once after all
 outer solves. `eps` controls the floor for squared row norms and defaults to `1e-14`.
-
-```python
-from emerging_optimizers.orthogonalized_optimizers import Aurora
-
-optimizer = Aurora(
-    matrix_parameters,  # 2D FP32 parameters; use AdamW separately for other parameters
-    lr=3e-4,
-    num_aurora_steps=2,
-    aurora_beta=0.5,
-    coefficient_type="polar_express",
-    num_ns_steps=8,
-)
-```
-
-`num_ns_steps` counts inner iterations **per solve**, so two Aurora steps double
-the number of Newton–Schulz solves for tall matrices. The coefficient schedule,
-precision, shape scaling, and optional SYRK backend remain configurable through
-Aurora's constructor options. These defaults preserve this library's Muon recipe;
-they do not reproduce every hyperparameter of the released Aurora optimizer.
-The stateless `aurora_orthogonalize` helper also supports independent batches of
-matrices, but the optimizer follows Muon's 2D-parameter contract. Pass complete,
-unsharded matrices to the helper.
 
 `sinkhorn_balance` transforms tall, dense token-by-feature updates such as those for embedding tables,
 Engram tables, and language-model prediction heads. It alternates row and column L2 normalization, then
