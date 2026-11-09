@@ -58,12 +58,17 @@ __all__ = ["Aurora"]
 
 
 @torch.compile(fullgraph=True)
-def _precondition_rows(momentum: torch.Tensor, *, eps: float) -> tuple[torch.Tensor, torch.Tensor]:
-    row_sq = momentum.square().sum(dim=-1, keepdim=True)
-    # Test the input itself: squaring a small nonzero FP32 value can underflow.
+def _precondition_rows(momentum: torch.Tensor, *, eps: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    # A common positive scale leaves Aurora unchanged and keeps FP32 norm reductions
+    # away from underflow/overflow. Each matrix in a batch has its own scale and floor.
+    scale = momentum.abs().amax(dim=(-2, -1), keepdim=True)
+    momentum = momentum / torch.where(scale > 0, scale, 1.0)
+    row_norm = torch.linalg.vector_norm(momentum, dim=-1, keepdim=True)
+    floor = eps * row_norm.mean(dim=-2, keepdim=True)
+    denominator = torch.maximum(row_norm, floor)
     zero_rows = (momentum == 0).all(dim=-1, keepdim=True)
-    diagonal = row_sq.clamp_min(eps).rsqrt().masked_fill(zero_rows, 0)
-    return diagonal, momentum * diagonal
+    diagonal = torch.where(denominator > 0, denominator, 1.0).reciprocal().masked_fill(zero_rows, 0)
+    return momentum, diagonal, momentum * diagonal
 
 
 @torch.compile(fullgraph=True)
@@ -75,9 +80,12 @@ def _refine_rows(
     beta: float,
     eps: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    row_sq = orthogonalized.float().square().sum(dim=-1, keepdim=True)
-    rows, cols = momentum.shape
-    diagonal = diagonal * ((cols / rows) / row_sq.clamp_min(eps)).pow(beta)
+    row_norm = torch.linalg.vector_norm(orthogonalized.float(), dim=-1, keepdim=True)
+    floor = eps * row_norm.mean(dim=-2, keepdim=True)
+    denominator = torch.maximum(row_norm, floor)
+    denominator = torch.where((denominator > 0) & (diagonal != 0), denominator, 1.0)
+    rows, cols = momentum.shape[-2:]
+    diagonal = diagonal * (math.sqrt(cols / rows) / denominator).pow(2 * beta)
     return diagonal, momentum * diagonal
 
 
@@ -96,8 +104,9 @@ class Aurora(OrthogonalizedOptimizer[HookStateT]):
         num_ns_steps: Number of inner Newton-Schulz iterations per solve; defaults to 8.
         num_aurora_steps: Number of outer solves for tall matrices; defaults to 2.
         aurora_beta: Damping exponent for diagonal refinement, in ``(0, 1]``; defaults to 0.5.
-        eps: Floor for squared row norms; defaults to ``1e-14``. Must be finite and in the
-            normal FP32 range, preventing overflow in the reciprocal used for refinement.
+        eps: Relative row L2 norm floor; defaults to ``1e-6``. Each balancing stage floors
+            row norms at ``eps * mean(row_norms)`` for that matrix. Must be finite and in
+            the normal FP32 range. Exact zero rows and all-zero matrices remain zero.
 
     References:
         - Aurora's released optimizer implementation.
@@ -117,7 +126,7 @@ class Aurora(OrthogonalizedOptimizer[HookStateT]):
         num_ns_steps: int = 8,
         num_aurora_steps: int = 2,
         aurora_beta: float = 0.5,
-        eps: float = 1e-14,
+        eps: float = 1e-6,
         weight_update_hook: WeightUpdateHook[HookStateT] | None = None,
     ) -> None:
         if num_ns_steps < 1:
@@ -136,10 +145,10 @@ class Aurora(OrthogonalizedOptimizer[HookStateT]):
         self._eps = eps
 
         def scaled_orthogonalize_fn(momentum: torch.Tensor) -> torch.Tensor:
-            rows, cols = momentum.shape
+            rows, cols = momentum.shape[-2:]
             preconditioned = momentum
             if rows > cols:
-                diagonal, preconditioned = _precondition_rows(momentum, eps=eps)
+                momentum, diagonal, preconditioned = _precondition_rows(momentum, eps=eps)
             update = muon_utils.newton_schulz(preconditioned, steps=num_ns_steps, coefficient_type="polar_express")
             if rows > cols:
                 for _ in range(1, num_aurora_steps):

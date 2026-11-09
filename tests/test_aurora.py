@@ -21,6 +21,7 @@ from absl.testing import absltest, parameterized
 
 from emerging_optimizers import utils
 from emerging_optimizers.orthogonalized_optimizers import Aurora, Muon
+from emerging_optimizers.orthogonalized_optimizers.aurora import _precondition_rows, _refine_rows
 from emerging_optimizers.orthogonalized_optimizers.muon_utils import newton_schulz
 
 
@@ -45,15 +46,23 @@ def _gen_row_scaled_matrix(shape: tuple[int, int], device: str) -> torch.Tensor:
 
 
 def _reference_aurora_update(
-    matrix: torch.Tensor, *, iterations: int = 2, beta: float = 0.5, eps: float = 1e-14
+    matrix: torch.Tensor, *, iterations: int = 2, beta: float = 0.5, eps: float = 1e-6
 ) -> torch.Tensor:
-    """Independent norm/reciprocal expression of the released diagonal refinement."""
-    diagonal = torch.linalg.vector_norm(matrix, dim=-1, keepdim=True).clamp_min(eps**0.5).reciprocal()
+    """Independent FP64 reference without the implementation's initial rescaling."""
+    matrix = matrix.double()
+    row_norm = torch.linalg.vector_norm(matrix, dim=-1, keepdim=True)
+    floor = eps * row_norm.mean(dim=-2, keepdim=True)
+    denominator = torch.maximum(row_norm, floor)
+    diagonal = torch.where(denominator > 0, denominator, 1.0).reciprocal()
+    diagonal = diagonal.masked_fill(row_norm == 0, 0)
     for index in range(iterations):
-        update = newton_schulz(diagonal * matrix, steps=8, coefficient_type="polar_express")
+        update = newton_schulz((diagonal * matrix).float(), steps=8, coefficient_type="polar_express")
         if index + 1 < iterations:
-            row_norm = torch.linalg.vector_norm(update, dim=-1, keepdim=True)
-            diagonal = diagonal * (matrix.size(-1) / matrix.size(-2) / row_norm.square().clamp_min(eps)).pow(beta)
+            row_norm = torch.linalg.vector_norm(update.double(), dim=-1, keepdim=True)
+            floor = eps * row_norm.mean(dim=-2, keepdim=True)
+            denominator = torch.maximum(row_norm, floor)
+            denominator = torch.where((denominator > 0) & (diagonal != 0), denominator, 1.0)
+            diagonal = diagonal * (matrix.size(-1) / matrix.size(-2) / denominator.square()).pow(beta)
     return update * math.sqrt(matrix.size(-2)) * 0.2
 
 
@@ -66,8 +75,8 @@ class AuroraTest(parameterized.TestCase):
         self.addCleanup(torch.set_float32_matmul_precision, precision)
 
     @parameterized.named_parameters(
-        ("default", 2, 0.5, 1e-14),
-        ("more_refinements", 4, 0.25, 1e-14),
+        ("default", 2, 0.5, 1e-6),
+        ("more_refinements", 4, 0.25, 1e-6),
         ("custom_floor", 2, 0.5, 0.25),
     )
     def test_matches_diagonal_refinement_reference(self, iterations, beta, eps) -> None:
@@ -82,7 +91,7 @@ class AuroraTest(parameterized.TestCase):
         )
         actual = optimizer.scaled_orthogonalize_fn(matrix)
         expected = _reference_aurora_update(matrix, iterations=iterations, beta=beta, eps=eps)
-        # Norm/reciprocal and squared-sum/rsqrt round differently before the NS solves.
+        # Independent FP32 and FP64 norm reductions round differently before the NS solves.
         torch.testing.assert_close(actual, expected, atol=2e-5, rtol=2e-5)
         torch.testing.assert_close(matrix, before, atol=0, rtol=0)
 
@@ -112,7 +121,7 @@ class AuroraTest(parameterized.TestCase):
             aurora.scaled_orthogonalize_fn(matrix), muon.scaled_orthogonalize_fn(matrix), atol=0, rtol=0
         )
 
-    @parameterized.parameters(1e-14, torch.finfo(torch.float32).tiny)
+    @parameterized.parameters(1e-6, torch.finfo(torch.float32).tiny)
     def test_zero_rows_stay_zero_with_repeated_refinement(self, eps) -> None:
         matrix = _gen_row_scaled_matrix((96, 16), self.device)
         matrix[::2] = 0
@@ -136,6 +145,44 @@ class AuroraTest(parameterized.TestCase):
         self.assertTrue(torch.isfinite(actual).all())
         self.assertGreater(torch.count_nonzero(actual).item(), 0)
         torch.testing.assert_close(actual, expected, atol=2e-5, rtol=2e-5)
+
+    def test_relative_floor_uses_mean_row_l2_norm_at_both_stages(self) -> None:
+        matrix = torch.tensor([[0.0, 0.0], [0.01, 0.0], [0.0, 1.0], [4.0, 0.0]], device=self.device)
+        normalized, diagonal, actual = _precondition_rows(matrix, eps=0.25)
+        # mean L2 norm=(0+.01+1+4)/4, rather than sqrt(mean squared L2 norm).
+        floor = 0.25 * 5.01 / 4
+        expected = torch.tensor([[0.0, 0.0], [0.01 / floor, 0.0], [0.0, 1.0], [1.0, 0.0]], device=self.device)
+        torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
+        orthogonalized = matrix / 4
+        refined_diagonal, actual = _refine_rows(normalized, orthogonalized, diagonal, beta=0.5, eps=0.25)
+        denominator = torch.tensor([1.0, floor / 4, 0.25, 1.0], device=self.device).unsqueeze(-1)
+        expected_diagonal = diagonal * (math.sqrt(0.5) / denominator)
+        torch.testing.assert_close(refined_diagonal, expected_diagonal, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(actual, normalized * expected_diagonal, atol=1e-6, rtol=1e-6)
+
+    def test_tall_update_is_invariant_to_momentum_scale(self) -> None:
+        matrix = _gen_row_scaled_matrix((96, 16), self.device)
+        matrix[0] = 0
+        matrix[1] *= 1e-10  # Below the relative floor at every tested global scale.
+        optimizer = Aurora([torch.nn.Parameter(matrix.clone())], fp32_matmul_prec="highest")
+        self.assertEqual(optimizer.eps, 1e-6)
+        expected = optimizer.scaled_orthogonalize_fn(matrix)
+        for scale in (1e-8, 1e8, 2.0**-80, 2.0**80):
+            with self.subTest(scale=scale):
+                actual = optimizer.scaled_orthogonalize_fn(matrix * scale)
+                self.assertTrue(torch.isfinite(actual).all())
+                torch.testing.assert_close(actual, expected, atol=2e-5, rtol=2e-5)
+
+    def test_batched_matrices_have_independent_relative_floors(self) -> None:
+        first = _gen_row_scaled_matrix((96, 16), self.device)
+        second = _gen_row_scaled_matrix((96, 16), self.device) * 1e-8
+        batch = torch.stack([first, second, torch.zeros_like(first)])
+        optimizer = Aurora([torch.nn.Parameter(first.clone())], fp32_matmul_prec="highest", eps=0.25)
+        actual = optimizer.scaled_orthogonalize_fn(batch)
+        expected = torch.stack([optimizer.scaled_orthogonalize_fn(matrix) for matrix in batch])
+        self.assertTrue(torch.isfinite(actual).all())
+        torch.testing.assert_close(actual, expected, atol=2e-5, rtol=2e-5)
+        self.assertEqual(torch.count_nonzero(actual[2]).item(), 0)
 
     def test_switch_from_muon_checkpoint_preserves_momentum(self) -> None:
         matrix = _gen_row_scaled_matrix((32, 8), self.device)
