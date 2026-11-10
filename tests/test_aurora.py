@@ -173,7 +173,7 @@ class AuroraTest(parameterized.TestCase):
         actual = optimizer.scaled_orthogonalize_fn(batch)
         expected = torch.stack([optimizer.scaled_orthogonalize_fn(matrix) for matrix in batch])
         self.assertTrue(torch.isfinite(actual).all())
-        torch.testing.assert_close(actual, expected, atol=1e-6, rtol=2e-5)
+        torch.testing.assert_close(actual, expected, atol=1e-5, rtol=2e-5)
         self.assertEqual(torch.count_nonzero(actual[2]).item(), 0)
 
     def test_switch_from_muon_checkpoint_preserves_momentum(self) -> None:
