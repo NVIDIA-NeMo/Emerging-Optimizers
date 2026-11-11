@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from emerging_optimizers.orthogonalized_optimizers.adaptive_muon import *
+from emerging_optimizers.orthogonalized_optimizers.aurora import *
 from emerging_optimizers.orthogonalized_optimizers.mop import *
 from emerging_optimizers.orthogonalized_optimizers.muon import *
 from emerging_optimizers.orthogonalized_optimizers.muon_hyperball import *

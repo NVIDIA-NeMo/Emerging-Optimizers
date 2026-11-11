@@ -21,6 +21,13 @@ emerging_optimizers.orthogonalized_optimizers
     :members:
 
 
+:hidden:`Aurora`
+~~~~~~~~~~~~~~~
+
+.. autoclass:: Aurora
+    :members:
+
+
 :hidden:`Scion`
 ~~~~~~~~~~~~~~~
 
@@ -87,6 +94,19 @@ emerging_optimizers.orthogonalized_optimizers
 
 .. autofunction:: sinkhorn_balance
 ```
+
+`Aurora` subclasses `OrthogonalizedOptimizer` directly and supplies its own
+`scaled_orthogonalize_fn`, sharing the base optimizer loop and state with `Muon`.
+For tall updates stored as `[out, in]`, it balances
+output-neuron rows with a diagonal preconditioner around the existing
+Newton–Schulz solver. Square and wide updates keep the Muon path. Norm reductions
+use FP32; exact zero rows remain zero. The update scale is applied once after all
+outer solves. `eps` defaults to `1e-6` and specifies a fraction of the matrix's
+average row L2 norm: each balancing stage uses `eps * mean(row_norms)` as its norm
+floor. This relative floor preserves the tall-matrix update under positive scaling
+of the momentum. The scaled orthogonalization callback also accepts batches of
+matrices, computing each matrix's floor independently; the base optimizer still
+expects 2D parameters. All-zero matrices produce a finite zero update.
 
 `sinkhorn_balance` transforms tall, dense token-by-feature updates such as those for embedding tables,
 Engram tables, and language-model prediction heads. It alternates row and column L2 normalization, then
