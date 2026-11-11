@@ -15,4 +15,5 @@ scalar-optimizers.md
 weight-update-hooks.md
 mixin.md
 utils.md
+contrib.md
 ```
