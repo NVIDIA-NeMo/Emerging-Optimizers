@@ -154,6 +154,8 @@ class PSGDPro(opt_mixin.WeightDecayMixin, torch.optim.Optimizer):
                 # update momentum buffer with EMA of gradient
                 exp_avg = state["exp_avg"]
                 exp_avg.lerp_(grad, 1 - group["momentum"])
+                # The Kronecker factors can be kept in higher precision than the param, see _kron_factor_dtype.
+                exp_avg = exp_avg.to(_kron_factor_dtype(grad.dtype))
 
                 # Get hyperparameters for preconditioner update
                 precond_lr = _get_precond_lr(
@@ -197,11 +199,21 @@ def _init_psgd_kron_states(
     lip_const_list: list[torch.Tensor] = []
 
     # Create identity matrices scaled by precond_init_scale for each dimension
+    dtype = _kron_factor_dtype(grad.dtype)
     for size in grad.shape:
-        q_list.append(torch.eye(size, device=grad.device) * precond_init_scale)
-        lip_const_list.append(torch.ones((), device=grad.device))
+        q_list.append(torch.eye(size, dtype=dtype, device=grad.device) * precond_init_scale)
+        lip_const_list.append(torch.ones((), dtype=dtype, device=grad.device))
 
     return q_list, lip_const_list
+
+
+def _kron_factor_dtype(param_dtype: torch.dtype) -> torch.dtype:
+    """Dtype of the Kronecker factors for a param of the given dtype.
+
+    The procrustes step is written for fp32, so low precision params keep their factors in fp32,
+    while float64 params keep them in float64.
+    """
+    return torch.promote_types(param_dtype, torch.float32)
 
 
 def _update_precond_procrustes(
