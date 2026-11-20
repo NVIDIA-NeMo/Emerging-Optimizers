@@ -19,7 +19,10 @@ import torch
 from absl import flags, logging
 from absl.testing import absltest, parameterized
 
-from emerging_optimizers.orthogonalized_optimizers.sinkhorn_utils import sinkhorn_balance
+from emerging_optimizers.orthogonalized_optimizers.sinkhorn_utils import (
+    sinkhorn_balance,
+    sinkhorn_balance_row_sharded,
+)
 
 
 flags.DEFINE_enum("device", "cpu", ["cpu", "cuda"], "Device to run tests on")
@@ -148,6 +151,68 @@ class SinkhornBalanceTest(parameterized.TestCase):
         self.assertNotEqual(result.data_ptr(), update.data_ptr())
         self.assertFalse(result.requires_grad)
         torch.testing.assert_close(update, update_before, atol=0.0, rtol=0.0)
+
+    @parameterized.product(dtype=(torch.float32, torch.bfloat16, torch.float16), steps=(1, 3, 11))
+    def test_row_sharded_without_group_matches_serial(self, dtype, steps) -> None:
+        update = torch.randn((5, 17), device=FLAGS.device).T.to(dtype)
+        before = update.clone()
+        actual = sinkhorn_balance_row_sharded(
+            update, row_group=None, global_num_rows=17, num_normalization_steps=steps
+        )
+        expected = sinkhorn_balance(update, num_normalization_steps=steps)
+        torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+        torch.testing.assert_close(update, before, atol=0, rtol=0)
+        self.assertFalse(actual.requires_grad)
+        self.assertEqual(actual.dtype, dtype)
+        self.assertEqual(actual.device, update.device)
+        self.assertEqual(actual.shape, update.shape)
+
+    @parameterized.parameters(torch.float32, torch.bfloat16, torch.float16)
+    def test_local_wide_and_empty_shards(self, dtype) -> None:
+        update = torch.tensor([[10.0, 1.0, -2.0, 3.0], [1.0, 10.0, 2.0, -3.0]], device=FLAGS.device).to(dtype)
+        update.requires_grad_()
+        before = update.detach().clone()
+        actual = sinkhorn_balance_row_sharded(update, row_group=None, global_num_rows=17, use_shard_local_stats=True)
+        expected = _sinkhorn_balance_serial_cpu_reference(
+            update, eps=1e-20, num_normalization_steps=11, zero_row_threshold=1e-3
+        )
+        torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(update, before, atol=0, rtol=0)
+        self.assertFalse(actual.requires_grad)
+        empty = torch.empty((0, 4), dtype=dtype, device=FLAGS.device)
+        result = sinkhorn_balance_row_sharded(empty, row_group=None, global_num_rows=17, use_shard_local_stats=True)
+        self.assertEqual(result.shape, empty.shape)
+        self.assertEqual(result.dtype, dtype)
+        self.assertEqual(result.device, empty.device)
+        with self.assertRaisesRegex(ValueError, "rows to be the larger"):
+            sinkhorn_balance(update)
+
+    def test_row_sharded_rejects_invalid_inputs(self) -> None:
+        valid = torch.zeros((8, 4), device=FLAGS.device)
+        cases = (
+            (valid, dict(global_num_rows=0)),
+            (valid, dict(global_num_rows=8.0)),
+            (valid, dict(global_num_rows=True)),
+            (valid, dict(global_num_rows=7)),
+            (valid[:2], dict(global_num_rows=8)),
+            (valid, dict(global_num_rows=8, num_normalization_steps=2)),
+            (valid, dict(global_num_rows=8, num_normalization_steps=3.0)),
+            (valid, dict(global_num_rows=8, eps=0.0)),
+            (valid, dict(global_num_rows=8, eps=float("nan"))),
+            (valid, dict(global_num_rows=8, zero_row_threshold=-1.0)),
+            (valid, dict(global_num_rows=8, zero_row_threshold=float("inf"))),
+            (valid, dict(global_num_rows=8, use_shard_local_stats="local")),
+            (valid.flatten(), dict(global_num_rows=8)),
+            (valid.to(torch.float64), dict(global_num_rows=8)),
+            (valid.to_sparse(), dict(global_num_rows=8)),
+            (torch.empty((0, 4), device=FLAGS.device), dict(global_num_rows=8)),
+            (torch.empty((8, 0), device=FLAGS.device), dict(global_num_rows=8)),
+            (valid[:2], dict(global_num_rows=2, use_shard_local_stats=True)),
+        )
+        for update, kwargs in cases:
+            with self.subTest(kwargs=kwargs, shape=update.shape):
+                with self.assertRaises(ValueError):
+                    sinkhorn_balance_row_sharded(update, row_group=None, **kwargs)
 
     def test_rejects_invalid_inputs(self) -> None:
         valid_update = torch.zeros((8, 4), device=FLAGS.device)
