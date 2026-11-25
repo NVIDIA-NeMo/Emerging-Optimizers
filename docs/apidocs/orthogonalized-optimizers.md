@@ -93,6 +93,8 @@ emerging_optimizers.orthogonalized_optimizers
 .. currentmodule:: emerging_optimizers.orthogonalized_optimizers.sinkhorn_utils
 
 .. autofunction:: sinkhorn_balance
+
+.. autofunction:: sinkhorn_balance_row_sharded
 ```
 
 `Aurora` subclasses `OrthogonalizedOptimizer` directly and supplies its own
@@ -123,3 +125,26 @@ It does not modify its input, performs balancing in an FP32 workspace, and retur
 input dtype and on the input device. See the
 [DeepSeek-V4.1 technical report](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/DeepSeek_V41_Tech_Report.pdf)
 for the algorithm and pre-training configuration.
+
+### Row-sharded Sinkhorn balancing
+
+For example, suppose ranks `[0, 1]` and `[2, 3]` each hold a row-sharded copy of
+the same embedding table. Use a separate `matrix_row_group` for each copy, not
+`torch.distributed.WORLD`, and pass the row count of one table as
+`table_num_rows`.
+
+```python
+from emerging_optimizers.orthogonalized_optimizers import sinkhorn_balance_row_sharded
+
+balanced = sinkhorn_balance_row_sharded(
+    local_update,
+    row_group=matrix_row_group,
+    global_num_rows=table_num_rows,
+)
+```
+
+If multiple Engram hash tables share one storage tensor, call the function
+separately for each logical table so that their statistics stay independent.
+FSDP integration and optimizer-state placement remain the caller's
+responsibility. Shard-local balancing does not replace the communication needed
+to finalize gradients or synchronize weights.
