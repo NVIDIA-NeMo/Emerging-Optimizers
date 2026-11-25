@@ -128,13 +128,10 @@ for the algorithm and pre-training configuration.
 
 ### Row-sharded Sinkhorn balancing
 
-`sinkhorn_balance_row_sharded` accepts a dense **local** tensor with shape
-`(local_rows, num_features)`. All feature columns of each local row must be
-present. The logical matrix must be nonempty and tall (`global_num_rows >=
-num_features > 0`), but a local shard may be wide or empty. FP32 workspace
-accumulation and output dtype/device preservation match the serial API. The
-existing `sinkhorn_balance` signature and validation are unchanged; both entry
-points share the same normalization loop.
+For example, suppose ranks `[0, 1]` and `[2, 3]` each hold a row-sharded copy of
+the same embedding table. Use a separate `matrix_row_group` for each copy, not
+`torch.distributed.WORLD`, and pass the row count of one table as
+`table_num_rows`.
 
 ```python
 from emerging_optimizers.orthogonalized_optimizers import sinkhorn_balance_row_sharded
@@ -143,48 +140,11 @@ balanced = sinkhorn_balance_row_sharded(
     local_update,
     row_group=matrix_row_group,
     global_num_rows=table_num_rows,
-    num_normalization_steps=11,
-    zero_row_threshold=1e-3,
-    eps=1e-20,
 )
 ```
 
-`row_group` must contain distinct, nonoverlapping row owners for **one logical
-matrix**, not replicas. The caller must provide the same `global_num_rows`,
-feature width, numerical settings, and call order on every group member, and
-ensure the local row counts sum to `global_num_rows`. That count is supplied as
-metadata rather than reduced every step. No partition offsets are needed since
-row/column norms are invariant to row order. Padding is not part of the logical
-matrix and must be removed by the caller. Plain local tensors, not DTensors with
-unresolved placements, are the input contract.
-
-Every member must call the function, including members with zero local rows.
-Global mode reduces the initial sum of row L2 norms and each partial column
-sum-of-squares, taking the square root and adding epsilon **after** reduction.
-For 11 individual normalization steps this is one scalar and five feature-vector
-SUM reductions, with no matrix all-gather. Uneven partitions use the global row
-count for the masking threshold, not the average of rank-local means. Norms,
-thresholds, and normalization are computed in FP32. Masked rows remain zero;
-finite iteration count and masking do not guarantee unit RMS for every column.
-
-Passing `row_group=None` means **no communication**, never the default WORLD
-group. In global mode, None or a size-one group requires the full logical matrix
-locally. An explicit group requires initialized `torch.distributed` and current
-rank membership; the function does not initialize process groups. Group/backend
-selection and cross-rank configuration validation remain the caller's
-responsibility.
-
-`use_shard_local_stats=True` selects an explicitly approximate mode. It ignores
-`row_group` and uses the local shard's own masking threshold and column norms,
-with no collectives even if a group was supplied. The same shape requirements
-apply in both modes. Changing row partitions can change the resulting update;
-local balancing is not equivalent to global balancing. The mode does not remove
-the existing communication needed to finalize gradients or synchronize weights.
-
-Momentum, Nesterov blending, per-table boundaries in fused storage,
-learning-rate correction, final weight updates, and optimizer-state placement
-remain the optimizer/integration layer's responsibility. Independent logical
-hash tables should call this function separately; storage fusion does not
-combine their statistics. FSDP integration is the caller's responsibility. This
-API does not implement feature sharding, asynchronous scheduling, fused kernels,
-or batching.
+If multiple Engram hash tables share one storage tensor, call the function
+separately for each logical table so that their statistics stay independent.
+FSDP integration and optimizer-state placement remain the caller's
+responsibility. Shard-local balancing does not replace the communication needed
+to finalize gradients or synchronize weights.
