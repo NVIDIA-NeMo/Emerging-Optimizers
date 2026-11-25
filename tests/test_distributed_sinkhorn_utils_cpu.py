@@ -34,6 +34,10 @@ FLAGS = flags.FLAGS
 
 
 def setUpModule() -> None:
+    if not dist.is_initialized():
+        if FLAGS.device == "cuda":
+            torch.cuda.set_device(int(os.environ.get("LOCAL_RANK", "0")))
+        dist.init_process_group(backend="nccl" if FLAGS.device == "cuda" else "gloo", timeout=timedelta(seconds=120))
     if FLAGS.seed is not None:
         logging.info("Setting random seed to %d", FLAGS.seed)
         torch.manual_seed(FLAGS.seed)
@@ -49,7 +53,7 @@ def _bounds(rows: int, rank: int, size: int) -> tuple[int, int]:
 
 def _matrix(rows: int, columns: int, dtype: torch.dtype) -> torch.Tensor:
     generator = torch.Generator().manual_seed((FLAGS.seed or 123) + rows * columns)
-    return torch.randn((rows, columns), generator=generator).to(dtype)
+    return torch.randn((rows, columns), generator=generator, device="cpu").to(device=FLAGS.device, dtype=dtype)
 
 
 class DistributedSinkhornBalanceCpuTest(parameterized.TestCase):
@@ -92,7 +96,7 @@ class DistributedSinkhornBalanceCpuTest(parameterized.TestCase):
 
     def test_global_mask_and_zero_updates(self):
         rows = dist.get_world_size() + 5
-        full = torch.ones((rows, 4))
+        full = torch.ones((rows, 4), device=FLAGS.device)
         full[0] *= 1e6
         full[-1] = 0
         start, end = _bounds(rows, dist.get_rank(), dist.get_world_size())
@@ -107,12 +111,12 @@ class DistributedSinkhornBalanceCpuTest(parameterized.TestCase):
         self.assertTrue(torch.isfinite(zero_result).all())
 
     def test_mask_threshold_equality(self):
-        full = torch.tensor([[1.0], [3.0], [0.0], [0.0]])
+        full = torch.tensor([[1.0], [3.0], [0.0], [0.0]], device=FLAGS.device)
         start, end = _bounds(4, dist.get_rank(), dist.get_world_size())
         actual = sinkhorn_balance_row_sharded(
             full[start:end], row_group=dist.group.WORLD, global_num_rows=4, zero_row_threshold=1.0
         )
-        expected = torch.tensor([[0.0], [1.0], [0.0], [0.0]])[start:end]
+        expected = torch.tensor([[0.0], [1.0], [0.0], [0.0]], device=FLAGS.device)[start:end]
         torch.testing.assert_close(actual, expected, atol=0, rtol=0)
 
     def test_replicated_domains_do_not_enter_statistics(self):
@@ -123,7 +127,7 @@ class DistributedSinkhornBalanceCpuTest(parameterized.TestCase):
         groups = [dist.new_group(ranks) for ranks in halves]
         group = groups[int(dist.get_rank() >= size // 2)]
         try:
-            full = torch.tensor([[0.75], [1.25], [1.25], [0.75]])
+            full = torch.tensor([[0.75], [1.25], [1.25], [0.75]], device=FLAGS.device)
             start, end = _bounds(4, dist.get_rank(group), dist.get_world_size(group))
             actual = sinkhorn_balance_row_sharded(
                 full[start:end],
@@ -138,7 +142,7 @@ class DistributedSinkhornBalanceCpuTest(parameterized.TestCase):
             dist.destroy_process_group(group)
 
     def test_local_mode_has_no_collectives(self):
-        full = torch.tensor([[10.0, 1.0], [10.0, 1.0], [1.0, 10.0], [1.0, 10.0]])
+        full = torch.tensor([[10.0, 1.0], [10.0, 1.0], [1.0, 10.0], [1.0, 10.0]], device=FLAGS.device)
         rank, size = dist.get_rank(), dist.get_world_size()
         start, end = (0, 2) if rank == 0 else (2, 4) if rank == size - 1 and size > 1 else (0, 0)
         local = full[start:end]
@@ -162,8 +166,8 @@ class DistributedSinkhornBalanceCpuTest(parameterized.TestCase):
         from torch.distributed.device_mesh import init_device_mesh
         from torch.distributed.tensor import Shard, distribute_tensor
 
-        mesh = init_device_mesh("cpu", (dist.get_world_size(),))
-        update = distribute_tensor(torch.ones((dist.get_world_size() * 4, 4)), mesh, [Shard(0)])
+        mesh = init_device_mesh(FLAGS.device, (dist.get_world_size(),))
+        update = distribute_tensor(torch.ones((dist.get_world_size() * 4, 4), device=FLAGS.device), mesh, [Shard(0)])
         with self.assertRaisesRegex(ValueError, r"local tensor, not a DTensor.*update\.to_local\(\)"):
             sinkhorn_balance_row_sharded(update, row_group=dist.group.WORLD, global_num_rows=dist.get_world_size() * 4)
 
@@ -172,7 +176,7 @@ class DistributedSinkhornBalanceCpuTest(parameterized.TestCase):
             self.skipTest("requires at least two ranks")
         group = dist.new_group([0])
         try:
-            full = torch.ones((4, 1))
+            full = torch.ones((4, 1), device=FLAGS.device)
             if dist.get_rank() == 0:
                 actual = sinkhorn_balance_row_sharded(full, row_group=group, global_num_rows=4)
                 torch.testing.assert_close(actual, sinkhorn_balance(full), atol=0, rtol=0)
@@ -185,9 +189,8 @@ class DistributedSinkhornBalanceCpuTest(parameterized.TestCase):
 
 
 if __name__ == "__main__":
-    dist.init_process_group(backend="gloo", timeout=timedelta(seconds=120))
     torch.set_num_threads(1)
-    rank = dist.get_rank()
+    rank = int(os.environ.get("RANK", "0"))
     for i, arg in enumerate(sys.argv):
         if arg.startswith("--xml_output_file="):
             base, extension = os.path.splitext(arg)
@@ -196,4 +199,5 @@ if __name__ == "__main__":
     try:
         absltest.main()
     finally:
-        dist.destroy_process_group()
+        if dist.is_initialized():
+            dist.destroy_process_group()
