@@ -57,7 +57,7 @@ from emerging_optimizers.weight_update_hooks.base import HookStateT
 __all__ = ["Aurora"]
 
 
-@torch.compile(fullgraph=True)
+@torch.compile
 def _precondition_rows(momentum: torch.Tensor, *, eps: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     # A common positive scale leaves Aurora unchanged and keeps FP32 norm reductions
     # away from underflow/overflow. Each matrix in a batch has its own scale and floor.
@@ -71,7 +71,7 @@ def _precondition_rows(momentum: torch.Tensor, *, eps: float) -> tuple[torch.Ten
     return momentum, diagonal, momentum * diagonal
 
 
-@torch.compile(fullgraph=True)
+@torch.compile
 def _refine_rows(
     momentum: torch.Tensor,
     orthogonalized: torch.Tensor,
