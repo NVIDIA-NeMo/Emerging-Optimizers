@@ -78,7 +78,7 @@ on:
 
 jobs:
   build-docs:
-    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_build_docs.yml@3ab507cd035df3ae37cce8808ed3210ff6e7062b # v0.67.0
+    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_build_docs.yml@1ebb754bdbe6680cce2b3d81da4e63be7200380a
     with:
       ref: ${{ inputs.github-ref }}
       sync-all: true
@@ -90,7 +90,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: NVIDIA-NeMo/FW-CI-templates
-          ref: v0.74.0
+          ref: 1ebb754bdbe6680cce2b3d81da4e63be7200380a
           path: FW-CI-templates
 
       - uses: ./FW-CI-templates/.github/actions/publish-docs

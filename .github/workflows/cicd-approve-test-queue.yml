@@ -29,6 +29,7 @@ concurrency:
 
 jobs:
   approve-queue:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: main
     permissions:
@@ -131,7 +132,12 @@ jobs:
               print(f"Approving workflow {workflow_name} with Run Id: {workflow_id}")
 
               deployment_url = f"actions/runs/{workflow_id}/pending_deployments"
-              deployment = make_request(deployment_url)[0]
+              deployments = make_request(deployment_url)
+              if deployments is None:
+                  raise RuntimeError("Could not read pending deployments")
+              deployment = next((item for item in deployments if item["environment"]["name"] == "test"), None)
+              if deployment is None:
+                  continue
               environment_id = deployment["environment"]["id"]
 
               # Approve the deployment
@@ -145,8 +151,7 @@ jobs:
               if result:
                   total_workflows += 1
               else:
-                  print(f"Failed to approve deployment {deployment['id']}")
-                  exit(1)
+                  raise RuntimeError(f"Failed to approve the test environment for run {workflow_id}")
 
           EOF
   notify:

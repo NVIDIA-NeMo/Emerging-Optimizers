@@ -37,10 +37,10 @@ permissions:
 
 jobs:
   code-freeze:
-    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_code_freeze.yml@fb3b45eed8585aafae60297464a004eb209fc95a # code freeze: /cherrypick PSA
+    uses: NVIDIA-NeMo/FW-CI-templates/.github/workflows/_code_freeze.yml@1ebb754bdbe6680cce2b3d81da4e63be7200380a
     with:
-      app-id: ${{ vars.BOT_ID }}
-      environment-name: public
+      release-environment: emerging-optimizers-release
+      freeze-source-branch: main
       library-name: Emerging-Optimizers
       python-package: emerging_optimizers
       release-type: ${{ inputs.release-type }}
@@ -49,6 +49,6 @@ jobs:
       next-pre-release: ""
       next-dev: ""
     secrets:
-      BOT_KEY: ${{ secrets.BOT_KEY }}
+      RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       SLACK_WEBHOOK: ${{ secrets.SLACK_RELEASE_ENDPOINT }}
       SLACK_WEBHOOK_ADMIN: ${{ secrets.SLACK_WEBHOOK_ADMIN }}
