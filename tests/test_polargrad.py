@@ -232,6 +232,36 @@ class OneSidedPolarGradOrthFnTest(parameterized.TestCase):
             rtol=1e-4,
         )
 
+    @parameterized.parameters(("left",), ("right",))
+    def test_zero_and_constant_centered_input_returns_zero(self, side) -> None:
+        zeros = torch.zeros((8, 16), device=self.device)
+        assert_equal(polargrad.one_sided_polargrad_orth_fn(zeros, side=side), zeros)
+
+        ones = torch.ones((8, 16), device=self.device)
+        assert_equal(polargrad.one_sided_polargrad_orth_fn(ones, side=side, center_rows=True), zeros)
+
+    @parameterized.product(
+        side=["left", "right"],
+        center_rows=[False, True],
+        alpha=[0.0, 1.0],
+        scale=[1e-12, 1e20],
+    )
+    def test_scale_invariance_and_homogeneity(self, side, center_rows, alpha, scale) -> None:
+        shape = (8, 32) if side == "left" else (32, 8)
+        grad = torch.randn(shape, device=self.device)
+        reference = polargrad.one_sided_polargrad_orth_fn(grad, side=side, alpha=alpha, center_rows=center_rows)
+        actual = polargrad.one_sided_polargrad_orth_fn(grad * scale, side=side, alpha=alpha, center_rows=center_rows)
+        expected = reference * (scale**alpha)
+        torch.testing.assert_close(
+            actual,
+            expected,
+            atol=1e-5 * expected.abs().amax().item(),
+            rtol=1e-4,
+            msg=lambda msg: (
+                f"Scale mismatch for side={side}, center_rows={center_rows}, alpha={alpha}, scale={scale}\n\n{msg}"
+            ),
+        )
+
 
 if __name__ == "__main__":
     absltest.main()

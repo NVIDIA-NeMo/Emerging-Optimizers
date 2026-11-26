@@ -139,7 +139,7 @@ def one_sided_polargrad_orth_fn(
         alpha: Exponent applied to the nuclear-norm scale factor.
         center_rows: If True, subtract the per-column mean (the average over the row axis, ``dim=0``)
             before and after the update, so each column is zero-mean.
-        eps: Floor on the Gram eigenvalues for the nuclear-norm computation.
+        eps: Relative floor on the Gram eigenvalues after magnitude normalization.
         extra_scale_factor: Extra multiplier on the update.
 
     Returns:
@@ -155,16 +155,24 @@ def one_sided_polargrad_orth_fn(
     if center_rows:
         m = m - m.mean(dim=0, keepdim=True)
 
-    gram = m @ m.transpose(-1, -2) if side == "left" else m.transpose(-1, -2) @ m
+    scale = m.abs().amax()
+    if scale == 0:
+        return torch.zeros_like(grad)
+
+    m_scaled = m / scale
+    gram = m_scaled @ m_scaled.transpose(-1, -2) if side == "left" else m_scaled.transpose(-1, -2) @ m_scaled
     eigvals, eigvecs = eigh_with_fallback(gram)
     eigvals.clamp_min_(eps)
     cutoff = eigvals.amax() * gram.shape[-1] * torch.finfo(m.dtype).eps
     inv_sqrt_eigvals = torch.where(eigvals > cutoff, eigvals.rsqrt(), torch.zeros_like(eigvals))
     gram_inv_sqrt = (eigvecs * inv_sqrt_eigvals.unsqueeze(-2)) @ eigvecs.transpose(-1, -2)
 
-    u = gram_inv_sqrt @ m if side == "left" else m @ gram_inv_sqrt
-    nuclear_norm = eigvals.sqrt().sum()
-    update = u * nuclear_norm.pow(alpha) * extra_scale_factor
+    u = gram_inv_sqrt @ m_scaled if side == "left" else m_scaled @ gram_inv_sqrt
+    if alpha == 0.0:
+        update = u * extra_scale_factor
+    else:
+        nuclear_norm = eigvals.sqrt().sum() * scale
+        update = u * nuclear_norm.pow(alpha) * extra_scale_factor
 
     if center_rows:
         update = update - update.mean(dim=0, keepdim=True)
