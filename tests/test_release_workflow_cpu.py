@@ -232,6 +232,96 @@ gh() {
         self.assertEqual(JOBS["finalize"]["permissions"], {"contents": "read", "pull-requests": "read"})
 
 
+class ContainerBuildRevision(unittest.TestCase):
+    """Verify that the CI container and its mounted checkout test the same vetted revision."""
+
+    jobs = yaml.safe_load((ROOT / ".github/workflows/cicd-main.yml").read_text())["jobs"]
+    head = "1" * 40
+    merge = "2" * 40
+    base = "3" * 40
+
+    def resolve(self, event="push", ref="pull-request/42", **responses):
+        """Run the actual resolver with metadata fixtures and no GitHub connection."""
+        step = next(step for step in self.jobs["cicd-container-build"]["steps"] if step.get("id") == "revision")
+        api = """
+gh() {
+  [[ $1 == api && $3 == --jq && $# == 4 ]] || return 1
+  case "$2" in
+    "repos/$GITHUB_REPOSITORY/pulls/42") response=$PR ;;
+    "repos/$GITHUB_REPOSITORY/git/commits/$MERGE_SHA") response=$COMMIT ;;
+    *) return 1 ;;
+  esac
+  [[ -n "$response" ]] || return 1
+  jq -r "$4" <<< "$response"
+}
+"""
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            output.touch()
+            env = dict(
+                os.environ,
+                GITHUB_OUTPUT=str(output),
+                GITHUB_REPOSITORY="example/repo",
+                GITHUB_EVENT_NAME=event,
+                GITHUB_REF_NAME=ref,
+                GITHUB_SHA=self.head,
+                MERGE_SHA=self.merge,
+                PR=json.dumps({"head": {"sha": self.head}, "merge_commit_sha": self.merge}),
+                COMMIT=json.dumps({"parents": [{"sha": self.base}, {"sha": self.head}]}),
+            )
+            env.update(responses)
+            result = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", api + step["run"]], env=env, capture_output=True
+            )
+            return result.returncode, output.read_text()
+
+    def test_resolve_mirror_and_default_branch(self):
+        """Use the synthetic merge for mirrors and the event SHA for pushes to main and schedules."""
+        self.assertEqual(self.resolve(), (0, f"sha={self.merge}\n"))
+        for event in ("push", "schedule"):
+            with self.subTest(event=event):
+                self.assertEqual(self.resolve(event=event, ref="main", PR="", COMMIT=""), (0, f"sha={self.head}\n"))
+
+    def test_mirror_metadata_must_verify(self):
+        """Return no revision if either API fails, the mirror is stale or the merge cannot be verified."""
+        for responses in (
+            {"PR": ""},
+            {"COMMIT": ""},
+            {"PR": json.dumps({"head": {"sha": self.base}, "merge_commit_sha": self.merge})},
+            {"PR": json.dumps({"head": {"sha": self.head}, "merge_commit_sha": None})},
+            {"PR": json.dumps({"head": {"sha": self.head}, "merge_commit_sha": "123"})},
+            {"COMMIT": json.dumps({"parents": [{"sha": self.head}]})},
+            {"COMMIT": json.dumps({"parents": [{"sha": self.head}, {"sha": self.base}]})},
+        ):
+            with self.subTest(responses=responses):
+                status, output = self.resolve(**responses)
+                self.assertNotEqual(status, 0)
+                self.assertEqual(output, "")
+
+    def test_build_and_test_use_verified_outputs(self):
+        """Bind checkout and mounted sources to the selected SHA and tests to the built image digest."""
+        build = self.jobs["cicd-container-build"]
+        checkout = next(step for step in build["steps"] if step.get("name") == "Checkout")
+        self.assertEqual(checkout["with"]["ref"], build["outputs"]["tested_sha"])
+        self.assertEqual(build["outputs"]["image_digest"], "${{ steps.image.outputs.digest }}")
+        tested_sha = "${{ needs.cicd-container-build.outputs.tested_sha }}"
+        for name in ("cicd-unit-tests", "cicd-nightly-tests"):
+            with self.subTest(job=name):
+                job = self.jobs[name]
+                self.assertIn("needs.cicd-container-build.result == 'success'", job["if"])
+                checkout, tests = job["steps"][:2]
+                self.assertEqual(checkout["with"]["ref"], tested_sha)
+                self.assertEqual(tests["with"]["checkout-ref"], tested_sha)
+                self.assertTrue(
+                    tests["with"]["container-image"].endswith(
+                        "@${{ needs.cicd-container-build.outputs.image_digest }}"
+                    )
+                )
+        template = yaml.safe_load((ROOT / ".github/actions/test-template/action.yml").read_text())
+        mounted = next(step for step in template["runs"]["steps"] if step["name"] == "Checkout repository")
+        self.assertEqual(mounted["with"]["ref"], "${{ inputs.checkout-ref }}")
+
+
 class WorkflowCredentials(unittest.TestCase):
     """Keep the catalog reader, release identity and reviewer credential in their own jobs."""
 

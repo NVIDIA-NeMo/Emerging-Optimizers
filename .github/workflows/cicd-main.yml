@@ -65,6 +65,9 @@ jobs:
           echo "Running CI tests"
 
   cicd-container-build:
+    outputs:
+      tested_sha: ${{ steps.revision.outputs.sha }}
+      image_digest: ${{ steps.image.outputs.digest }}
     needs: [pre-flight, cicd-wait-in-queue]
     runs-on: ${{ startsWith(needs.pre-flight.outputs.runner_prefix, 'ephe-v2-') && format('{0}-a{1}', needs.pre-flight.outputs.runner_prefix, github.run_attempt) || needs.pre-flight.outputs.runner_prefix }}
     if: |
@@ -75,30 +78,6 @@ jobs:
       )
       && !cancelled()
     steps:
-      - name: Get PR info
-        id: get-pr-info
-        if: startsWith(github.ref, 'refs/heads/pull-request/')
-        uses: nv-gha-runners/get-pr-info@090577647b8ddc4e06e809e264f7881650ecdccf # main
-
-      - name: Get merge commit sha
-        shell: bash -x -e -u -o pipefail {0}
-        id: sha
-        env:
-          IS_PR: ${{ startsWith(github.ref, 'refs/heads/pull-request/') }}
-        run: |
-          if [[ "$IS_PR" == "true" ]]; then
-            SHA=${{ fromJSON(steps.get-pr-info.outputs.pr-info || '{}').merge_commit_sha }}
-          else
-            SHA=${GITHUB_SHA}
-          fi
-          echo "main=${SHA}" | tee -a "$GITHUB_OUTPUT"
-
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          submodules: recursive
-          ref: ${{ steps.sha.outputs.main }}
-
       - name: Install GH CLI
         shell: bash
         run: |
@@ -107,6 +86,39 @@ jobs:
             echo "Attempt $i failed, retrying in 10s..."
             sleep 10
           done
+
+      - name: Resolve tested revision
+        id: revision
+        shell: bash -e -u -o pipefail {0}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$GITHUB_SHA"
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF_NAME" =~ ^pull-request/([0-9]+)$ ]]; then
+            pr_info=$(gh api "repos/$GITHUB_REPOSITORY/pulls/${BASH_REMATCH[1]}" \
+              --jq '.head.sha + " " + (.merge_commit_sha // "")')
+            read -r pr_head sha <<< "$pr_info"
+            if [[ "$pr_head" != "$GITHUB_SHA" || ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo '::error::PR merge revision is unavailable or the PR mirror is stale.'
+              exit 1
+            fi
+            merge_head=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$sha" --jq '.parents[1].sha')
+            if [[ "$merge_head" != "$GITHUB_SHA" ]]; then
+              echo '::error::PR merge revision does not contain the pushed head.'
+              exit 1
+            fi
+          fi
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::Expected a full tested commit SHA.'
+            exit 1
+          fi
+          echo "sha=$sha" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: recursive
+          ref: ${{ steps.revision.outputs.sha }}
 
       - name: Get last merged PR
         id: cache_from
@@ -136,20 +148,19 @@ jobs:
       - name: Compute cache keys
         id: cache_keys
         shell: bash
+        env:
+          REGISTRY: ${{ needs.pre-flight.outputs.registry }}
         run: |
-          PR_NUMBER="${{ fromJSON(steps.get-pr-info.outputs.pr-info || '{}').number }}"
-          BRANCH_SANITIZED=$(echo "${{ github.ref_name }}" | tr '/' '-' | tr -cd '[:alnum:]._-')
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            KEY="main"
-          elif [[ -n "$PR_NUMBER" ]]; then
-            KEY="$PR_NUMBER"
+          if [[ "$GITHUB_REF_NAME" =~ ^pull-request/([0-9]+)$ ]]; then
+            KEY="${BASH_REMATCH[1]}"
           else
-            KEY="$BRANCH_SANITIZED"
+            KEY=$(printf '%s' "$GITHUB_REF_NAME" | tr '/' '-' | tr -cd '[:alnum:]._-')
           fi
           echo "key=$KEY" | tee -a "$GITHUB_OUTPUT"
-          echo "cache-to=type=registry,ref=${{ needs.pre-flight.outputs.registry }}/emerging-optimizers:${KEY}-buildcache,mode=max" | tee -a "$GITHUB_OUTPUT"
+          echo "cache-to=type=registry,ref=$REGISTRY/emerging-optimizers:${KEY}-buildcache,mode=max" | tee -a "$GITHUB_OUTPUT"
 
       - name: Build and push
+        id: image
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           file: ./docker/Dockerfile.ci
@@ -183,23 +194,20 @@ jobs:
     needs: [pre-flight, cicd-container-build]
     runs-on: ${{ matrix.runner }}
     name: ${{ matrix.script }}
-    if: |
-      (
-        success()
-        || needs.pre-flight.outputs.is_ci_workload == 'true'
-        || needs.pre-flight.outputs.force_run_all == 'true'
-      )
-      && !cancelled()
+    if: ${{ !cancelled() && needs.cicd-container-build.result == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.cicd-container-build.outputs.tested_sha }}
       - name: main
         uses: ./.github/actions/test-template
         with:
           script: ${{ matrix.script }}
           timeout: ${{ matrix.timeout || 10 }}
           is_unit_test: "true"
-          container-image: ${{ needs.pre-flight.outputs.registry }}/emerging-optimizers:${{ github.sha }}
+          checkout-ref: ${{ needs.cicd-container-build.outputs.tested_sha }}
+          container-image: ${{ needs.pre-flight.outputs.registry }}/emerging-optimizers@${{ needs.cicd-container-build.outputs.image_digest }}
           cpu-only: ${{ matrix.cpu-only || false }}
           test-data-path: ${{ needs.pre-flight.outputs.test_data_path }}
           runner: ${{ matrix.runner }}
@@ -217,24 +225,20 @@ jobs:
     needs: [pre-flight, cicd-container-build]
     runs-on: ${{ startsWith(needs.pre-flight.outputs.runner_prefix, 'ephe-v2-') && format('{0}-a{1}', needs.pre-flight.outputs.runner_prefix, github.run_attempt) || needs.pre-flight.outputs.runner_prefix }}
     name: L1_Tests_GPU
-    if: |
-      github.event_name == 'schedule'
-      && (
-        success()
-        || needs.pre-flight.outputs.is_ci_workload == 'true'
-        || needs.pre-flight.outputs.force_run_all == 'true'
-      )
-      && !cancelled()
+    if: ${{ !cancelled() && github.event_name == 'schedule' && needs.cicd-container-build.result == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.cicd-container-build.outputs.tested_sha }}
       - name: main
         uses: ./.github/actions/test-template
         with:
           script: L1_Tests_GPU
           timeout: 60
           is_unit_test: "true"
-          container-image: ${{ needs.pre-flight.outputs.registry }}/emerging-optimizers:${{ github.sha }}
+          checkout-ref: ${{ needs.cicd-container-build.outputs.tested_sha }}
+          container-image: ${{ needs.pre-flight.outputs.registry }}/emerging-optimizers@${{ needs.cicd-container-build.outputs.image_digest }}
           runner: ${{ startsWith(needs.pre-flight.outputs.runner_prefix, 'ephe-v2-') && format('{0}-a{1}', needs.pre-flight.outputs.runner_prefix, github.run_attempt) || needs.pre-flight.outputs.runner_prefix }}
           test-data-path: ${{ needs.pre-flight.outputs.test_data_path }}
 
