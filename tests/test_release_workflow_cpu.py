@@ -277,10 +277,12 @@ gh() {
 
     def test_resolve_mirror_and_default_branch(self):
         """Use the synthetic merge for mirrors and the event SHA for pushes to main and schedules."""
-        self.assertEqual(self.resolve(), (0, f"sha={self.merge}\n"))
+        self.assertEqual(self.resolve(), (0, f"sha={self.merge}\nbase_sha={self.base}\n"))
         for event in ("push", "schedule"):
             with self.subTest(event=event):
-                self.assertEqual(self.resolve(event=event, ref="main", PR="", COMMIT=""), (0, f"sha={self.head}\n"))
+                self.assertEqual(
+                    self.resolve(event=event, ref="main", PR="", COMMIT=""), (0, f"sha={self.head}\nbase_sha=\n")
+                )
 
     def test_mirror_metadata_must_verify(self):
         """Return no revision if either API fails, the mirror is stale or the merge cannot be verified."""
@@ -290,6 +292,7 @@ gh() {
             {"PR": json.dumps({"head": {"sha": self.base}, "merge_commit_sha": self.merge})},
             {"PR": json.dumps({"head": {"sha": self.head}, "merge_commit_sha": None})},
             {"PR": json.dumps({"head": {"sha": self.head}, "merge_commit_sha": "123"})},
+            {"COMMIT": json.dumps({"parents": [{"sha": ""}, {"sha": self.head}]})},
             {"COMMIT": json.dumps({"parents": [{"sha": self.head}]})},
             {"COMMIT": json.dumps({"parents": [{"sha": self.head}, {"sha": self.base}]})},
         ):
@@ -320,6 +323,11 @@ gh() {
         template = yaml.safe_load((ROOT / ".github/actions/test-template/action.yml").read_text())
         mounted = next(step for step in template["runs"]["steps"] if step["name"] == "Checkout repository")
         self.assertEqual(mounted["with"]["ref"], "${{ inputs.checkout-ref }}")
+        coverage = self.jobs["Coverage"]
+        self.assertIn("needs.cicd-container-build.result == 'success'", coverage["if"])
+        self.assertEqual(coverage["steps"][0]["with"]["ref"], tested_sha)
+        upload = next(step for step in coverage["steps"] if step.get("uses", "").startswith("codecov/codecov-action@"))
+        self.assertEqual(upload["with"]["base_sha"], "${{ needs.cicd-container-build.outputs.base_sha }}")
 
 
 class WorkflowCredentials(unittest.TestCase):
