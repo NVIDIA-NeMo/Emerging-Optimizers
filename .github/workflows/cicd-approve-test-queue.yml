@@ -31,6 +31,10 @@ jobs:
   approve-queue:
     runs-on: ubuntu-latest
     environment: main
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -47,7 +51,8 @@ jobs:
 
       - name: Approve waiting deployments
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT }}
+          APPROVAL_TOKEN: ${{ secrets.PAT }}
+          READ_TOKEN: ${{ github.token }}
           MAX_CONCURRENCY: ${{ vars.MAX_CONCURRENCY || 1 }}
         run: |
           python - <<EOF
@@ -56,26 +61,28 @@ jobs:
 
 
           # GitHub API configuration
-          GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
+          APPROVAL_TOKEN = os.environ["APPROVAL_TOKEN"]
+          READ_TOKEN = os.environ["READ_TOKEN"]
           REPO = os.environ["GITHUB_REPOSITORY"]
           MAX_CONCURRENCY = int(os.environ["MAX_CONCURRENCY"])
           API_BASE = f"https://api.github.com/repos/{REPO}"
 
           # Headers for GitHub API
-          headers = {
-              "Authorization": f"token {GITHUB_TOKEN}",
+          read_headers = {
+              "Authorization": f"token {READ_TOKEN}",
               "Accept": "application/vnd.github.v3+json",
               "X-GitHub-Api-Version": "2022-11-28",
           }
+          approval_headers = {**read_headers, "Authorization": f"token {APPROVAL_TOKEN}"}
 
           def make_request(endpoint, method="GET", data=None):
               """Make a request to the GitHub API with error handling."""
               url = f"{API_BASE}/{endpoint}"
               try:
                   if method == "GET":
-                      response = requests.get(url, headers=headers)
+                      response = requests.get(url, headers=read_headers)
                   else:
-                      response = requests.post(url, headers=headers, json=data)
+                      response = requests.post(url, headers=approval_headers, json=data)
                   response.raise_for_status()
                   return response.json()
               except requests.exceptions.RequestException as e:
