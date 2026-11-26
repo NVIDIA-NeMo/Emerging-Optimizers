@@ -156,10 +156,8 @@ def one_sided_polargrad_orth_fn(
         m = m - m.mean(dim=0, keepdim=True)
 
     scale = m.abs().amax()
-    if scale == 0:
-        return torch.zeros_like(grad)
-
-    m_scaled = m / scale
+    safe_scale = torch.where(scale == 0, torch.ones_like(scale), scale)
+    m_scaled = m / safe_scale
     gram = m_scaled @ m_scaled.transpose(-1, -2) if side == "left" else m_scaled.transpose(-1, -2) @ m_scaled
     eigvals, eigvecs = eigh_with_fallback(gram)
     eigvals.clamp_min_(eps)
